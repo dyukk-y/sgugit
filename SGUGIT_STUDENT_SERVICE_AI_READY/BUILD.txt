@@ -1,0 +1,3 @@
+SGUGIT STUDENT SERVICE - Bothost production release
+Do not use an external Dockerfile that installs aiogram==2.25.2.
+Build from this directory's Dockerfile.
