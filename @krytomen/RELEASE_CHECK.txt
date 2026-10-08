@@ -1,0 +1,21 @@
+SGUGIT_STUDENT_SERVICE AI 2.6.1
+
+AI:
+- Local Qwen2.5-0.5B-Instruct GGUF Q2_K, downloaded lazily on first general AI request.
+- No API key required.
+- Schedule/task/profile facts are retrieved from the bot/database first; the neural model is only a reasoning/writing layer.
+- If the model cannot be downloaded/loaded, the bot continues with deterministic assistant + public lookup fallback.
+
+Verification performed in build environment:
+- pytest: 47 passed
+- python -m compileall: OK
+- AST parse of all Python files: OK
+- callback surface scan: 131 callback declarations found
+- ZIP integrity: OK
+
+Not performed:
+- live Telegram interaction with a real BOT_TOKEN
+- live Docker build against Bothost
+- model download/inference, because the build environment has no outbound DNS/network access
+
+The production container installs llama-cpp-python from its documented CPU wheel index.
