@@ -1,0 +1,8 @@
+2.3.3 — UI and notification cleanup
+
+- Removed the user-facing AI assistant and `/ai` command.
+- Replaced the AI slot in the main menu with `👤 Профиль`.
+- Moved notifications entirely into the profile.
+- Made daily broadcasts idempotent per recipient across restarts.
+- Synchronized legacy subscription toggles with the current notification center.
+- Fixed reminder text to show the configured number of minutes.
