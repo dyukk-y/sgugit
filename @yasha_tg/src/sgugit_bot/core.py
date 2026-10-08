@@ -9,6 +9,7 @@ import base64
 import hmac
 import secrets
 import html
+from html.parser import HTMLParser
 import json
 import logging
 import os
@@ -31,7 +32,6 @@ from typing import Callable, Optional, Union
 from zoneinfo import ZoneInfo
 
 import requests
-from bs4 import BeautifulSoup
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -512,19 +512,69 @@ class ScheduleClient:
         return parsed
 
 
+class _ScheduleTextParser(HTMLParser):
+    """Minimal stdlib HTML-to-text parser used for the schedule page.
+
+    Uses only the Python standard library, so it runs without extra HTML
+    parser dependencies on Bothost/Docker. Script/style/noscript contents are ignored.
+    """
+
+    BLOCK_TAGS = {
+        "address", "article", "aside", "blockquote", "br", "dd", "div",
+        "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form",
+        "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li",
+        "main", "nav", "ol", "p", "pre", "section", "table", "tbody",
+        "td", "tfoot", "th", "thead", "tr", "ul",
+    }
+    IGNORED_TAGS = {"script", "style", "noscript", "template"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._ignored_depth = 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag = tag.lower()
+        if tag in self.IGNORED_TAGS:
+            self._ignored_depth += 1
+            return
+        if self._ignored_depth:
+            return
+        if tag in self.BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_startendtag(self, tag: str, attrs) -> None:
+        if self._ignored_depth:
+            return
+        if tag.lower() in self.BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in self.IGNORED_TAGS:
+            if self._ignored_depth:
+                self._ignored_depth -= 1
+            return
+        if self._ignored_depth:
+            return
+        if tag in self.BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self._ignored_depth:
+            self.parts.append(data)
+
+
 def clean_lines(html_text: str) -> list[str]:
-    soup = BeautifulSoup(html_text, "html.parser")
+    parser = _ScheduleTextParser()
+    parser.feed(html_text or "")
+    parser.close()
 
-    # Удаляем элементы, которые не являются расписанием.
-    for tag in soup(["script", "style", "noscript"]):
-        tag.decompose()
-
-    lines = []
-    for raw in soup.get_text("\n").splitlines():
+    lines: list[str] = []
+    for raw in "".join(parser.parts).splitlines():
         value = re.sub(r"\s+", " ", raw).strip()
         if value:
             lines.append(value)
-
     return lines
 
 

@@ -3,7 +3,7 @@ from .core import *
 # Production application services and domain logic
 # ============================================================
 
-APP_VERSION = "2.3.1"
+APP_VERSION = "2.3.2"
 
 SPONSOR_EXEMPT_STARS = 25
 TRUSTED_LEADER_STREAK = 10
@@ -323,22 +323,95 @@ def _extract_group_title(a) -> str:
     return ""
 
 
+class _GroupPageParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.h1_text = ""
+        self.title_text = ""
+        self._capture: str | None = None
+        self._buf: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag = tag.lower()
+        if tag in {"h1", "title"} and self._capture is None:
+            self._capture = tag
+            self._buf = []
+
+    def handle_data(self, data: str) -> None:
+        if self._capture:
+            self._buf.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if self._capture == tag:
+            value = re.sub(r"\s+", " ", " ".join(self._buf)).strip()
+            if tag == "h1" and not self.h1_text:
+                self.h1_text = value
+            elif tag == "title" and not self.title_text:
+                self.title_text = value
+            self._capture = None
+            self._buf = []
+
+
+class _GroupLinkParser(HTMLParser):
+    """Extract schedule group links with the standard-library HTML parser."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.links: list[tuple[str, str]] = []
+        self._href: str | None = None
+        self._text: list[str] = []
+        self._depth = 0
+
+    def handle_startendtag(self, tag: str, attrs) -> None:
+        if tag.lower() == "a":
+            attrs_map = dict(attrs)
+            href = attrs_map.get("href")
+            if href:
+                self.links.append((href, ""))
+
+    def handle_data(self, data: str) -> None:
+        if self._href is not None:
+            self._text.append(data)
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag = tag.lower()
+        if tag == "a" and self._href is None:
+            attrs_map = dict(attrs)
+            href = attrs_map.get("href")
+            if href:
+                self._href = href
+                self._text = []
+                self._depth = 1
+        elif self._href is not None:
+            self._depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._href is None:
+            return
+        if tag.lower() == "a":
+            self._depth -= 1
+            if self._depth <= 0:
+                self.links.append((self._href, re.sub(r"\s+", " ", " ".join(self._text)).strip()))
+                self._href = None
+                self._text = []
+                self._depth = 0
+        else:
+            self._depth = max(0, self._depth - 1)
+
+
 def _parse_group_links(html_text: str) -> list[tuple[str,str,str]]:
-    soup = BeautifulSoup(html_text, "html.parser")
+    parser = _GroupLinkParser()
+    parser.feed(html_text or "")
+    parser.close()
     found = {}
-    for a in soup.find_all("a", href=True):
-        href = a.get("href", "")
-        m = re.search(r"/raspisanie/group/(\d+)(?:/)?(?:[?#].*)?$", href, re.I)
+    for href, title in parser.links:
+        m = re.search(r"/raspisanie/group/(\d+)(?:/)?(?:[?#].*)?$", href or "", re.I)
         if not m:
             continue
-        title = _extract_group_title(a)
-        # Sometimes the group name is in a parent element rather than the anchor itself.
-        if not re.search(r"[А-ЯA-Z]{1,12}\s*-?\s*\d{1,3}(?:\.\d+)?", title, re.I):
-            parent = a.parent
-            if parent:
-                parent_text = re.sub(r"\s+", " ", parent.get_text(" ", strip=True))
-                if re.search(r"[А-ЯA-Z]{1,12}\s*-?\s*\d{1,3}(?:\.\d+)?", parent_text, re.I):
-                    title = parent_text
+        title = re.sub(r"\s+", " ", title or "").strip()
+        if not title:
+            continue
         mm = re.search(r"(?:Группа\s*)?([А-ЯA-Z]{1,12})\s*-?\s*(\d{1,3}(?:\.\d+)?)", title, re.I)
         if not mm:
             continue
@@ -355,14 +428,12 @@ def _probe_group_id(group_id: int):
         if r.status_code != 200:
             return None
         r.encoding = r.apparent_encoding or "utf-8"
-        soup = BeautifulSoup(r.text, "html.parser")
-        h1 = soup.find("h1")
-        title = re.sub(r"\s+", " ", h1.get_text(" ", strip=True) if h1 else "")
+        parser = _GroupPageParser()
+        parser.feed(r.text or "")
+        parser.close()
+        title = parser.h1_text or parser.title_text
+        title = re.sub(r"\s+", " ", title).strip()
         mm = re.search(r"(?:Группа\s*)?([А-ЯA-Z]{1,12})\s*-?\s*(\d{1,3}(?:\.\d+)?)", title, re.I)
-        if not mm:
-            # Fallback: the page title often contains the same group code.
-            page_title = re.sub(r"\s+", " ", soup.title.get_text(" ", strip=True) if soup.title else "")
-            mm = re.search(r"(?:Группа\s*)?([А-ЯA-Z]{1,12})\s*-?\s*(\d{1,3}(?:\.\d+)?)", page_title, re.I)
         if not mm:
             return None
         code = normalize_group(f"{mm.group(1)}-{mm.group(2)}")

@@ -147,3 +147,5 @@ def test_owner_direct_leader_assignment_notifies_user():
     text = (Path(__file__).parents[1] / 'src' / 'sgugit_bot' / 'handlers.py').read_text(encoding='utf-8')
     assert "Ты назначен старостой!" in text
     assert "Пользователь уведомлён" in text
+
+

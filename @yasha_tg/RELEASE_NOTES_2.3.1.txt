@@ -1,4 +1,4 @@
-SGUGIT Student Service 2.3.1
+2.3.2 — Bothost dependency hardening\n\n- Removed BeautifulSoup4 dependency entirely.\n- Replaced schedule HTML parsing with stdlib html.parser.HTMLParser.\n- Removed beautifulsoup4 from requirements.txt.\n- Keeps script/style/noscript filtering and schedule text extraction.\n\nSGUGIT Student Service 2.3.1
 
 Fixes:
 - Broadcast: callable per-user keyboards are resolved before Telegram API calls.
