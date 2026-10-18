@@ -1,2 +1,0 @@
-class DefaultBotProperties:
-    def __init__(self, **k): pass
