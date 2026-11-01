@@ -677,8 +677,8 @@ def build_router(app: App) -> Router:
                         "«какие завтра пары?», «что у нас на неделе?», «какая следующая пара?».\n\n"
                         "⚙️ Для управления чатом нажмите единственную кнопку под этим сообщением — откроется панель настроек. "
                         "Команды /today, /tomorrow, /week, /next и /hw оставлены как запасной способ.\n\n"
-                        "📌 Вечером бот присылает расписание на завтра и закрепляет его до начала первой пары — для этого дайте боту "
-                        "право «Закреплять сообщения» (сделайте администратором). Включить сводку: /settings.\n\n"
+                        "🔧 В панели можно включить вечернюю сводку, закреп и автоматическую очистку вопросов. "
+                        "Для закрепа нужно право «Закреплять сообщения», а для удаления команд участников — «Удалять сообщения».\n\n"
                         "ℹ️ В стандартном режиме Telegram бот видит команды, упоминания и ответы на его сообщения. "
                         "Чтобы понимать любые сообщения чата, отключите Group Privacy в @BotFather или выдайте боту права администратора.")
             else:
@@ -691,7 +691,7 @@ def build_router(app: App) -> Router:
                         "Команды /settings, /today, /tomorrow, /week, /next и /hw остаются запасным вариантом.")
             try:
                 welcome_kb = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="✦ Управление ботом", url=f"https://t.me/{app.username}?start=manage_{event.chat.id}")],
+                    [InlineKeyboardButton(text="✦ Открыть настройки", url=f"https://t.me/{app.username}?start=manage_{event.chat.id}")],
                 ])
                 await app.bot.send_message(event.chat.id, text, reply_markup=welcome_kb)
             except TelegramAPIError:
