@@ -24,10 +24,14 @@ class MigrationV12Tests(unittest.TestCase):
                 index = await db.scalar(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?",
                     "ix_gsc_group_day_status")
-                self.assertEqual(version, 12)
+                self.assertEqual(version, 13)
                 self.assertEqual(saved, "unchanged")
                 self.assertEqual(table, 1)
                 self.assertEqual(index, 1)
+                teacher_accounts = await db.scalar(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+                    "teacher_accounts")
+                self.assertEqual(teacher_accounts, 1)
             finally:
                 await db.close()
 
