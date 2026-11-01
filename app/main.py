@@ -29,7 +29,7 @@ from app.providers.site import fetch_all_groups
 from app.services.directory import DirectorySync
 from app.services.notifier import Notifier
 from app.services.questions import QuestionService
-from app.services.sync import SyncService
+from app.services.sync import SyncService\nfrom app.webapp_api import create_webapp
 
 log = logging.getLogger("app")
 
@@ -96,6 +96,12 @@ async def main() -> None:
                     "/admin → Бэкап → «Восстановить из файла» и пришлите последний бэкап.")
     sender.start()
     tasks = background.start_all(app, sync, directory, notifier)
+    mini_runner = web.AppRunner(create_webapp(app))
+    await mini_runner.setup()
+    mini_site = web.TCPSite(mini_runner, "0.0.0.0", cfg.webapp_port)
+    await mini_site.start()
+    log.info("Mini App server listens on port %s (WEBAPP_URL configured: %s)",
+             cfg.webapp_port, bool(cfg.webapp_url))
     try:
         if cfg.webhook_url:
             await bot.set_webhook(cfg.webhook_url + cfg.webhook_path,
@@ -120,6 +126,7 @@ async def main() -> None:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await sender.stop()
+        await mini_runner.cleanup()
         await bot.session.close()
         await db.close()
 
