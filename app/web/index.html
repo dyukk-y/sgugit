@@ -85,7 +85,7 @@
  function permission(label,ok,description){return '<div class="permission"><div class="ico">✓</div><div class="grow"><div class="title">'+label+'</div><p>'+description+'</p></div><span class="status '+(ok?"ok":"bad")+'">'+(ok?"ЕСТЬ":"НЕТ")+'</span></div>'}
  async function save(change){if(busy)return;busy=true;try{const res=await api("/api/settings",{chat_id:Number(selected),...change});const item=data.chats.find(x=>String(x.chat.chat_id)===String(selected));item.chat=res.chat;item.bot=res.bot;render();notify("Настройка сохранена")}catch(e){notify(e.message||"Не удалось сохранить");}finally{busy=false}}
  async function start(){if(!tg||!initData){$("content").innerHTML='<div class="empty"><div class="big">✦</div><h2>Откройте панель в Telegram</h2><p>Это приложение работает внутри Telegram. Вернитесь в чат с ботом и нажмите «Управление ботом».</p></div>';return}
-  tg.ready();tg.expand();tg.setHeaderColor?.("#101a2c");tg.setBackgroundColor?.("#0b1424");tg.disableVerticalSwipes?.();
+  tg.ready();tg.expand();tg.setHeaderColor?.("#101a2c");tg.setBackgroundColor?.("#0b1424");
   try{data=await api("/api/bootstrap"+(params.get("chat_id")?"?chat_id="+encodeURIComponent(params.get("chat_id")):""));selected=String(data.selected_chat_id||data.chats?.[0]?.chat.chat_id||"");render()}catch(e){$("content").innerHTML='<div class="empty"><div class="big">🔒</div><h2>Нет доступа</h2><p>'+esc(e.message||"Не удалось проверить права. Откройте приложение повторно из группы.")+'</p><button class="btn" onclick="location.reload()">Повторить</button></div>'}
  }
  start();
