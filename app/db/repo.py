@@ -348,7 +348,7 @@ class Repo:
                     rows.append({"id": -int(change["id"]), "group_id": gid, "day": change["day"],
                                  "num": int(change["lesson_num"]), "start_t": change["start_t"],
                                  "end_t": change["end_t"], "subject": change["subject"], "teacher": "",
-                                 "room": "", "kind": "", "subgroup": None, "manual": 1,
+                                 "room": "", "kind": "", "subgroup": None, "manual": 0,
                                  "change_author": change["author_label"], "student_added": True})
         rows.sort(key=lambda l: (l["day"], l["start_t"], l["num"], l["id"]))
         return rows
