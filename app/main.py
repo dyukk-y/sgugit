@@ -16,7 +16,7 @@ from aiohttp import web
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
-from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats, ErrorEvent
+from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats, ChatAdministratorRights, ErrorEvent
 
 from app import timeutil as tu
 from app.bot import background, tg
@@ -62,6 +62,20 @@ async def main() -> None:
     await repo.load_settings()
     bot = Bot(token=cfg.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     me = await bot.get_me()
+    try:
+        # Telegram preselects these minimum rights when a user adds the bot as admin.
+        # The group owner can still review/change the permissions before confirming.
+        await bot.set_my_default_administrator_rights(
+            rights=ChatAdministratorRights(
+                is_anonymous=False,
+                can_manage_chat=True,
+                can_delete_messages=True,
+                can_pin_messages=True,
+            ),
+            for_channels=False,
+        )
+    except TelegramAPIError as e:
+        log.warning("Не удалось установить рекомендуемые права бота для групп: %s", e)
     log.info("Бот @%s запущен, БД: %s, главный админ: %s", me.username, db.kind, cfg.superadmin_id)
 
     sender = tg.Sender(bot, repo)
