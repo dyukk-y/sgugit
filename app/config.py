@@ -43,6 +43,8 @@ class Settings:
     webhook_path: str = "/telegram/webhook"
     webhook_secret: str = ""
     webhook_port: int = 8080
+    webapp_url: str = ""
+    webapp_port: int = 3000
 
 
 def load_settings() -> Settings:
@@ -67,4 +69,6 @@ def load_settings() -> Settings:
         webhook_path="/" + os.environ.get("WEBHOOK_PATH", "telegram/webhook").strip("/"),
         webhook_secret=os.environ.get("WEBHOOK_SECRET", "").strip(),
         webhook_port=max(1, min(65535, _int("WEBHOOK_PORT", 8080))),
+        webapp_url=os.environ.get("WEBAPP_URL", "").strip().rstrip("/"),
+        webapp_port=max(1, min(65535, _int("WEBAPP_PORT", 3000))),
     )
