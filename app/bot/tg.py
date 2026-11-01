@@ -876,7 +876,9 @@ async def _reply_group(app: App, message: Message, text: str, chat: dict | None,
         return None
     minutes = (chat or {}).get("autodelete_min", 0)
     if auto_delete and minutes:
-        app.spawn(_delete_later(sent, minutes * 60))
+        await app.repo.db.execute(
+            "INSERT INTO scheduled_deletions (chat_id, message_id, delete_at) VALUES (?, ?, ?)",
+            int(message.chat.id), int(sent.message_id), tu.now_ts() + max(60, int(minutes) * 60))
     return sent
 
 
