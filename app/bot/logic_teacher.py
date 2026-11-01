@@ -27,7 +27,7 @@ async def menu(ctx: Ctx) -> Screen:
         [Btn("🏫 Свободные аудитории", "p:rooms")],
         [Btn("🔎 Найти преподавателя", "p:find")],
         [Btn("💬 Поддержка", "me:fb"), Btn("❓ Помощь", "p:help")],
-        [Btn("🔄 Сменить преподавателя", "p:register")],
+        [Btn("🔄 Сменить преподавателя", "p:change")],
         [Btn("🎓 Студенческий режим", "p:student")],
     ]
     today = await ctx.repo.teacher_lessons(*_teacher_name(account), tu.iso(ctx.today), tu.iso(ctx.today))
@@ -247,6 +247,11 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             return Out(screen=await menu(ctx), clear_state=True)
         return Out(screen=Screen("Напишите фамилию преподавателя так, как она указана в расписании вуза.",
                                  [nav("m:home")]), state="p:surname", state_data={})
+    if act == "change":
+        if ctx.role != "teacher":
+            return Out(toast="Сначала войдите в режим преподавателя", alert=True)
+        return Out(screen=Screen("Напишите фамилию преподавателя, на которого хотите сменить профиль.",
+                                 [nav("p:menu")]), state="p:surname", state_data={})
     if act == "choose" and len(parts) > 1 and parts[1].isdigit():
         state, data = await ctx.repo.get_state(ctx.uid)
         teacher_id = int(parts[1])
