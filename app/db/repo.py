@@ -547,8 +547,8 @@ class Repo:
             await tx.execute(
                 "INSERT INTO teacher_accounts (user_id, teacher_id, created_at) VALUES (?, ?, ?) "
                 "ON CONFLICT (user_id) DO UPDATE SET teacher_id = excluded.teacher_id, created_at = excluded.created_at",
-                uid, teacher_id, now_ts())
-            await tx.execute("UPDATE users SET role = 'teacher' WHERE id = ?", uid)
+                (uid, teacher_id, now_ts()))
+            await tx.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (uid,))
         return True
 
     async def switch_teacher_to_student(self, uid: int) -> None:
