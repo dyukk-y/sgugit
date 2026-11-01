@@ -370,7 +370,7 @@ class Repo:
         rows = await self.db.fetchall(
             "SELECT DISTINCT day FROM lessons WHERE group_id = ? AND day >= ? AND day <= ?", gid, d1, d2)
         changed = await self.db.fetchall(
-            "SELECT DISTINCT day FROM group_schedule_changes WHERE group_id = ? AND day >= ? AND day <= ? AND status = 'applied' AND action = 'add'",
+            "SELECT DISTINCT day FROM group_schedule_changes WHERE group_id = ? AND day >= ? AND day <= ? AND status = 'applied' AND action IN ('add', 'move')",
             gid, d1, d2)
         return {r["day"] for r in rows} | {r["day"] for r in changed}
 
