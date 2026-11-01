@@ -14,6 +14,7 @@ class MigrationV12Tests(unittest.TestCase):
                 await migrate(db)
                 await db.execute("INSERT INTO settings (k, v) VALUES (?, ?)", "keep_me", "unchanged")
                 await db.execute("DROP TABLE group_schedule_changes")
+                await db.execute("DROP TABLE teacher_accounts")
                 await db.execute("UPDATE meta SET v = ? WHERE k = ?", "11", "schema_version")
 
                 version = await migrate(db)
