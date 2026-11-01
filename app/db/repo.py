@@ -747,7 +747,7 @@ class Repo:
 
     async def evening_chats(self) -> list[dict]:
         return await self.db.fetchall(
-            "SELECT * FROM chats WHERE active = 1 AND evening_on = 1 AND group_id IS NOT NULL")
+            "SELECT * FROM chats WHERE active = 1 AND notifications_on = 1 AND evening_on = 1 AND group_id IS NOT NULL")
 
     # ================= закрепы в чатах =================
     async def add_pin(self, chat_id: int, message_id: int, unpin_at: int) -> None:
