@@ -142,7 +142,7 @@ async def calendar_screen(ctx: Ctx, ym: str) -> Screen:
     if account:
         surname, initials = _teacher_name(account)
         rows = await ctx.repo.teacher_lessons(surname, initials, tu.iso(first), tu.iso(first.replace(day=last_day)))
-        have = {l["day"] for l in rows}
+        have = {l["day"] for l in rows if not l.get("cancelled")}
     prev_m = (first - timedelta(days=1)).replace(day=1)
     next_m = (first + timedelta(days=last_day)).replace(day=1)
     kb: Kb = [[Btn("◀", f"p:cal:{prev_m.year}-{prev_m.month:02d}"),
