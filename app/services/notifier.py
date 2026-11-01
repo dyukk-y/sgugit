@@ -133,8 +133,8 @@ class Notifier:
                 await self.send(u["id"], Screen(text, kb))
                 sent += 1
             for c in await self.repo.chats_for_group(gid):
-                if not c.get("changes_on", 1):  # в настройках чата уведомления об изменениях отключены
-                    continue
+                if not c.get("notifications_on", 1) or not c.get("changes_on", 1):
+                    continue  # общий выключатель и отдельная настройка изменений
                 await self.send(c["chat_id"], Screen(text))
                 sent += 1
         return sent
