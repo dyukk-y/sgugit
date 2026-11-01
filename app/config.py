@@ -70,5 +70,5 @@ def load_settings() -> Settings:
         webhook_secret=os.environ.get("WEBHOOK_SECRET", "").strip(),
         webhook_port=max(1, min(65535, _int("WEBHOOK_PORT", 8080))),
         webapp_url=os.environ.get("WEBAPP_URL", "").strip().rstrip("/"),
-        webapp_port=max(1, min(65535, _int("WEBAPP_PORT", 3000))),
+        webapp_port=max(1, min(65535, _int("WEBAPP_PORT", _int("PORT", 3000)))),
     )
