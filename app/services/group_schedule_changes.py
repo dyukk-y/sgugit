@@ -22,6 +22,19 @@ class ChangeDraft:
 _TIME_RE = re.compile(r"\b([01]?\d|2[0-3])[:.]([0-5]\d)\b")
 
 
+def _resolve_subject(text: str, catalog: list[tuple[str, str]]) -> str | None:
+    exact = find_subject(text, catalog)
+    if exact:
+        return exact
+    tokens = re.findall(r"[а-яa-z]{5,}", text.lower().replace("ё", "е"))
+    candidates = set()
+    for alias, subject in catalog:
+        alias_tokens = re.findall(r"[а-яa-z]{5,}", alias.lower().replace("ё", "е"))
+        if any(a.startswith(t) or t.startswith(a) for a in alias_tokens for t in tokens):
+            candidates.add(subject)
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
 def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
                        lessons: list[dict]) -> tuple[ChangeDraft | None, str | None]:
     """Return a safe draft or a short clarification. Never guesses between multiple lessons."""
@@ -35,7 +48,7 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     if not cancel and not add:
         return None, None
 
-    subject = find_subject(raw, catalog)
+    subject = _resolve_subject(raw, catalog)
     if not subject:
         return None, "Не понял, о каком предмете речь. Напишите название предмета."
     day, _ = parse_when(raw, today)
