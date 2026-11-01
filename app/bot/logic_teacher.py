@@ -250,10 +250,8 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
     if act == "choose" and len(parts) > 1 and parts[1].isdigit():
         state, data = await ctx.repo.get_state(ctx.uid)
         teacher_id = int(parts[1])
-        allowed = state == "p:surname" or (
-            state == "p:confirm" and (
-                data.get("teacher_id") == teacher_id or teacher_id in data.get("candidate_ids", [])
-            )
+        allowed = state == "p:confirm" and (
+            data.get("teacher_id") == teacher_id or teacher_id in data.get("candidate_ids", [])
         )
         if not allowed:
             return Out(toast="Этот вариант устарел. Начните поиск заново.", alert=True)
