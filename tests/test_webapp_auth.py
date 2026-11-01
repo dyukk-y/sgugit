@@ -15,7 +15,7 @@ class MiniAppAuthTests(unittest.TestCase):
             "user": json.dumps({"id": 42, "first_name": "Test"}, separators=(",", ":")),
         }
         check = "\n".join(f"{key}={value}" for key, value in sorted(fields.items()))
-        secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
+        secret = hmac.new(token.encode(), b"WebAppData", hashlib.sha256).digest()
         fields["hash"] = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
         return urlencode(fields)
 
