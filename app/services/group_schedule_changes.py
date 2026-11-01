@@ -59,6 +59,9 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     num = _lesson_number(re.findall(r"[а-яa-z0-9]+", low))
     tm = _TIME_RE.search(low)
     start = f"{int(tm.group(1)):02d}:{tm.group(2)}" if tm else ""
+    move_verb = bool(re.search(r"\bперенес\w*\b", low))
+    if move_verb and num is None and not start:
+        return None, f"На какую пару перенесли «{subject}» {tu.fmt_date(day)}? Напишите номер пары или время начала."
 
     if cancel:
         if num is not None:
