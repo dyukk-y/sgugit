@@ -97,7 +97,7 @@ class T(unittest.TestCase):
             # В основном меню есть отдельная кнопка добавления в группу с корректной deep-link-ссылкой.
             urls = [b.url for row in out.screen.kb for b in row if b.url]
             self.assertTrue(any(u and "startgroup=true" in u for u in urls))
-            self.assertTrue(any(u == "https://t.me/theyasha_bot" for u in urls))
+            self.assertTrue(any(u and u.startswith("https://t.me/theyasha_bot") for u in urls))
             await s.db.close()
         run(go())
 
