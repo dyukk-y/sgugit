@@ -933,7 +933,22 @@ async def _send_chat_settings(app: App, message: Message, chat: dict | None) -> 
     if chat is None:
         chat = await app.repo.upsert_chat(message.chat.id, message.chat.title, None, None)
     chat = await _bind_adder_group_if_ready(app, chat, message.from_user.id)
-    await _open_group_panel(app, message, int(message.chat.id))
+    user = await app.repo.get_user(message.from_user.id)
+    tg_admin = await _is_tg_admin(app, message.chat.id, message.from_user.id)
+    if not logic_chat.can_manage(user, chat, app.cfg.superadmin_id, tg_admin):
+        await _reply_group(app, message, "Настройки доступны администраторам группы и пользователю, который добавил бота.", chat)
+        return
+    if not app.cfg.webapp_url:
+        await _reply_group(app, message,
+                           "Панель управления ещё не опубликована. После подключения HTTPS-домена кнопка появится здесь.",
+                           chat)
+        return
+    link = f"https://t.me/{app.username}?start=manage_{message.chat.id}"
+    markup = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✦ Открыть панель управления", url=link)
+    ]])
+    await message.answer("✦ <b>Центр управления СГУГиТ</b>\nОткройте личный чат с ботом — там запустится панель настроек этой группы.",
+                         reply_markup=markup)
 
 
 async def _open_group_panel(app: App, message: Message, chat_id: int) -> None:
