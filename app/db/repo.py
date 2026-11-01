@@ -329,21 +329,70 @@ class Repo:
         self._invalidate_catalog()
         return result
 
+    async def _merge_group_schedule_changes(self, gid: int, rows: list[dict], d1: str, d2: str) -> list[dict]:
+        changes = await self.db.fetchall(
+            "SELECT * FROM group_schedule_changes WHERE group_id = ? AND day >= ? AND day <= ? AND status = 'applied' ORDER BY id",
+            gid, d1, d2)
+        for change in changes:
+            if change["action"] == "cancel":
+                for lesson in rows:
+                    if (lesson["day"] == change["day"] and int(lesson["num"]) == int(change["lesson_num"])
+                            and lesson["subject"].casefold() == change["subject"].casefold()):
+                        lesson["cancelled"] = True
+                        lesson["change_author"] = change["author_label"]
+            elif change["action"] == "add":
+                exists = any(l["day"] == change["day"] and int(l["num"]) == int(change["lesson_num"])
+                             and l["subject"].casefold() == change["subject"].casefold() for l in rows)
+                if not exists:
+                    rows.append({"id": -int(change["id"]), "group_id": gid, "day": change["day"],
+                                 "num": int(change["lesson_num"]), "start_t": change["start_t"],
+                                 "end_t": change["end_t"], "subject": change["subject"], "teacher": "",
+                                 "room": "", "kind": "", "subgroup": None, "manual": 1,
+                                 "change_author": change["author_label"], "student_added": True})
+        rows.sort(key=lambda l: (l["day"], l["start_t"], l["num"], l["id"]))
+        return rows
+
     async def lessons_day(self, gid: int, day: str, subgroup: int | None = None) -> list[dict]:
         rows = await self.db.fetchall("SELECT * FROM lessons WHERE group_id = ? AND day = ? ORDER BY start_t, num, id",
                                       gid, day)
-        return [r for r in rows if subgroup is None or r["subgroup"] is None or r["subgroup"] == subgroup]
+        rows = [r for r in rows if subgroup is None or r["subgroup"] is None or r["subgroup"] == subgroup]
+        return await self._merge_group_schedule_changes(gid, rows, day, day)
 
     async def lessons_range(self, gid: int, d1: str, d2: str, subgroup: int | None = None) -> list[dict]:
         rows = await self.db.fetchall(
             "SELECT * FROM lessons WHERE group_id = ? AND day >= ? AND day <= ? ORDER BY day, start_t, num, id",
             gid, d1, d2)
-        return [r for r in rows if subgroup is None or r["subgroup"] is None or r["subgroup"] == subgroup]
+        rows = [r for r in rows if subgroup is None or r["subgroup"] is None or r["subgroup"] == subgroup]
+        return await self._merge_group_schedule_changes(gid, rows, d1, d2)
 
     async def days_with_lessons(self, gid: int, d1: str, d2: str) -> set[str]:
         rows = await self.db.fetchall(
             "SELECT DISTINCT day FROM lessons WHERE group_id = ? AND day >= ? AND day <= ?", gid, d1, d2)
-        return {r["day"] for r in rows}
+        changed = await self.db.fetchall(
+            "SELECT DISTINCT day FROM group_schedule_changes WHERE group_id = ? AND day >= ? AND day <= ? AND status = 'applied' AND action = 'add'",
+            gid, d1, d2)
+        return {r["day"] for r in rows} | {r["day"] for r in changed}
+
+    async def create_group_schedule_change(self, *, gid: int, chat_id: int, day: str, num: int,
+                                           action: str, subject: str, start: str = "", end: str = "",
+                                           author_id: int, author_label: str, message_id: int) -> int:
+        if action not in ("cancel", "add") or not 1 <= int(num) <= 12:
+            raise ValueError("invalid group schedule change")
+        return await self.db.insert(
+            "INSERT INTO group_schedule_changes (group_id, chat_id, day, lesson_num, action, subject, start_t, end_t, "
+            "author_id, author_label, source_message_id, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+            gid, chat_id, day, num, action, subject, start, end, author_id, author_label, message_id, now_ts())
+
+    async def get_group_schedule_change(self, change_id: int) -> dict | None:
+        return await self.db.fetchone("SELECT * FROM group_schedule_changes WHERE id = ?", change_id)
+
+    async def decide_group_schedule_change(self, change_id: int, author_id: int, approve: bool) -> bool:
+        status = "applied" if approve else "rejected"
+        n = await self.db.execute(
+            "UPDATE group_schedule_changes SET status = ?, decided_at = ? WHERE id = ? AND author_id = ? AND status = 'pending'",
+            status, now_ts(), change_id, author_id)
+        return n > 0
 
     async def get_lesson(self, lid: int) -> dict | None:
         return await self.db.fetchone("SELECT * FROM lessons WHERE id = ?", lid)
