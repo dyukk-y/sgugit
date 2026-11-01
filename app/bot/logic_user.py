@@ -33,7 +33,6 @@ async def main_menu(ctx: Ctx) -> Screen:
         [Btn("📝 Задания", "h:l:0"), Btn("🔔 Уведомления", "me:ntf")],
         [Btn("👥 Другая группа", "me:other")],
         [Btn("🔎 Найти преподавателя", "me:findt")],
-        [Btn("👨‍🏫 Я преподаватель", "p:register")],
         [Btn("⚙️ Ещё", "me:menu")],
         [Btn("➕ В группу", url=f"https://t.me/{ctx.bot_username}?startgroup=true"),
          Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
@@ -42,6 +41,8 @@ async def main_menu(ctx: Ctx) -> Screen:
 
     if ctx.repo.flag("rating_enabled"):
         rows[3].append(Btn("⭐Оценить преподавателя", "t:l:m:0"))
+    if not ctx.is_admin:
+        rows.insert(4, [Btn("👨‍🏫 Я преподаватель", "p:register")])
 
     return Screen(head, rows)
 
