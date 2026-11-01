@@ -37,7 +37,7 @@ def validate_init_data(init_data: str, bot_token: str, now: int | None = None) -
     if auth_date <= 0 or current - auth_date > MAX_AUTH_AGE or auth_date > current + 60:
         raise ValueError("Сессия Telegram устарела. Закройте приложение и откройте снова.")
     check = "\\n".join(f"{key}={value}" for key, value in sorted(values.items()))
-    secret = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+    secret = hmac.new(bot_token.encode(), b"WebAppData", hashlib.sha256).digest()
     expected = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, supplied_hash):
         raise ValueError("Подпись Telegram не прошла проверку")
