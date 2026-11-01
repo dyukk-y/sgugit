@@ -318,7 +318,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
     when = fm.when_word(d, ctx.today)
     if name == "day":
         if intent.num:
-            hit = [l for l in lessons if l["num"] == intent.num]
+            hit = [l for l in lessons if l["num"] == intent.num and not l.get("cancelled")]
             if not hit:
                 return Screen(f"{prefix}{when.capitalize()}: пары №{intent.num} нет.", kb_for(d))
             return Screen(f"{prefix}{when.capitalize()}:\n{fm.lesson_block(hit[0])}", kb_for(d))
@@ -333,11 +333,13 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
         first, last = active_lessons[0], active_lessons[-1]
         return Screen(f"{prefix}{when.capitalize()} пар: <b>{len(active_lessons)}</b>, с {first['start_t']} до {last['end_t']}.",
                       kb_for(d))
-    if name == "first":
-        l = lessons[0]
-        return Screen(f"{prefix}Первая пара {when}:\n{fm.lesson_block(l)}", kb_for(d))
-    if name == "last":
-        l = lessons[-1]
+    if name in ("first", "last"):
+        active_lessons = [l for l in lessons if not l.get("cancelled")]
+        if not active_lessons:
+            return Screen(f"{prefix}{when.capitalize()}: занятий нет, все пары отменены.", kb_for(d))
+        l = active_lessons[0] if name == "first" else active_lessons[-1]
+        if name == "first":
+            return Screen(f"{prefix}Первая пара {when}:\n{fm.lesson_block(l)}", kb_for(d))
         return Screen(f"{prefix}Последняя пара {when} заканчивается в <b>{l['end_t']}</b>:\n{fm.lesson_block(l)}",
                       kb_for(d))
     if name in ("room", "teacher"):
@@ -345,7 +347,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
         if intent.num:
             hit = [l for l in lessons if l["num"] == intent.num]
         elif intent.subject:
-            hit = [l for l in lessons if l["subject"] == intent.subject]
+            hit = [l for l in lessons if l["subject"] == intent.subject and not l.get("cancelled")]
             if not hit:
                 rows = await repo.next_lessons(gid, tu.iso(ctx.today), 60, subgroup)
                 hit = [l for l in rows if l["subject"] == intent.subject][:1]
