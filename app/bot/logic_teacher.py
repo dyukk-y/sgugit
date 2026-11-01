@@ -166,6 +166,19 @@ async def calendar_screen(ctx: Ctx, ym: str) -> Screen:
     return Screen("<b>Календарь преподавателя</b>\n• — в этот день есть пары", kb)
 
 
+def _room_identity(room: str) -> tuple[str, str]:
+    low = room.lower().replace("ё", "е")
+    corpus = re.search(r"корп(?:ус)?\.?\s*([0-9а-яa-z]+)", low)
+    numbers = re.findall(r"(?<!\d)(\d{2,4}[а-яa-z]?)(?!\d)", low)
+    return (corpus.group(1) if corpus else "", numbers[-1] if numbers else re.sub(r"[^а-яa-z0-9]", "", low))
+
+
+def _same_room(left: str, right: str) -> bool:
+    lc, ln = _room_identity(left)
+    rc, rn = _room_identity(right)
+    return bool(ln and ln == rn and (not lc or not rc or lc == rc))
+
+
 def _room_floor(room: str) -> str:
     # Для типичных трёхзначных аудиторий первая цифра обозначает этаж.
     numbers = re.findall(r"(?<!\d)(\d{3})(?!\d)", room)
@@ -176,8 +189,12 @@ def _room_floor(room: str) -> str:
 
 async def free_rooms_screen(ctx: Ctx) -> Screen:
     rooms, occupied = await ctx.repo.teacher_free_room_data(tu.iso(ctx.today), ctx.now.hour * 60 + ctx.now.minute)
-    free = sorted((r for r in rooms if r not in occupied),
-                  key=lambda r: (int(re.search(r"\d+", r).group()) if re.search(r"\d+", r) else 10**9, r.casefold()))
+    ordered = sorted(rooms, key=lambda r: (int(re.search(r"\d+", r).group()) if re.search(r"\d+", r) else 10**9, r.casefold()))
+    unique: list[str] = []
+    for room in ordered:
+        if not any(_same_room(room, seen) for seen in unique):
+            unique.append(room)
+    free = [room for room in unique if not any(_same_room(room, busy) for busy in occupied)]
     if not rooms:
         body = "В расписании пока нет списка аудиторий, поэтому определить свободные кабинеты не удалось."
     elif not free:
@@ -299,7 +316,7 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
         candidates = candidates[:8]
         if len(candidates) == 1:
             t = candidates[0]
-            return Out(screen=Screen(f"Нашёл преподавателя: <b>{fm.esc(t['name'])}</b>\nЭто вы?",
+            return Out(screen=Screen(f"Нашёл преподавателя: <b>{fm.esc(t['name'])}</b>\nЭто вы?\n\n<i>Это саморегистрация по справочнику, не официальная проверка личности.</i>",
                                      [[Btn("✅ Да, это я", f"p:choose:{t['id']}")], [Btn("↩ Ввести другую фамилию", "p:register")]]),
                        state="p:confirm", state_data={"teacher_id": t["id"]})
         kb: Kb = [[Btn(t["name"][:40], f"p:choose:{t['id']}")] for t in candidates]
