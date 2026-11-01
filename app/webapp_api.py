@@ -108,16 +108,19 @@ async def _authorized_chat(app, uid: int, chat_id: int) -> tuple[dict, dict, dic
 
 
 def create_webapp(app) -> web.Application:
-    webapp = web.Application(client_max_size=16 * 1024)
-    root = __import__("pathlib").Path(__file__).resolve().parent / "web"
+    from pathlib import Path
 
-    @webapp.middleware
+    root = Path(__file__).resolve().parent / "web"
+
+    @web.middleware
     async def no_cache(request, handler):
         response = await handler(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         return response
+
+    webapp = web.Application(client_max_size=16 * 1024, middlewares=[no_cache])
 
     async def index(request):
         return web.FileResponse(root / "index.html")
