@@ -16,7 +16,7 @@ from typing import Any
 from aiogram import BaseMiddleware, Bot, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import (BufferedInputFile, CallbackQuery, ChatMemberUpdated, InlineKeyboardButton,
-                           InlineKeyboardMarkup, Message, ReplyParameters, InlineQuery, InlineQueryResultArticle, InputTextMessageContent)
+                           InlineKeyboardMarkup, Message, ReplyParameters, InlineQuery, InlineQueryResultArticle, InputTextMessageContent, WebAppInfo)
 
 from app.bot import logic_chat, router as logic_router, runtime
 from app.bot.core import Btn, Ctx, Kb, Out, Screen
@@ -64,7 +64,9 @@ def to_markup(kb: Kb | None) -> InlineKeyboardMarkup | None:
     for row in _mobile_rows(kb):
         btns = []
         for b in row:
-            if b.url:
+            if b.web_app and b.url:
+                btns.append(InlineKeyboardButton(text=b.text, web_app=WebAppInfo(url=b.url)))
+            elif b.url:
                 btns.append(InlineKeyboardButton(text=b.text, url=b.url))
             else:
                 data = b.data or "noop"
