@@ -144,6 +144,8 @@ def now_status(lessons_today: list[dict], now: datetime) -> tuple[dict | None, d
     cur = nxt = None
     m = now.hour * 60 + now.minute
     for l in lessons_today:
+        if l.get("cancelled"):
+            continue
         s, e = tu.hhmm_to_min(l["start_t"]), tu.hhmm_to_min(l["end_t"])
         if s is None or e is None:
             continue
