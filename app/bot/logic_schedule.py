@@ -205,6 +205,7 @@ async def next_lesson_text(ctx: Ctx, gid: int, subgroup: int | None) -> str:
         lines.append(f"⏭ <b>Дальше</b> (через {tu.fmt_duration(max(left, 1))})\n{fm.short_lesson(nxt)}")
     if not nxt:
         future = await ctx.repo.next_lessons(gid, tu.iso(ctx.today + timedelta(days=1)), 21, subgroup)
+        future = [l for l in future if not l.get("cancelled")]
         if future:
             l = future[0]
             d = tu.parse_iso(l["day"])
@@ -303,7 +304,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
     if name == "when_subject":
         subj = intent.subject
         rows = await repo.next_lessons(gid, tu.iso(ctx.today), 60, subgroup)
-        rows = [l for l in rows if l["subject"] == subj and (l["day"] > tu.iso(ctx.today) or
+        rows = [l for l in rows if l["subject"] == subj and not l.get("cancelled") and (l["day"] > tu.iso(ctx.today) or
                 (tu.hhmm_to_min(l["end_t"]) or 0) > ctx.now.hour * 60 + ctx.now.minute)]
         if not rows:
             return Screen(f"«{fm.esc(subj)}» в ближайшие 2 месяца в расписании не нашёл.")
