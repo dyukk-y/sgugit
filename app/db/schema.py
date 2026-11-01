@@ -11,11 +11,11 @@ TABLES = [
     "meta", "settings", "groups", "users", "lessons", "teachers", "ratings", "homework",
     "hw_done", "head_requests", "chats", "audit", "notif_log", "stopwords", "aliases", "snapshots",
     "staff", "units", "pending_questions", "support_messages", "support_tickets", "scheduled_deletions",
-    "pinned_messages",
+    "pinned_messages", "group_schedule_changes",
 ]
 # таблицы с автоинкрементным id (нужны для сброса последовательностей в PostgreSQL)
 SERIAL_TABLES = ["groups", "lessons", "teachers", "homework", "head_requests", "audit", "snapshots", "staff", "units",
-                 "pending_questions", "support_messages", "support_tickets", "scheduled_deletions", "pinned_messages"]
+                 "pending_questions", "support_messages", "support_tickets", "scheduled_deletions", "pinned_messages", "group_schedule_changes"]
 
 _V1 = [
     "CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)",
