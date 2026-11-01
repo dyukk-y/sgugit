@@ -231,10 +231,16 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         return Out(screen=Screen("Напишите фамилию преподавателя так, как она указана в расписании вуза.",
                                  [nav("m:home")]), state="p:surname", state_data={})
     if act == "choose" and len(parts) > 1 and parts[1].isdigit():
-        state, _ = await ctx.repo.get_state(ctx.uid)
-        if state not in ("p:surname", "p:confirm"):
-            return Out(toast="Сначала начните регистрацию преподавателя", alert=True)
-        teacher = await ctx.repo.get_teacher(int(parts[1]))
+        state, data = await ctx.repo.get_state(ctx.uid)
+        teacher_id = int(parts[1])
+        allowed = state == "p:surname" or (
+            state == "p:confirm" and (
+                data.get("teacher_id") == teacher_id or teacher_id in data.get("candidate_ids", [])
+            )
+        )
+        if not allowed:
+            return Out(toast="Этот вариант устарел. Начните поиск заново.", alert=True)
+        teacher = await ctx.repo.get_teacher(teacher_id)
         if not teacher or teacher["hidden"]:
             return Out(toast="Преподаватель не найден в справочнике расписания", alert=True)
         if not await ctx.repo.set_teacher_account(ctx.uid, teacher["id"]):
