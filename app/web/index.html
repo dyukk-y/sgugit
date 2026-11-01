@@ -105,6 +105,60 @@ body:before,body:after{display:none!important}
 .campus-caption strong{color:#17658b}
 @media(prefers-reduced-motion:reduce){.cad-stroke,.cad-lines,.model-lines,.geo-surveyor,.scan-ray,.scan-dot{animation:none!important}.cad-lines{opacity:0}.model-lines,.geo-surveyor{opacity:1}}
 
+
+/* Точная фирменная система СГУГиТ: фиолетовый основной, остальные цвета — акценты */
+:root{color-scheme:light;--bg:#fff;--panel:#fff;--panel2:#f5f5f5;--line:#e3e1e5;--text:#4b4b4b;--muted:#777;--lime:#95c11f;--cyan:#009fe3;--orange:#e94e1b;--violet:#662483}
+html,body{background:#fff!important;color:#4b4b4b!important;font-family:Arial,Raleway,sans-serif!important}
+body{background:#fff!important;padding-bottom:calc(86px + var(--safe))}
+body:before,body:after{display:none!important}
+.app{background:#fff!important;max-width:760px}
+.top{justify-content:center!important;margin-bottom:18px}
+.center-brand span{color:#662483!important;font-family:Arial,Raleway,sans-serif!important;font-size:21px!important;letter-spacing:.06em!important}
+.center-brand small{color:#777!important;letter-spacing:.17em!important}
+.top:after{content:"";position:absolute;top:0;left:0;right:0;height:5px;background:linear-gradient(90deg,#95c11f 0 25%,#009fe3 25% 50%,#e94e1b 50% 75%,#662483 75% 100%)}
+.hero{background:#662483!important;border:0!important;border-radius:5px!important;box-shadow:none!important;backdrop-filter:none!important}
+.hero:before,.hero:after{display:none!important}
+.hero .eyebrow{color:#d7e9a9!important}
+.hero h1{color:#fff!important;font-family:Arial,Raleway,sans-serif!important;font-weight:700!important;letter-spacing:0!important}
+.hero p{color:#f0e9f3!important}
+.select{background:#fff!important;color:#4b4b4b!important;border:1px solid #d8d2dc!important;border-radius:4px!important}
+.mini-label{color:#eee!important}
+.stats{gap:10px}
+.stat{background:#fff!important;border:1px solid #e5e2e7!important;border-radius:4px!important;box-shadow:none!important}
+.stat-icon{color:#662483!important}
+.stat-value{color:#4b4b4b!important}
+.stat-label{color:#777!important}
+.tabs{background:#f3f1f4!important;border:1px solid #e5e2e7!important;border-radius:4px!important;backdrop-filter:none!important}
+.tab{color:#666!important;border-radius:3px!important}
+.tab.active{background:#662483!important;color:#fff!important;box-shadow:none!important}
+.card{background:#fff!important;border:1px solid #e5e2e7!important;border-radius:4px!important;box-shadow:none!important}
+.section-head h2,.setting-title{color:#4b4b4b!important}
+.section-head small,.setting-sub{color:#777!important}
+.setting{border-bottom-color:#ece9ed!important}
+.switch{background:#c9c6cb!important;border-radius:20px!important}
+.switch:before{background:#fff!important}
+.switch.on{background:#95c11f!important}
+.control{background:#fff!important;border:1px solid #d8d2dc!important;border-radius:4px!important;color:#4b4b4b!important}
+.notice{background:#f5f9eb!important;border:1px solid #dce9bf!important;border-radius:4px!important;color:#555!important}
+.notice b{color:#638b12!important}
+.btn{background:#662483!important;color:#fff!important;border-radius:4px!important;box-shadow:none!important;font-weight:700!important}
+.btn:hover{background:#512069!important}
+.btn.secondary{background:#fff!important;color:#662483!important;border:1px solid #662483!important;border-radius:4px!important;box-shadow:none!important}
+.ico{background:#f0e8f4!important;color:#662483!important;border-radius:4px!important}
+.ok{background:#eff6df!important;color:#638b12!important}
+.bad{background:#fff0eb!important;color:#d84b24!important}
+.footer{color:#777!important}
+.toast{background:#662483!important;color:#fff!important}
+.empty h2{color:#662483!important}
+.empty p{color:#777!important}
+.campus-intro{border:1px solid #e3e1e5!important;border-radius:4px!important;box-shadow:none!important;background:#fafafa!important}
+.campus-intro:before{background-image:linear-gradient(#6624830b 1px,transparent 1px),linear-gradient(90deg,#6624830b 1px,transparent 1px)!important}
+.campus-topline{color:#4b4b4b!important}
+.campus-topline b{color:#662483!important}
+.campus-caption{color:#777!important}
+.campus-caption strong{color:#662483!important}
+@media(min-width:600px){.tabs{position:static}}
+
 </style></head><body><main class="app">
 <header class="top"><div class="center-brand"><span>СГУГиТ</span><small>УНИВЕРСИТЕТСКОЕ ПРОСТРАНСТВО</small></div></header>
 <div id="content"><section class="hero"><div class="eyebrow">ПРОСТРАНСТВО ВАШЕЙ ГРУППЫ</div><h1>СГУГиТ<br>Расписание</h1><p>Всё учебное пространство группы — в одном месте.</p><div class="loading"></div></section></div><div class="footer">СГУГиТ · УМНОЕ РАСПИСАНИЕ</div></main><div class="toast" id="toast"></div>
