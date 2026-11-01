@@ -52,12 +52,15 @@ async def _bot_permissions(app, chat_id: int) -> dict:
         member = await app.bot.get_chat_member(chat_id, app.bot.id)
         status = getattr(member.status, "value", member.status)
         admin = status in ("creator", "administrator")
+        can_send = status not in ("left", "kicked")
+        if status == "restricted":
+            can_send = bool(getattr(member, "is_member", False) and getattr(member, "can_send_messages", False))
         return {
             "status": status,
             "can_pin_messages": status == "creator" or (admin and bool(getattr(member, "can_pin_messages", False))),
             "can_delete_messages": status == "creator" or (admin and bool(getattr(member, "can_delete_messages", False))),
             "can_manage_chat": status == "creator" or (admin and bool(getattr(member, "can_manage_chat", False))),
-            "can_send_messages": status not in ("left", "kicked"),
+            "can_send_messages": can_send,
         }
     except TelegramAPIError as exc:
         log.info("Cannot inspect bot permissions in %s: %s", chat_id, exc)
