@@ -34,6 +34,8 @@
 | `SYNC_INTERVAL_MIN` | `30` |
 | `LOG_LEVEL` | `INFO` |
 | `BACKUP_DIR` | `data/backups` |
+| `WEBAPP_URL` | Пусто до подключения HTTPS-домена; после настройки — полный HTTPS-адрес Mini App |
+| `WEBAPP_PORT` | `3000` (или порт, выбранный в панели Bothost) |
 
 Остальные параметры уже имеют значения по умолчанию; при необходимости смотрите `.env.example`.
 
