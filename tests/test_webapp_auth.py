@@ -4,7 +4,7 @@ import json
 import unittest
 from urllib.parse import urlencode
 
-from app.webapp_api import validate_init_data
+from app.webapp_api import create_webapp, validate_init_data
 
 
 class MiniAppAuthTests(unittest.TestCase):
@@ -30,6 +30,13 @@ class MiniAppAuthTests(unittest.TestCase):
     def test_rejects_expired_auth_date(self):
         with self.assertRaises(ValueError):
             validate_init_data(self._signed(auth_date=1_700_000_000), "123:secret", now=1_800_000_100)
+
+    def test_aiohttp_application_registers_miniapp_routes(self):
+        app = create_webapp(None)
+        paths = {route.resource.canonical for route in app.router.routes()}
+        self.assertIn("/", paths)
+        self.assertIn("/api/bootstrap", paths)
+        self.assertIn("/api/settings", paths)
 
 
 if __name__ == "__main__":
