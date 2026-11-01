@@ -10,18 +10,20 @@ import re
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any
 
 from aiogram import BaseMiddleware, Bot, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import (BufferedInputFile, CallbackQuery, ChatMemberUpdated, InlineKeyboardButton,
-                           InlineKeyboardMarkup, Message, ReplyParameters, InlineQuery, InlineQueryResultArticle, InputTextMessageContent)
+                           InlineKeyboardMarkup, Message, ReplyParameters, InlineQuery, InlineQueryResultArticle, InputTextMessageContent, WebAppInfo)
 
 from app.bot import logic_chat, router as logic_router, runtime
 from app.bot.core import Btn, Ctx, Kb, Out, Screen
 from app.config import Settings
 from app.db.repo import Repo
 from app.services import format as fm
+from app.services.group_schedule_changes import parse_group_change
 
 log = logging.getLogger(__name__)
 MAX_TEXT = 4096
@@ -62,7 +64,9 @@ def to_markup(kb: Kb | None) -> InlineKeyboardMarkup | None:
     for row in _mobile_rows(kb):
         btns = []
         for b in row:
-            if b.url:
+            if b.web_app and b.url:
+                btns.append(InlineKeyboardButton(text=b.text, web_app=WebAppInfo(url=b.url)))
+            elif b.url:
                 btns.append(InlineKeyboardButton(text=b.text, url=b.url))
             else:
                 data = b.data or "noop"
@@ -519,6 +523,17 @@ def build_router(app: App) -> Router:
         if message.from_user is None or not _claim_private_message(app, message):
             return
         name, args = _cmd_parts(message.text or "")
+        if name == "start" and args.startswith("manage_"):
+            try:
+                chat_id = int(args[len("manage_"):])
+            except ValueError:
+                chat_id = 0
+            out = await run_process(app, message.from_user, command="start")
+            await render(app, message.chat.id, out)
+            await deliver_side_effects(app, message.chat.id, out)
+            await _open_group_panel(app, message, chat_id)
+            await safe_delete(message)
+            return
         out = await run_process(app, message.from_user, command=name, args=args)
         if out.screen is None and not out.file and not out.notify and not out.notify_timed and not out.toast:
             # неизвестная или скрытая команда (например, /admin у обычного студента): как обычный текст
@@ -570,6 +585,44 @@ def build_router(app: App) -> Router:
         await safe_delete(message)  # стикеры, фото и прочее: держим чат чистым
 
     # ---------------- кнопки ----------------
+    @r.callback_query(F.data.startswith("gsc:"))
+    async def group_schedule_change_cb(cb: CallbackQuery) -> None:
+        msg = cb.message
+        if cb.data is None or not isinstance(msg, Message) or msg.chat.type not in ("group", "supergroup"):
+            await _safe_answer(cb)
+            return
+        parts = cb.data.split(":")
+        if len(parts) != 3 or parts[1] not in ("ok", "no") or not parts[2].isdigit():
+            await _safe_answer(cb)
+            return
+        change_id = int(parts[2])
+        change = await app.repo.get_group_schedule_change(change_id)
+        if not change or change["chat_id"] != msg.chat.id:
+            await _safe_answer(cb, "Изменение не найдено или уже обработано", True)
+            return
+        if int(change["author_id"]) != cb.from_user.id:
+            await _safe_answer(cb, "Подтвердить изменение может только его автор", True)
+            return
+        approved = parts[1] == "ok"
+        changed = await app.repo.decide_group_schedule_change(change_id, cb.from_user.id, approved)
+        if not changed:
+            await _safe_answer(cb, "Это предложение уже обработано", True)
+            return
+        if approved:
+            action_text = "отменено" if change["action"] == "cancel" else ("перенесено" if change["action"] == "move" else "добавлено")
+            text = (f"✅ Изменение подтверждено: занятие «{fm.esc(change['subject'])}» "
+                    f"{tu.fmt_date(tu.parse_iso(change['day']))}, пара №{change['lesson_num']} — {action_text}.\n"
+                    f"<i>По информации от {fm.esc(change['author_label'])}.</i> "
+                    "Оно учтено в расписании группы.")
+        else:
+            text = "Изменение отклонено. Расписание не менялось."
+        try:
+            await msg.edit_text(text, reply_markup=None)
+        except TelegramAPIError:
+            await _reply_group(app, msg, text, await app.repo.get_chat(msg.chat.id))
+        await _safe_answer(cb, "Готово")
+
+
     @r.callback_query(F.data.startswith("cs:"))
     async def chat_settings_cb(cb: CallbackQuery) -> None:
         try:
@@ -622,10 +675,10 @@ def build_router(app: App) -> Router:
                         "• Поиск преподавателя и подсказки по расписанию.\n\n"
                         "💬 Ответьте на сообщение бота или упомяните его и задайте вопрос обычными словами: "
                         "«какие завтра пары?», «что у нас на неделе?», «какая следующая пара?».\n\n"
-                        "⚙️ Настройки и привязка группы доступны в личном боте. "
+                        "⚙️ Для управления чатом нажмите единственную кнопку под этим сообщением — откроется личный бот, а в нём панель настроек. "
                         "Команды /today, /tomorrow, /week, /next и /hw оставлены как запасной способ.\n\n"
-                        "📌 Вечером бот присылает расписание на завтра и закрепляет его до начала первой пары — для этого дайте боту "
-                        "право «Закреплять сообщения» (сделайте администратором). Включить сводку: /settings.\n\n"
+                        "🔧 В панели можно включить вечернюю сводку, закреп и автоматическую очистку вопросов. "
+                        "Для закрепа нужно право «Закреплять сообщения», а для удаления команд участников — «Удалять сообщения».\n\n"
                         "ℹ️ В стандартном режиме Telegram бот видит команды, упоминания и ответы на его сообщения. "
                         "Чтобы понимать любые сообщения чата, отключите Group Privacy в @BotFather или выдайте боту права администратора.")
             else:
@@ -638,9 +691,7 @@ def build_router(app: App) -> Router:
                         "Команды /settings, /today, /tomorrow, /week, /next и /hw остаются запасным вариантом.")
             try:
                 welcome_kb = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="⚙️ Настройки чата", callback_data=f"cs:{event.chat.id}:open")],
-                    [InlineKeyboardButton(text="🤖 Открыть личный бот", url=f"https://t.me/{app.username}?start=from_group")],
-                    [InlineKeyboardButton(text="➕ Добавить в другой чат", url=f"https://t.me/{app.username}?startgroup=true")],
+                    [InlineKeyboardButton(text="✦ Открыть настройки", url=f"https://t.me/{app.username}?start=manage_{event.chat.id}")],
                 ])
                 await app.bot.send_message(event.chat.id, text, reply_markup=welcome_kb)
             except TelegramAPIError:
@@ -701,7 +752,17 @@ def build_router(app: App) -> Router:
         ctx = Ctx(app.repo, app.cfg, {"id": message.from_user.id, "group_id": None, "subgroup": None, "role": "student"})
         scr = await logic_router.group_command(ctx, chat["group_id"], name)
         if scr:
-            await _reply_group(app, message, scr.text, chat)
+            cleanup_day = (tu.today() + timedelta(days=1)) if name == "tomorrow" else (tu.today() if name == "today" else None)
+            scheduled = False
+            if cleanup_day and chat.get("cleanup_on", 0):
+                delete_at = await _group_cleanup_timestamp(app, chat["group_id"], cleanup_day)
+                if delete_at:
+                    sent = await _reply_group(app, message, scr.text, chat, auto_delete=False)
+                    if sent:
+                        await _schedule_group_cleanup(app, message.chat.id, message.message_id, sent.message_id, delete_at)
+                        scheduled = True
+            if not scheduled:
+                await _reply_group(app, message, scr.text, chat)
 
     @r.message(group, F.text)
     async def group_text(message: Message) -> None:
@@ -732,6 +793,40 @@ def build_router(app: App) -> Router:
         if len(text) > 300:
             return
         ctx = Ctx(app.repo, app.cfg, {"id": message.from_user.id, "group_id": None, "subgroup": None, "role": "student"})
+        draft = clarification = None
+        if "?" not in text and re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*|будет|добав\w*|постав\w*|перенес\w*|перенос|замен\w*|начнется|начинается)\b", text.lower()):
+            catalog = await app.repo.subject_catalog()
+            from_day = tu.iso(ctx.today - timedelta(days=30))
+            to_day = tu.iso(ctx.today + timedelta(days=90))
+            lessons = await app.repo.lessons_range(chat["group_id"], from_day, to_day)
+            draft, clarification = parse_group_change(text, ctx.today, catalog, lessons)
+        if clarification:
+            await _reply_group(app, message, clarification, chat)
+            return
+        if draft:
+            author_label = ("@" + message.from_user.username) if message.from_user.username else (message.from_user.full_name or str(message.from_user.id))
+            change_id = await app.repo.create_group_schedule_change(
+                gid=chat["group_id"], chat_id=message.chat.id, day=draft.day, num=draft.num,
+                action=draft.action, subject=draft.subject, start=draft.start, end=draft.end,
+                author_id=message.from_user.id, author_label=author_label, message_id=message.message_id)
+            verb = "отменить" if draft.action == "cancel" else ("перенести" if draft.action == "move" else "добавить")
+            preview = (f"Понял предложение: {verb} «{fm.esc(draft.subject)}» "
+                       f"{tu.fmt_date(tu.parse_iso(draft.day))}, пара №{draft.num} "
+                       f"({draft.start}–{draft.end}).\n"
+                       f"Источник: {fm.esc(author_label)}.\n\nПодтвердить изменение общего расписания группы?")
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"gsc:ok:{change_id}"),
+                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"gsc:no:{change_id}")
+            ]])
+            try:
+                sent = await message.reply(preview, reply_markup=kb)
+                minutes = (chat or {}).get("autodelete_min", 0)
+                if minutes:
+                    app.spawn(_delete_later(sent, minutes * 60))
+            except TelegramAPIError:
+                await app.repo.decide_group_schedule_change(change_id, message.from_user.id, False)
+            return
+        request_text = text
         scr = await logic_router.group_text(ctx, chat["group_id"], text, chat["smart_mode"], addressed)
         if scr is None:
             if active and not addressed:  # вопрос без обращения к боту: ждём, ответят ли люди
@@ -744,6 +839,17 @@ def build_router(app: App) -> Router:
         app.last_group_answer[key] = now
         if len(app.last_group_answer) > 5000:
             app.last_group_answer.clear()
+        cleanup_day = None
+        if chat.get("cleanup_on", 0) and re.search(r"\\bзавтра\\b", request_text.casefold()) and (
+                "расписание" in scr.text.casefold() or "📅" in scr.text):
+            cleanup_day = tu.today() + timedelta(days=1)
+        if cleanup_day:
+            delete_at = await _group_cleanup_timestamp(app, chat["group_id"], cleanup_day)
+            if delete_at:
+                sent = await _reply_group(app, message, scr.text, chat, auto_delete=False)
+                if sent:
+                    await _schedule_group_cleanup(app, message.chat.id, message.message_id, sent.message_id, delete_at)
+                    return
         await _reply_group(app, message, scr.text, chat)
 
     return r
@@ -756,7 +862,8 @@ async def _safe_answer(cb: CallbackQuery, text: str | None = None, alert: bool =
         pass
 
 
-async def _reply_group(app: App, message: Message, text: str, chat: dict | None) -> None:
+async def _reply_group(app: App, message: Message, text: str, chat: dict | None,
+                      auto_delete: bool = True) -> Message | None:
     try:
         sent = await message.reply(text[:MAX_TEXT])
     except TelegramBadRequest as e:
@@ -766,10 +873,34 @@ async def _reply_group(app: App, message: Message, text: str, chat: dict | None)
         sent = await message.reply(strip_tags(text)[:MAX_TEXT], parse_mode=None)
     except TelegramAPIError as e:
         log.warning("Ответ в группе не отправлен: %s", e)
-        return
+        return None
     minutes = (chat or {}).get("autodelete_min", 0)
-    if minutes:
-        app.spawn(_delete_later(sent, minutes * 60))
+    if auto_delete and minutes:
+        await app.repo.db.execute(
+            "INSERT INTO scheduled_deletions (chat_id, message_id, delete_at) VALUES (?, ?, ?)",
+            int(message.chat.id), int(sent.message_id), tu.now_ts() + max(60, int(minutes) * 60))
+    return sent
+
+
+async def _group_cleanup_timestamp(app: App, group_id: int, day) -> int | None:
+    lessons = await app.repo.lessons_day(group_id, tu.iso(day))
+    ends = [tu.hhmm_to_min(l["end_t"]) for l in lessons if not l.get("cancelled")]
+    ends = [minute for minute in ends if minute is not None]
+    if not ends:
+        return None
+    when = tu.local_to_utc(day, tu.min_to_hhmm(max(ends)))
+    timestamp = int(when.timestamp())
+    return timestamp if timestamp > tu.now_ts() else None
+
+
+async def _schedule_group_cleanup(app: App, chat_id: int, source_message_id: int,
+                                  answer_message_id: int, delete_at: int) -> None:
+    # Удаляем только исходный запрос и ответ бота. Сервисное уведомление Telegram
+    # о закреплении сообщения не регистрируется здесь и остаётся в истории чата.
+    for message_id in {int(source_message_id), int(answer_message_id)}:
+        await app.repo.db.execute(
+            "INSERT INTO scheduled_deletions (chat_id, message_id, delete_at) VALUES (?, ?, ?)",
+            int(chat_id), message_id, int(delete_at))
 
 
 async def _delete_later(message: Message, seconds: int) -> None:
@@ -805,13 +936,42 @@ async def _send_chat_settings(app: App, message: Message, chat: dict | None) -> 
     user = await app.repo.get_user(message.from_user.id)
     tg_admin = await _is_tg_admin(app, message.chat.id, message.from_user.id)
     if not logic_chat.can_manage(user, chat, app.cfg.superadmin_id, tg_admin):
-        await _reply_group(app, message, "Настройки доступны добавившему бота и администраторам чата.", chat)
+        await _reply_group(app, message, "Настройки доступны администраторам группы и пользователю, который добавил бота.", chat)
         return
-    scr = await logic_chat.screen(app.repo, chat)
-    try:
-        await message.answer(scr.text, reply_markup=to_markup(scr.kb))
-    except TelegramAPIError:
-        log.warning("Не удалось показать настройки чата")
+    if not app.cfg.webapp_url:
+        await _reply_group(app, message,
+                           "Панель управления ещё не опубликована. После подключения HTTPS-домена кнопка появится здесь.",
+                           chat)
+        return
+    link = f"https://t.me/{app.username}?start=manage_{message.chat.id}"
+    markup = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✦ Открыть панель управления", url=link)
+    ]])
+    await message.answer("✦ <b>Центр управления СГУГиТ</b>\nОткройте личный чат с ботом — там запустится панель настроек этой группы.",
+                         reply_markup=markup)
+
+
+async def _open_group_panel(app: App, message: Message, chat_id: int) -> None:
+    if message.from_user is None:
+        return
+    chat = await app.repo.get_chat(chat_id)
+    if not chat or not chat.get("active"):
+        await message.answer("Этот чат не найден в настройках бота.")
+        return
+    user = await app.repo.get_user(message.from_user.id)
+    tg_admin = await _is_tg_admin(app, chat_id, message.from_user.id)
+    if not logic_chat.can_manage(user, chat, app.cfg.superadmin_id, tg_admin):
+        await message.answer("Управлять ботом могут администраторы группы и пользователь, который добавил бота.")
+        return
+    if not app.cfg.webapp_url:
+        await message.answer("Панель управления ещё не опубликована. Администратору нужно добавить HTTPS-домен и указать WEBAPP_URL в настройках хостинга.")
+        return
+    url = f"{app.cfg.webapp_url}?chat_id={chat_id}"
+    markup = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Открыть панель управления", web_app=WebAppInfo(url=url))
+    ]])
+    await message.answer("✦ <b>Центр управления СГУГиТ</b>\nНастройки этого группового чата. Доступ проверяется через Telegram.",
+                         reply_markup=markup)
 
 
 async def _chat_settings_action(app: App, cb: CallbackQuery) -> None:

@@ -205,6 +205,7 @@ async def next_lesson_text(ctx: Ctx, gid: int, subgroup: int | None) -> str:
         lines.append(f"⏭ <b>Дальше</b> (через {tu.fmt_duration(max(left, 1))})\n{fm.short_lesson(nxt)}")
     if not nxt:
         future = await ctx.repo.next_lessons(gid, tu.iso(ctx.today + timedelta(days=1)), 21, subgroup)
+        future = [l for l in future if not l.get("cancelled")]
         if future:
             l = future[0]
             d = tu.parse_iso(l["day"])
@@ -236,7 +237,7 @@ async def _pick_day(ctx: Ctx, gid: int, intent: Intent, subgroup: int | None) ->
         return intent.day, await ctx.repo.lessons_day(gid, tu.iso(intent.day), subgroup), ""
     today_lessons = await ctx.repo.lessons_day(gid, tu.iso(ctx.today), subgroup)
     m = ctx.now.hour * 60 + ctx.now.minute
-    remaining = [l for l in today_lessons if (tu.hhmm_to_min(l["end_t"]) or 0) > m]
+    remaining = [l for l in today_lessons if not l.get("cancelled") and (tu.hhmm_to_min(l["end_t"]) or 0) > m]
     if remaining:
         return ctx.today, today_lessons, ""
     tomorrow = ctx.today + timedelta(days=1)
@@ -303,7 +304,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
     if name == "when_subject":
         subj = intent.subject
         rows = await repo.next_lessons(gid, tu.iso(ctx.today), 60, subgroup)
-        rows = [l for l in rows if l["subject"] == subj and (l["day"] > tu.iso(ctx.today) or
+        rows = [l for l in rows if l["subject"] == subj and not l.get("cancelled") and (l["day"] > tu.iso(ctx.today) or
                 (tu.hhmm_to_min(l["end_t"]) or 0) > ctx.now.hour * 60 + ctx.now.minute)]
         if not rows:
             return Screen(f"«{fm.esc(subj)}» в ближайшие 2 месяца в расписании не нашёл.")
@@ -317,7 +318,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
     when = fm.when_word(d, ctx.today)
     if name == "day":
         if intent.num:
-            hit = [l for l in lessons if l["num"] == intent.num]
+            hit = [l for l in lessons if l["num"] == intent.num and not l.get("cancelled")]
             if not hit:
                 return Screen(f"{prefix}{when.capitalize()}: пары №{intent.num} нет.", kb_for(d))
             return Screen(f"{prefix}{when.capitalize()}:\n{fm.lesson_block(hit[0])}", kb_for(d))
@@ -326,30 +327,35 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
     if not lessons:
         return Screen(f"{prefix}{when.capitalize()} занятий нет 🎉", kb_for(d))
     if name == "count":
-        first, last = lessons[0], lessons[-1]
-        return Screen(f"{prefix}{when.capitalize()} пар: <b>{len(lessons)}</b>, с {first['start_t']} до {last['end_t']}.",
+        active_lessons = [l for l in lessons if not l.get("cancelled")]
+        if not active_lessons:
+            return Screen(f"{prefix}{when.capitalize()} занятий нет: все пары отменены.", kb_for(d))
+        first, last = active_lessons[0], active_lessons[-1]
+        return Screen(f"{prefix}{when.capitalize()} пар: <b>{len(active_lessons)}</b>, с {first['start_t']} до {last['end_t']}.",
                       kb_for(d))
-    if name == "first":
-        l = lessons[0]
-        return Screen(f"{prefix}Первая пара {when}:\n{fm.lesson_block(l)}", kb_for(d))
-    if name == "last":
-        l = lessons[-1]
+    if name in ("first", "last"):
+        active_lessons = [l for l in lessons if not l.get("cancelled")]
+        if not active_lessons:
+            return Screen(f"{prefix}{when.capitalize()}: занятий нет, все пары отменены.", kb_for(d))
+        l = active_lessons[0] if name == "first" else active_lessons[-1]
+        if name == "first":
+            return Screen(f"{prefix}Первая пара {when}:\n{fm.lesson_block(l)}", kb_for(d))
         return Screen(f"{prefix}Последняя пара {when} заканчивается в <b>{l['end_t']}</b>:\n{fm.lesson_block(l)}",
                       kb_for(d))
     if name in ("room", "teacher"):
         hit: list[dict]
         if intent.num:
-            hit = [l for l in lessons if l["num"] == intent.num]
+            hit = [l for l in lessons if l["num"] == intent.num and not l.get("cancelled")]
         elif intent.subject:
-            hit = [l for l in lessons if l["subject"] == intent.subject]
+            hit = [l for l in lessons if l["subject"] == intent.subject and not l.get("cancelled")]
             if not hit:
                 rows = await repo.next_lessons(gid, tu.iso(ctx.today), 60, subgroup)
-                hit = [l for l in rows if l["subject"] == intent.subject][:1]
+                hit = [l for l in rows if l["subject"] == intent.subject and not l.get("cancelled")][:1]
                 if hit:
                     d = tu.parse_iso(hit[0]["day"])
                     when = fm.when_word(d, ctx.today)
         else:
-            hit = lessons[:1]
+            hit = [l for l in lessons if not l.get("cancelled")][:1]
         if not hit:
             return Screen(f"{prefix}Не нашёл такой пары {when}.", kb_for(d))
         l = hit[0]
@@ -389,10 +395,15 @@ async def _answer_subject_day(ctx: Ctx, intent: Intent, gid: int, subgroup: int 
     subj = intent.subject or ""
     d = intent.day or ctx.today
     lessons = [l for l in await repo.lessons_day(gid, tu.iso(d), subgroup) if l["subject"] == subj]
+    cancelled = [l for l in lessons if l.get("cancelled")]
+    lessons = [l for l in lessons if not l.get("cancelled")]
     if intent.day is None:
         m = ctx.now.hour * 60 + ctx.now.minute
         lessons = [l for l in lessons if (tu.hhmm_to_min(l["end_t"]) or 0) > m]
     when = fm.when_word(d, ctx.today)
+    if not lessons and cancelled:
+        author = fm.esc(cancelled[-1].get("change_author") or "студента")
+        return Screen(f"«{fm.esc(subj)}» {when} отменена. По информации от {author}.", kb_for(d))
     if lessons:
         out = []
         for l in lessons:
@@ -402,7 +413,7 @@ async def _answer_subject_day(ctx: Ctx, intent: Intent, gid: int, subgroup: int 
             out.append(f"<b>{fm.esc(subj)}</b>{kind}: пара состоится {when} в {l['start_t']}–{l['end_t']}{room}{teacher}.")
         return Screen("\n".join(out), kb_for(d))
     rows = await repo.next_lessons(gid, tu.iso(d + timedelta(days=1)), 60, subgroup)
-    nxt = [l for l in rows if l["subject"] == subj][:1]
+    nxt = [l for l in rows if l["subject"] == subj and not l.get("cancelled")][:1]
     text = f"{when.capitalize()} пары «{fm.esc(subj)}» в расписании нет."
     if nxt:
         nd = tu.parse_iso(nxt[0]["day"])

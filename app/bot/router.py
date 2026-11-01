@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from app import timeutil as tu
-from app.bot import logic_admin, logic_head, logic_hw, logic_schedule as ls, logic_teachers, logic_user
+from app.bot import logic_admin, logic_head, logic_hw, logic_schedule as ls, logic_teacher, logic_teachers, logic_user
 from app.bot.core import Btn, Ctx, Out, Screen, home_btn
 from app.services import format as fm
 from app.services.nlu import Intent, detect_intent, parse_hw_phrase
@@ -13,7 +13,7 @@ UNKNOWN_HINT = ("Не понял вопрос 🤔 Попробуйте, нап�
                 "«что задали?» — или пользуйтесь кнопками.")
 
 # состояния, в которых бот ждёт нажатия кнопки, а не текста
-BUTTON_STATES = {"hw:pick", "hw:confirm", "reg:fio_confirm", "ad:bc_confirm", "ad:restore_confirm", "hd:bc_confirm"}
+BUTTON_STATES = {"hw:pick", "hw:confirm", "reg:fio_confirm", "ad:bc_confirm", "ad:restore_confirm", "hd:bc_confirm", "p:confirm"}
 
 
 def _maintenance(ctx: Ctx) -> Out | None:
@@ -32,6 +32,8 @@ async def handle_callback(ctx: Ctx, data: str) -> Out:
     head, rest = parts[0], parts[1:]
     if head == "m":
         return Out(screen=await logic_user.main_menu(ctx), clear_state=True)
+    if head == "p":
+        return await logic_teacher.on_cb(ctx, rest)
     if head == "ad":
         return await logic_admin.on_cb(ctx, rest)
     if head == "r":
@@ -40,6 +42,8 @@ async def handle_callback(ctx: Ctx, data: str) -> Out:
         return await logic_user.on_cb_me(ctx, rest)
     if head == "hd":
         return Out(toast="Панель старост отключена", alert=True)
+    if ctx.role == "teacher" and head in ("s", "h", "t"):
+        return Out(screen=await logic_teacher.menu(ctx), clear_state=True)
     if head in ("s", "h", "t") and not ctx.registered:
         return await logic_user.start(ctx)
     if head == "s":
@@ -78,6 +82,8 @@ async def handle_text(ctx: Ctx, text: str) -> Out:
         prefix = state.split(":")[0]
         if prefix == "reg":
             return await logic_user.on_text_register(ctx, state, data, text)
+        if prefix == "p":
+            return await logic_teacher.on_text(ctx, state, data, text)
         if prefix == "me":
             return await logic_user.on_text_me(ctx, state, data, text)
         if prefix == "hw":
@@ -88,6 +94,8 @@ async def handle_text(ctx: Ctx, text: str) -> Out:
             return await logic_admin.on_text(ctx, state, data, text)
         if prefix == "hd":
             return await logic_head.on_text(ctx, state, data, text)
+    if ctx.role == "teacher":
+        return Out(screen=await logic_teacher.menu(ctx), clear_state=True)
     if not ctx.registered:
         return await logic_user.start(ctx)
     gid = ctx.user["group_id"]
@@ -177,6 +185,16 @@ async def handle_command(ctx: Ctx, name: str, args: str = "") -> Out | None:
         if not ctx.is_admin:
             return None
         return Out(screen=await logic_admin.menu_screen(ctx), clear_state=True)
+    if ctx.role == "teacher":
+        if name == "today":
+            return Out(screen=await logic_teacher.day_screen(ctx, "today"), clear_state=True)
+        if name == "tomorrow":
+            return Out(screen=await logic_teacher.day_screen(ctx, "tom"), clear_state=True)
+        if name == "week":
+            return Out(screen=await logic_teacher.week_screen(ctx, "cur"), clear_state=True)
+        if name == "help":
+            return await logic_teacher.on_cb(ctx, ["help"])
+        return Out(screen=await logic_teacher.menu(ctx), clear_state=True)
     if not ctx.registered:
         return await logic_user.start(ctx)
     if name == "today":

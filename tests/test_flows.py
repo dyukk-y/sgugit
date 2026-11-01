@@ -87,7 +87,7 @@ class T(unittest.TestCase):
             s = await Sim().setup()
             await s.repo.get_or_create_group("Э-22.1")
             out = await s.do(777, command="start")
-            self.assertTrue(any(b.url and "startgroup=true" in b.url for row in out.screen.kb for b in row))
+            self.assertTrue(any(b.url and "startgroup" in b.url and "admin=pin_messages+delete_messages" in b.url for row in out.screen.kb for b in row))
             out = await s.do(777, text="e221")  # латинская раскладка: E часто вводят вместо Э
             self.assertIn("r:g:", " ".join(datas(out)))
             gid = next(d for d in datas(out) if d.startswith("r:g:"))
@@ -96,8 +96,42 @@ class T(unittest.TestCase):
             out = await s.do(777, callback="r:ok")
             # В основном меню есть отдельная кнопка добавления в группу с корректной deep-link-ссылкой.
             urls = [b.url for row in out.screen.kb for b in row if b.url]
-            self.assertTrue(any(u and "startgroup=true" in u for u in urls))
-            self.assertTrue(any(u == "https://t.me/theyasha_bot" for u in urls))
+            self.assertTrue(any(u and "startgroup" in u and "admin=pin_messages+delete_messages" in u for u in urls))
+            self.assertTrue(any(u and u.startswith("https://t.me/theyasha_bot") for u in urls))
+            await s.db.close()
+        run(go())
+
+    def test_teacher_registration_schedule_and_switch(self):
+        async def go():
+            s = await Sim().setup()
+            out = await s.do(200, command="start")
+            self.assertIn("p:register", datas(out))
+            out = await s.do(200, text="ИС-11")
+            group_choice = next(d for d in datas(out) if d.startswith("r:g:"))
+            await s.do(200, callback=group_choice)
+            await s.do(200, text="Смирнова Анна Сергеевна")
+            out = await s.do(200, callback="r:ok")
+            self.assertIn("p:register", datas(out))
+            out = await s.do(200, callback="p:register")
+            self.assertIn("фамилию", texts(out).lower())
+            out = await s.do(200, text="Иванов")
+            choices = [d for d in datas(out) if d and d.startswith("p:choose:")]
+            self.assertEqual(len(choices), 1)
+            out = await s.do(200, callback=choices[0])
+            self.assertIn("Кабинет преподавателя", texts(out))
+            user = await s.repo.get_user(200)
+            self.assertEqual(user["role"], "teacher")
+            self.assertIsNotNone(user["group_id"])
+            self.assertEqual(user["fio"], "Смирнова Анна Сергеевна")
+            out = await s.do(200, callback="p:day:today")
+            self.assertIn("Математика", texts(out))
+            self.assertIn("Группа: ИС-11", texts(out))
+            out = await s.do(200, callback="p:student")
+            self.assertIn("Главное меню", texts(out))
+            user = await s.repo.get_user(200)
+            self.assertEqual(user["role"], "student")
+            self.assertIsNotNone(user["group_id"])
+            self.assertEqual(user["fio"], "Смирнова Анна Сергеевна")
             await s.db.close()
         run(go())
 

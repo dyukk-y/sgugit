@@ -43,7 +43,13 @@ def _lesson_compact_lines(l: dict) -> list[str]:
         details.append(f"📍 {esc(l['room'])}")
     if l.get("subgroup"):
         details.append(f"👥 подгруппа {esc(str(l['subgroup']))}")
+    if l.get("cancelled"):
+        head, subject = f"<s>{head}</s>", f"<s>{subject}</s>"
     lines = [head, subject, "  ·  ".join(details)]
+    if l.get("cancelled"):
+        lines.append(f"❌ <b>Занятие отменено</b> · по информации от {esc(l.get('change_author') or 'студента')}")
+    elif l.get("student_added"):
+        lines.append(f"➕ <b>Добавлено студентом</b> · по информации от {esc(l.get('change_author') or 'студента')}")
     return lines
 
 
@@ -138,6 +144,8 @@ def now_status(lessons_today: list[dict], now: datetime) -> tuple[dict | None, d
     cur = nxt = None
     m = now.hour * 60 + now.minute
     for l in lessons_today:
+        if l.get("cancelled"):
+            continue
         s, e = tu.hhmm_to_min(l["start_t"]), tu.hhmm_to_min(l["end_t"])
         if s is None or e is None:
             continue

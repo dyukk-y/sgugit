@@ -106,7 +106,8 @@ class Notifier:
                 continue
             text = "🌙 <b>Расписание на завтра</b>\n\n" + fm.day_text(tomorrow, lessons, _parity(self.repo, tomorrow))
             # Держим сводку закреплённой до окончания последней пары этого дня.
-            ends = [m for m in (tu.hhmm_to_min(l["end_t"]) for l in lessons) if m is not None]
+            ends = [m for m in (tu.hhmm_to_min(l["end_t"]) for l in lessons
+                          if not l.get("cancelled")) if m is not None]
             if self.pin is not None and c.get("pin_on", 1) and ends:
                 last_end = max(ends)
                 cleanup_at = int(tu.local_to_utc(tomorrow, tu.min_to_hhmm(last_end)).timestamp())
@@ -133,8 +134,8 @@ class Notifier:
                 await self.send(u["id"], Screen(text, kb))
                 sent += 1
             for c in await self.repo.chats_for_group(gid):
-                if not c.get("changes_on", 1):  # в настройках чата уведомления об изменениях отключены
-                    continue
+                if not c.get("notifications_on", 1) or not c.get("changes_on", 1):
+                    continue  # общий выключатель и отдельная настройка изменений
                 await self.send(c["chat_id"], Screen(text))
                 sent += 1
         return sent
