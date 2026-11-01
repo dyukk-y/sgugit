@@ -38,7 +38,7 @@ DEFAULT_SETTINGS = {
 USER_COLS = {"username", "tg_name", "group_id", "fio", "fio_status", "role", "admin_perms", "head_blocked", "banned",
              "bot_blocked", "subgroup", "n_enabled", "fio_submitted_at", "private_started", "n_evening", "n_evening_time", "n_before", "n_changes", "last_seen"}
 CHAT_COLS = {"title", "group_id", "smart_mode", "autodelete_min", "evening_on", "evening_time", "added_by", "active",
-             "wait_min", "changes_on", "pin_on"}
+             "wait_min", "changes_on", "pin_on", "notifications_on", "cleanup_on"}
 
 _LOOKALIKE = str.maketrans("abcehkmoptxyis", "авсенкмортхуис")
 
