@@ -395,10 +395,15 @@ async def _answer_subject_day(ctx: Ctx, intent: Intent, gid: int, subgroup: int 
     subj = intent.subject or ""
     d = intent.day or ctx.today
     lessons = [l for l in await repo.lessons_day(gid, tu.iso(d), subgroup) if l["subject"] == subj]
+    cancelled = [l for l in lessons if l.get("cancelled")]
+    lessons = [l for l in lessons if not l.get("cancelled")]
     if intent.day is None:
         m = ctx.now.hour * 60 + ctx.now.minute
         lessons = [l for l in lessons if (tu.hhmm_to_min(l["end_t"]) or 0) > m]
     when = fm.when_word(d, ctx.today)
+    if not lessons and cancelled:
+        author = fm.esc(cancelled[-1].get("change_author") or "студента")
+        return Screen(f"«{fm.esc(subj)}» {when} отменена. По информации от {author}.", kb_for(d))
     if lessons:
         out = []
         for l in lessons:
