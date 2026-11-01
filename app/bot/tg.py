@@ -748,7 +748,7 @@ def build_router(app: App) -> Router:
         if message.from_user is None or message.from_user.is_bot or not message.text:
             return
         chat = await app.repo.get_chat(message.chat.id)
-        if not chat or not chat.get("group_id"):
+        if not chat or not chat.get("group_id") or chat["smart_mode"] == "off":
             return
         mention = f"@{app.username.lower()}"
         text = message.text
@@ -804,8 +804,6 @@ def build_router(app: App) -> Router:
                     app.spawn(_delete_later(sent, minutes * 60))
             except TelegramAPIError:
                 await app.repo.decide_group_schedule_change(change_id, message.from_user.id, False)
-            return
-        if chat["smart_mode"] == "off":
             return
         scr = await logic_router.group_text(ctx, chat["group_id"], text, chat["smart_mode"], addressed)
         if scr is None:
