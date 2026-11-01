@@ -27,7 +27,7 @@ jobs:
           import re
           from pathlib import Path
           html = Path("app/web/index.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script>([\\s\\S]*?)</script>", html)
+          scripts = re.findall(r"<script>([\s\S]*?)</script>", html)
           if len(scripts) != 1:
               raise SystemExit("Expected exactly one inline Mini App script")
           Path("/tmp/miniapp.js").write_text(scripts[0], encoding="utf-8")
