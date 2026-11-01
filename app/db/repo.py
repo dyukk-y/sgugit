@@ -556,7 +556,7 @@ class Repo:
 
     async def teacher_free_room_data(self, day: str, minute: int) -> tuple[list[str], set[str]]:
         """Return known rooms and rooms occupied at the requested minute, honoring group cancellations."""
-        rows = await self.db.fetchall("SELECT DISTINCT room FROM lessons WHERE room <> '' ORDER BY room")
+        rows = await self.db.fetchall("SELECT DISTINCT room FROM lessons WHERE room <> '' AND day >= ? ORDER BY room", day)
         rooms = [str(r["room"]).strip() for r in rows if str(r["room"] or "").strip()]
         groups = await self.db.fetchall("SELECT DISTINCT group_id FROM lessons WHERE day = ?", day)
         occupied: set[str] = set()
