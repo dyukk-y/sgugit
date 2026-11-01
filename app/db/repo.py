@@ -334,13 +334,14 @@ class Repo:
             "SELECT * FROM group_schedule_changes WHERE group_id = ? AND day >= ? AND day <= ? AND status = 'applied' ORDER BY id",
             gid, d1, d2)
         for change in changes:
-            if change["action"] == "cancel":
+            if change["action"] in ("cancel", "move"):
                 for lesson in rows:
-                    if (lesson["day"] == change["day"] and int(lesson["num"]) == int(change["lesson_num"])
+                    if (lesson["day"] == change["day"]
+                            and (change["action"] == "move" or int(lesson["num"]) == int(change["lesson_num"]))
                             and lesson["subject"].casefold() == change["subject"].casefold()):
                         lesson["cancelled"] = True
                         lesson["change_author"] = change["author_label"]
-            elif change["action"] == "add":
+            if change["action"] in ("add", "move"):
                 exists = any(l["day"] == change["day"] and int(l["num"]) == int(change["lesson_num"])
                              and l["subject"].casefold() == change["subject"].casefold() for l in rows)
                 if not exists:
@@ -376,7 +377,7 @@ class Repo:
     async def create_group_schedule_change(self, *, gid: int, chat_id: int, day: str, num: int,
                                            action: str, subject: str, start: str = "", end: str = "",
                                            author_id: int, author_label: str, message_id: int) -> int:
-        if action not in ("cancel", "add") or not 1 <= int(num) <= 12:
+        if action not in ("cancel", "add", "move") or not 1 <= int(num) <= 12:
             raise ValueError("invalid group schedule change")
         return await self.db.insert(
             "INSERT INTO group_schedule_changes (group_id, chat_id, day, lesson_num, action, subject, start_t, end_t, "
