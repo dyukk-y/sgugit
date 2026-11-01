@@ -101,6 +101,30 @@ class T(unittest.TestCase):
             await s.db.close()
         run(go())
 
+    def test_teacher_registration_schedule_and_switch(self):
+        async def go():
+            s = await Sim().setup()
+            out = await s.do(200, command="start")
+            self.assertIn("p:register", datas(out))
+            out = await s.do(200, callback="p:register")
+            self.assertIn("фамилию", texts(out).lower())
+            out = await s.do(200, text="Иванов")
+            choices = [d for d in datas(out) if d and d.startswith("p:choose:")]
+            self.assertEqual(len(choices), 1)
+            out = await s.do(200, callback=choices[0])
+            self.assertIn("Кабинет преподавателя", texts(out))
+            user = await s.repo.get_user(200)
+            self.assertEqual(user["role"], "teacher")
+            out = await s.do(200, callback="p:day:today")
+            self.assertIn("Математика", texts(out))
+            self.assertIn("Группа: ИС-11", texts(out))
+            out = await s.do(200, callback="p:student")
+            self.assertIn("Привет", texts(out))
+            user = await s.repo.get_user(200)
+            self.assertEqual(user["role"], "student")
+            await s.db.close()
+        run(go())
+
     def test_nlu_answers(self):
         async def go():
             s = await Sim().setup(); await s.register(100)
