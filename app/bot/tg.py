@@ -523,6 +523,17 @@ def build_router(app: App) -> Router:
         if message.from_user is None or not _claim_private_message(app, message):
             return
         name, args = _cmd_parts(message.text or "")
+        if name == "start" and args.startswith("manage_"):
+            try:
+                chat_id = int(args[len("manage_"):])
+            except ValueError:
+                chat_id = 0
+            out = await run_process(app, message.from_user, command="start")
+            await render(app, message.chat.id, out)
+            await deliver_side_effects(app, message.chat.id, out)
+            await _open_group_panel(app, message, chat_id)
+            await safe_delete(message)
+            return
         out = await run_process(app, message.from_user, command=name, args=args)
         if out.screen is None and not out.file and not out.notify and not out.notify_timed and not out.toast:
             # неизвестная или скрытая команда (например, /admin у обычного студента): как обычный текст
@@ -680,9 +691,7 @@ def build_router(app: App) -> Router:
                         "Команды /settings, /today, /tomorrow, /week, /next и /hw остаются запасным вариантом.")
             try:
                 welcome_kb = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="⚙️ Настройки чата", callback_data=f"cs:{event.chat.id}:open")],
-                    [InlineKeyboardButton(text="🤖 Открыть личный бот", url=f"https://t.me/{app.username}?start=from_group")],
-                    [InlineKeyboardButton(text="➕ Добавить в другой чат", url=f"https://t.me/{app.username}?startgroup=true")],
+                    [InlineKeyboardButton(text="✦ Управление ботом", url=f"https://t.me/{app.username}?start=manage_{event.chat.id}")],
                 ])
                 await app.bot.send_message(event.chat.id, text, reply_markup=welcome_kb)
             except TelegramAPIError:
@@ -877,16 +886,30 @@ async def _send_chat_settings(app: App, message: Message, chat: dict | None) -> 
     if chat is None:
         chat = await app.repo.upsert_chat(message.chat.id, message.chat.title, None, None)
     chat = await _bind_adder_group_if_ready(app, chat, message.from_user.id)
-    user = await app.repo.get_user(message.from_user.id)
-    tg_admin = await _is_tg_admin(app, message.chat.id, message.from_user.id)
-    if not logic_chat.can_manage(user, chat, app.cfg.superadmin_id, tg_admin):
-        await _reply_group(app, message, "Настройки доступны добавившему бота и администраторам чата.", chat)
+    await _open_group_panel(app, message, int(message.chat.id))
+
+
+async def _open_group_panel(app: App, message: Message, chat_id: int) -> None:
+    if message.from_user is None:
         return
-    scr = await logic_chat.screen(app.repo, chat)
-    try:
-        await message.answer(scr.text, reply_markup=to_markup(scr.kb))
-    except TelegramAPIError:
-        log.warning("Не удалось показать настройки чата")
+    chat = await app.repo.get_chat(chat_id)
+    if not chat or not chat.get("active"):
+        await message.answer("Этот чат не найден в настройках бота.")
+        return
+    user = await app.repo.get_user(message.from_user.id)
+    tg_admin = await _is_tg_admin(app, chat_id, message.from_user.id)
+    if not logic_chat.can_manage(user, chat, app.cfg.superadmin_id, tg_admin):
+        await message.answer("Управлять ботом могут администраторы группы и пользователь, который добавил бота.")
+        return
+    if not app.cfg.webapp_url:
+        await message.answer("Панель управления ещё не опубликована. Администратору нужно добавить HTTPS-домен и указать WEBAPP_URL в настройках хостинга.")
+        return
+    url = f"{app.cfg.webapp_url}?chat_id={chat_id}"
+    markup = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Открыть панель управления", web_app=WebAppInfo(url=url))
+    ]])
+    await message.answer("✦ <b>Центр управления СГУГиТ</b>\nНастройки этого группового чата. Доступ проверяется через Telegram.",
+                         reply_markup=markup)
 
 
 async def _chat_settings_action(app: App, cb: CallbackQuery) -> None:
