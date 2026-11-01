@@ -34,7 +34,7 @@ async def main_menu(ctx: Ctx) -> Screen:
         [Btn("👥 Другая группа", "me:other")],
         [Btn("🔎 Найти преподавателя", "me:findt")],
         [Btn("⚙️ Ещё", "me:menu")],
-        [Btn("➕ В группу", url=f"https://t.me/{ctx.bot_username}?startgroup=true"),
+        [Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages"),
          Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
              url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")],
     ]
