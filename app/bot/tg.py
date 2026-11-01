@@ -752,7 +752,17 @@ def build_router(app: App) -> Router:
         ctx = Ctx(app.repo, app.cfg, {"id": message.from_user.id, "group_id": None, "subgroup": None, "role": "student"})
         scr = await logic_router.group_command(ctx, chat["group_id"], name)
         if scr:
-            await _reply_group(app, message, scr.text, chat)
+            cleanup_day = (tu.today() + timedelta(days=1)) if name == "tomorrow" else (tu.today() if name == "today" else None)
+            scheduled = False
+            if cleanup_day and chat.get("cleanup_on", 0):
+                delete_at = await _group_cleanup_timestamp(app, chat["group_id"], cleanup_day)
+                if delete_at:
+                    sent = await _reply_group(app, message, scr.text, chat, auto_delete=False)
+                    if sent:
+                        await _schedule_group_cleanup(app, message.chat.id, message.message_id, sent.message_id, delete_at)
+                        scheduled = True
+            if not scheduled:
+                await _reply_group(app, message, scr.text, chat)
 
     @r.message(group, F.text)
     async def group_text(message: Message) -> None:
@@ -816,6 +826,7 @@ def build_router(app: App) -> Router:
             except TelegramAPIError:
                 await app.repo.decide_group_schedule_change(change_id, message.from_user.id, False)
             return
+        request_text = text
         scr = await logic_router.group_text(ctx, chat["group_id"], text, chat["smart_mode"], addressed)
         if scr is None:
             if active and not addressed:  # вопрос без обращения к боту: ждём, ответят ли люди
@@ -828,6 +839,17 @@ def build_router(app: App) -> Router:
         app.last_group_answer[key] = now
         if len(app.last_group_answer) > 5000:
             app.last_group_answer.clear()
+        cleanup_day = None
+        if chat.get("cleanup_on", 0) and re.search(r"\\bзавтра\\b", request_text.casefold()) and (
+                "расписание" in scr.text.casefold() or "📅" in scr.text):
+            cleanup_day = tu.today() + timedelta(days=1)
+        if cleanup_day:
+            delete_at = await _group_cleanup_timestamp(app, chat["group_id"], cleanup_day)
+            if delete_at:
+                sent = await _reply_group(app, message, scr.text, chat, auto_delete=False)
+                if sent:
+                    await _schedule_group_cleanup(app, message.chat.id, message.message_id, sent.message_id, delete_at)
+                    return
         await _reply_group(app, message, scr.text, chat)
 
     return r
@@ -840,7 +862,8 @@ async def _safe_answer(cb: CallbackQuery, text: str | None = None, alert: bool =
         pass
 
 
-async def _reply_group(app: App, message: Message, text: str, chat: dict | None) -> None:
+async def _reply_group(app: App, message: Message, text: str, chat: dict | None,
+                      auto_delete: bool = True) -> Message | None:
     try:
         sent = await message.reply(text[:MAX_TEXT])
     except TelegramBadRequest as e:
@@ -850,10 +873,32 @@ async def _reply_group(app: App, message: Message, text: str, chat: dict | None)
         sent = await message.reply(strip_tags(text)[:MAX_TEXT], parse_mode=None)
     except TelegramAPIError as e:
         log.warning("Ответ в группе не отправлен: %s", e)
-        return
+        return None
     minutes = (chat or {}).get("autodelete_min", 0)
-    if minutes:
+    if auto_delete and minutes:
         app.spawn(_delete_later(sent, minutes * 60))
+    return sent
+
+
+async def _group_cleanup_timestamp(app: App, group_id: int, day) -> int | None:
+    lessons = await app.repo.lessons_day(group_id, tu.iso(day))
+    ends = [tu.hhmm_to_min(l["end_t"]) for l in lessons if not l.get("cancelled")]
+    ends = [minute for minute in ends if minute is not None]
+    if not ends:
+        return None
+    when = tu.local_to_utc(day, tu.min_to_hhmm(max(ends)))
+    timestamp = int(when.timestamp())
+    return timestamp if timestamp > tu.now_ts() else None
+
+
+async def _schedule_group_cleanup(app: App, chat_id: int, source_message_id: int,
+                                  answer_message_id: int, delete_at: int) -> None:
+    # Удаляем только исходный запрос и ответ бота. Сервисное уведомление Telegram
+    # о закреплении сообщения не регистрируется здесь и остаётся в истории чата.
+    for message_id in {int(source_message_id), int(answer_message_id)}:
+        await app.repo.db.execute(
+            "INSERT INTO scheduled_deletions (chat_id, message_id, delete_at) VALUES (?, ?, ?)",
+            int(chat_id), message_id, int(delete_at))
 
 
 async def _delete_later(message: Message, seconds: int) -> None:
