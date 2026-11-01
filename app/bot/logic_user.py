@@ -55,7 +55,8 @@ async def start(ctx: Ctx) -> Out:
     if ctx.registered and ctx.user.get("fio"):
         return Out(screen=await main_menu(ctx), clear_state=True)
     if ctx.registered:
-        return Out(screen=Screen("Напишите ваше ФИО полностью: <code>Фамилия Имя Отчество</code>"),
+        return Out(screen=Screen("Напишите ваше ФИО полностью: <code>Фамилия Имя Отчество</code>",
+                                 [[Btn("👨‍🏫 Я преподаватель", "p:register")]]),
                    state="reg:fio", state_data={})
     welcome = Screen(ctx.repo.setting("welcome_text") or WELCOME, [
         [Btn("👨‍🏫 Я преподаватель", "p:register")],
