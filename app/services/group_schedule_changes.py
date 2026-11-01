@@ -27,7 +27,7 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     """Return a safe draft or a short clarification. Never guesses between multiple lessons."""
     raw = (text or "").strip()
     low = raw.lower().replace("ё", "е")
-    if not raw or "?" in raw or re.search(r"\b(если бы|может быть|а вдруг|кто знает)\b", low):
+    if not raw or "?" in raw or re.search(r"\b(если бы|может быть|а вдруг|кто знает|будет ли|будут ли|есть ли|когда|какая|какой|сколько)\b", low):
         return None, None
 
     cancel = bool(re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*)\b", low))
