@@ -237,7 +237,7 @@ async def _pick_day(ctx: Ctx, gid: int, intent: Intent, subgroup: int | None) ->
         return intent.day, await ctx.repo.lessons_day(gid, tu.iso(intent.day), subgroup), ""
     today_lessons = await ctx.repo.lessons_day(gid, tu.iso(ctx.today), subgroup)
     m = ctx.now.hour * 60 + ctx.now.minute
-    remaining = [l for l in today_lessons if (tu.hhmm_to_min(l["end_t"]) or 0) > m]
+    remaining = [l for l in today_lessons if not l.get("cancelled") and (tu.hhmm_to_min(l["end_t"]) or 0) > m]
     if remaining:
         return ctx.today, today_lessons, ""
     tomorrow = ctx.today + timedelta(days=1)
@@ -350,7 +350,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
             hit = [l for l in lessons if l["subject"] == intent.subject and not l.get("cancelled")]
             if not hit:
                 rows = await repo.next_lessons(gid, tu.iso(ctx.today), 60, subgroup)
-                hit = [l for l in rows if l["subject"] == intent.subject][:1]
+                hit = [l for l in rows if l["subject"] == intent.subject and not l.get("cancelled")][:1]
                 if hit:
                     d = tu.parse_iso(hit[0]["day"])
                     when = fm.when_word(d, ctx.today)
