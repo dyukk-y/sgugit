@@ -41,6 +41,8 @@ async def main_menu(ctx: Ctx) -> Screen:
 
     if ctx.repo.flag("rating_enabled"):
         rows[3].append(Btn("⭐Оценить преподавателя", "t:l:m:0"))
+    if ctx.cfg.webapp_url:
+        rows.insert(4, [Btn("⚙️ Управление группой", url=ctx.cfg.webapp_url, web_app=True)])
     if not ctx.is_admin:
         rows.insert(4, [Btn("👨‍🏫 Я преподаватель", "p:register")])
 
