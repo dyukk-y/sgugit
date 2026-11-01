@@ -43,7 +43,13 @@ def _lesson_compact_lines(l: dict) -> list[str]:
         details.append(f"📍 {esc(l['room'])}")
     if l.get("subgroup"):
         details.append(f"👥 подгруппа {esc(str(l['subgroup']))}")
+    if l.get("cancelled"):
+        head, subject = f"<s>{head}</s>", f"<s>{subject}</s>"
     lines = [head, subject, "  ·  ".join(details)]
+    if l.get("cancelled"):
+        lines.append(f"❌ <b>Занятие отменено</b> · по информации от {esc(l.get('change_author') or 'студента')}")
+    elif l.get("student_added"):
+        lines.append(f"➕ <b>Добавлено студентом</b> · по информации от {esc(l.get('change_author') or 'студента')}")
     return lines
 
 
