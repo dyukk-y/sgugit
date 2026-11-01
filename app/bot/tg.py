@@ -10,6 +10,7 @@ import re
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any
 
 from aiogram import BaseMiddleware, Bot, F, Router
@@ -22,6 +23,7 @@ from app.bot.core import Btn, Ctx, Kb, Out, Screen
 from app.config import Settings
 from app.db.repo import Repo
 from app.services import format as fm
+from app.services.group_schedule_changes import parse_group_change
 
 log = logging.getLogger(__name__)
 MAX_TEXT = 4096
@@ -570,6 +572,44 @@ def build_router(app: App) -> Router:
         await safe_delete(message)  # стикеры, фото и прочее: держим чат чистым
 
     # ---------------- кнопки ----------------
+    @r.callback_query(F.data.startswith("gsc:"))
+    async def group_schedule_change_cb(cb: CallbackQuery) -> None:
+        msg = cb.message
+        if cb.data is None or not isinstance(msg, Message) or msg.chat.type not in ("group", "supergroup"):
+            await _safe_answer(cb)
+            return
+        parts = cb.data.split(":")
+        if len(parts) != 3 or parts[1] not in ("ok", "no") or not parts[2].isdigit():
+            await _safe_answer(cb)
+            return
+        change_id = int(parts[2])
+        change = await app.repo.get_group_schedule_change(change_id)
+        if not change or change["chat_id"] != msg.chat.id:
+            await _safe_answer(cb, "Изменение не найдено или уже обработано", True)
+            return
+        if int(change["author_id"]) != cb.from_user.id:
+            await _safe_answer(cb, "Подтвердить изменение может только его автор", True)
+            return
+        approved = parts[1] == "ok"
+        changed = await app.repo.decide_group_schedule_change(change_id, cb.from_user.id, approved)
+        if not changed:
+            await _safe_answer(cb, "Это предложение уже обработано", True)
+            return
+        if approved:
+            action_text = "отменено" if change["action"] == "cancel" else ("перенесено" if change["action"] == "move" else "добавлено")
+            text = (f"✅ Изменение подтверждено: занятие «{fm.esc(change['subject'])}» "
+                    f"{tu.fmt_date(tu.parse_iso(change['day']))}, пара №{change['lesson_num']} — {action_text}.\n"
+                    f"<i>По информации от {fm.esc(change['author_label'])}.</i> "
+                    "Оно учтено в расписании группы.")
+        else:
+            text = "Изменение отклонено. Расписание не менялось."
+        try:
+            await msg.edit_text(text, reply_markup=None)
+        except TelegramAPIError:
+            await _reply_group(app, msg, text, await app.repo.get_chat(msg.chat.id))
+        await _safe_answer(cb, "Готово")
+
+
     @r.callback_query(F.data.startswith("cs:"))
     async def chat_settings_cb(cb: CallbackQuery) -> None:
         try:
@@ -708,7 +748,7 @@ def build_router(app: App) -> Router:
         if message.from_user is None or message.from_user.is_bot or not message.text:
             return
         chat = await app.repo.get_chat(message.chat.id)
-        if not chat or not chat.get("group_id") or chat["smart_mode"] == "off":
+        if not chat or not chat.get("group_id"):
             return
         mention = f"@{app.username.lower()}"
         text = message.text
@@ -732,6 +772,39 @@ def build_router(app: App) -> Router:
         if len(text) > 300:
             return
         ctx = Ctx(app.repo, app.cfg, {"id": message.from_user.id, "group_id": None, "subgroup": None, "role": "student"})
+        catalog = await app.repo.subject_catalog()
+        from_day = tu.iso(ctx.today - timedelta(days=30))
+        to_day = tu.iso(ctx.today + timedelta(days=90))
+        lessons = await app.repo.lessons_range(chat["group_id"], from_day, to_day)
+        draft, clarification = parse_group_change(text, ctx.today, catalog, lessons)
+        if clarification:
+            await _reply_group(app, message, clarification, chat)
+            return
+        if draft:
+            author_label = ("@" + message.from_user.username) if message.from_user.username else (message.from_user.full_name or str(message.from_user.id))
+            change_id = await app.repo.create_group_schedule_change(
+                gid=chat["group_id"], chat_id=message.chat.id, day=draft.day, num=draft.num,
+                action=draft.action, subject=draft.subject, start=draft.start, end=draft.end,
+                author_id=message.from_user.id, author_label=author_label, message_id=message.message_id)
+            verb = "отменить" if draft.action == "cancel" else ("перенести" if draft.action == "move" else "добавить")
+            preview = (f"Понял предложение: {verb} «{fm.esc(draft.subject)}» "
+                       f"{tu.fmt_date(tu.parse_iso(draft.day))}, пара №{draft.num} "
+                       f"({draft.start}–{draft.end}).\n"
+                       f"Источник: {fm.esc(author_label)}.\n\nПодтвердить изменение общего расписания группы?")
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"gsc:ok:{change_id}"),
+                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"gsc:no:{change_id}")
+            ]])
+            try:
+                sent = await message.reply(preview, reply_markup=kb)
+                minutes = (chat or {}).get("autodelete_min", 0)
+                if minutes:
+                    app.spawn(_delete_later(sent, minutes * 60))
+            except TelegramAPIError:
+                await app.repo.decide_group_schedule_change(change_id, message.from_user.id, False)
+            return
+        if chat["smart_mode"] == "off":
+            return
         scr = await logic_router.group_text(ctx, chat["group_id"], text, chat["smart_mode"], addressed)
         if scr is None:
             if active and not addressed:  # вопрос без обращения к боту: ждём, ответят ли люди
