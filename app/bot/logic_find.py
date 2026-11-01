@@ -55,6 +55,7 @@ def _teacher_lesson_card(l: dict) -> list[str]:
 
 
 def _schedule_lines(ctx: Ctx, lessons: list[dict], day: date | None) -> list[str]:
+    lessons = [l for l in lessons if not l.get("cancelled")]
     m = ctx.now.hour * 60 + ctx.now.minute
     today_iso = tu.iso(ctx.today)
     if day is not None:
