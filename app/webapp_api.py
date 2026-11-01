@@ -147,7 +147,12 @@ def create_webapp(app) -> web.Application:
             return web.json_response({"user": {"id": uid, "name": user.get("first_name", "Пользователь")},
                                       "chats": [], "groups": []})
         requested = request.query.get("chat_id", "")
-        selected = next((x for x in available if str(x["chat"]["chat_id"]) == requested), available[0])
+        if requested:
+            selected = next((x for x in available if str(x["chat"]["chat_id"]) == requested), None)
+            if selected is None:
+                raise web.HTTPForbidden(text="У вас нет доступа к настройкам этого чата")
+        else:
+            selected = available[0]
         groups = await app.repo.all_groups()
         return web.json_response({
             "user": {"id": uid, "name": user.get("first_name", "Пользователь")},
@@ -187,7 +192,7 @@ def create_webapp(app) -> web.Application:
             raise web.HTTPBadRequest(text="Недопустимое время вечерней сводки")
         if "group_id" in updates:
             try:
-                gid = int(updates["group_id"]) if updates["group_id"] is not None else None
+                gid = int(updates["group_id"]) if updates["group_id"] not in (None, "") else None
             except (TypeError, ValueError) as exc:
                 raise web.HTTPBadRequest(text="Неверная учебная группа") from exc
             if gid is not None and not await app.repo.get_group(gid):
