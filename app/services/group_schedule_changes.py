@@ -81,5 +81,7 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     if subject_lessons and any(int(l["num"]) == num for l in subject_lessons):
         # Existing same subject and slot: no schedule change is needed.
         return None, f"«{subject}» уже стоит {tu.fmt_date(day)} {template['start_t']}–{template['end_t']}."
+    if len(subject_lessons) > 1:
+        return None, f"У «{subject}» {tu.fmt_date(day)} несколько пар. Чтобы не перенести не ту, уточните номер пары; расписание пока не менял."
     action = "move" if subject_lessons else "add"
     return ChangeDraft(action, day_iso, num, subject, template["start_t"], template["end_t"]), None
