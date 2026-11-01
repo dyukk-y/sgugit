@@ -29,7 +29,8 @@ from app.providers.site import fetch_all_groups
 from app.services.directory import DirectorySync
 from app.services.notifier import Notifier
 from app.services.questions import QuestionService
-from app.services.sync import SyncService\nfrom app.webapp_api import create_webapp
+from app.services.sync import SyncService
+from app.webapp_api import create_webapp
 
 log = logging.getLogger("app")
 
