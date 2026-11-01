@@ -113,7 +113,19 @@ _V11 = [
     "UPDATE users SET role = 'student' WHERE role = 'head'",
     "UPDATE head_requests SET status = 'disabled' WHERE status IN ('pending', 'approved')",
 ]
-MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11)]
+_V12 = [
+    """CREATE TABLE IF NOT EXISTS group_schedule_changes (
+        id {PK}, group_id BIGINT NOT NULL, chat_id BIGINT NOT NULL,
+        day TEXT NOT NULL, lesson_num INTEGER NOT NULL,
+        action TEXT NOT NULL, subject TEXT NOT NULL,
+        start_t TEXT NOT NULL DEFAULT '', end_t TEXT NOT NULL DEFAULT '',
+        author_id BIGINT NOT NULL, author_label TEXT NOT NULL,
+        source_message_id BIGINT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+        created_at BIGINT NOT NULL, decided_at BIGINT
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_gsc_group_day_status ON group_schedule_changes (group_id, day, status)",
+]
+MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12)]
 
 
 async def migrate(db: Database) -> int:
