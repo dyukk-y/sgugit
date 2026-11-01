@@ -221,6 +221,8 @@ async def next_screen(ctx: Ctx) -> Screen:
 async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
     act = parts[0] if parts else "menu"
     if act == "register":
+        if ctx.is_admin:
+            return Out(toast="Режим преподавателя пока доступен для обычных аккаунтов", alert=True)
         linked = await ctx.repo.teacher_account(ctx.uid)
         if linked:
             await ctx.repo.update_user(ctx.uid, role="teacher")
