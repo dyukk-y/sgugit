@@ -11,7 +11,7 @@ TABLES = [
     "meta", "settings", "groups", "users", "lessons", "teachers", "ratings", "homework",
     "hw_done", "head_requests", "chats", "audit", "notif_log", "stopwords", "aliases", "snapshots",
     "staff", "units", "pending_questions", "support_messages", "support_tickets", "scheduled_deletions",
-    "pinned_messages", "group_schedule_changes",
+    "pinned_messages", "group_schedule_changes", "teacher_accounts",
 ]
 # таблицы с автоинкрементным id (нужны для сброса последовательностей в PostgreSQL)
 SERIAL_TABLES = ["groups", "lessons", "teachers", "homework", "head_requests", "audit", "snapshots", "staff", "units",
@@ -125,7 +125,13 @@ _V12 = [
     )""",
     "CREATE INDEX IF NOT EXISTS ix_gsc_group_day_status ON group_schedule_changes (group_id, day, status)",
 ]
-MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12)]
+_V13 = [
+    """CREATE TABLE IF NOT EXISTS teacher_accounts (
+        user_id BIGINT PRIMARY KEY, teacher_id BIGINT NOT NULL, created_at BIGINT NOT NULL
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_teacher_accounts_teacher ON teacher_accounts (teacher_id)",
+]
+MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12), (13, _V13)]
 
 
 async def migrate(db: Database) -> int:
