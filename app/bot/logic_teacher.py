@@ -16,6 +16,19 @@ def _teacher_name(account: dict) -> tuple[str, str]:
     return name_parts(account["name"])
 
 
+def _bounded_text(lines: list[str], limit: int = 3800) -> str:
+    result: list[str] = []
+    used = 0
+    for line in lines:
+        extra = len(line) + (1 if result else 0)
+        if used + extra > limit:
+            result.append("… расписание сокращено, выберите конкретный день.")
+            break
+        result.append(line)
+        used += extra
+    return "\n".join(result)
+
+
 async def menu(ctx: Ctx) -> Screen:
     account = await ctx.repo.teacher_account(ctx.uid)
     if not account:
@@ -76,7 +89,7 @@ async def day_screen(ctx: Ctx, token: str = "today") -> Screen:
          Btn("Неделя", f"p:week:{tu.iso(tu.monday_of(day))}")],
         nav("p:menu"),
     ]
-    return Screen("\n".join(lines)[:3900], kb)
+    return Screen(_bounded_text(lines), kb)
 
 
 async def week_screen(ctx: Ctx, token: str = "cur") -> Screen:
@@ -127,7 +140,7 @@ async def week_screen(ctx: Ctx, token: str = "cur") -> Screen:
         [Btn("Сегодня", "p:day:today"), Btn("Календарь", f"p:cal:{monday.year}-{monday.month:02d}")],
         nav("p:menu"),
     ]
-    return Screen("\n".join(lines)[:3900], kb)
+    return Screen(_bounded_text(lines), kb)
 
 
 async def calendar_screen(ctx: Ctx, ym: str) -> Screen:
