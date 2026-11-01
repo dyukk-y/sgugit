@@ -17,7 +17,7 @@ from app.db.schema import SERIAL_TABLES, TABLES
 from app.models import LessonRec
 from app.services.fio import FioContext, fio_key, surname_keys
 from app.services.names import name_parts, same_person, surname_close  # noqa: F401
-from app.timeutil import iso, now_ts, today as local_today
+from app.timeutil import hhmm_to_min, iso, now_ts, today as local_today
 
 DEFAULT_SETTINGS = {
     "rating_enabled": "1",       # показывать раздел «Преподаватели»
