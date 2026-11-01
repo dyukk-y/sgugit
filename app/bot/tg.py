@@ -772,11 +772,13 @@ def build_router(app: App) -> Router:
         if len(text) > 300:
             return
         ctx = Ctx(app.repo, app.cfg, {"id": message.from_user.id, "group_id": None, "subgroup": None, "role": "student"})
-        catalog = await app.repo.subject_catalog()
-        from_day = tu.iso(ctx.today - timedelta(days=30))
-        to_day = tu.iso(ctx.today + timedelta(days=90))
-        lessons = await app.repo.lessons_range(chat["group_id"], from_day, to_day)
-        draft, clarification = parse_group_change(text, ctx.today, catalog, lessons)
+        draft = clarification = None
+        if "?" not in text and re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*|будет|добав\w*|постав\w*|перенес\w*|перенос|замен\w*|начнется|начинается)\b", text.lower()):
+            catalog = await app.repo.subject_catalog()
+            from_day = tu.iso(ctx.today - timedelta(days=30))
+            to_day = tu.iso(ctx.today + timedelta(days=90))
+            lessons = await app.repo.lessons_range(chat["group_id"], from_day, to_day)
+            draft, clarification = parse_group_change(text, ctx.today, catalog, lessons)
         if clarification:
             await _reply_group(app, message, clarification, chat)
             return
