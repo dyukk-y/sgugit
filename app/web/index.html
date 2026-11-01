@@ -51,6 +51,7 @@
     '<button class="btn secondary" data-tab="rights">Проверить права бота →</button>'+
   '</section>'+
   '<section class="view '+(tab==="chat"?"active":"")+'" data-view="chat">'+
+    '<div class="section-head"><h2>Привязка расписания</h2><span>Учебная группа</span></div><div class="card"><div class="setting"><div class="setting-info"><div class="setting-title">Группа чата</div><div class="setting-sub">По этой группе бот будет показывать расписание.</div></div><select class="control" data-setting="group_id"><option value="">Не выбрана</option>'+data.groups.map(g=>'<option value="'+g.id+'" '+(String(c.group_id)===String(g.id)?"selected":"")+'>'+esc(g.name)+'</option>').join("")+'</select></div></div>'+
     '<div class="section-head"><h2>Манера общения</h2><span>Поведение в чате</span></div><div class="card">'+
     '<div class="setting"><div class="setting-info"><div class="setting-title">Режим ответов</div><div class="setting-sub">Когда бот реагирует на сообщения.</div></div>'+selectControl("smart_mode",[["off","Выключен"],["mention","По упоминанию"],["keywords","По ключевым фразам"],["active","Если никто не ответил"]])+'</div>'+
     '<div class="setting"><div class="setting-info"><div class="setting-title">Ждать ответ людей</div><div class="setting-sub">Пауза перед ответом бота в активном режиме.</div></div>'+selectControl("wait_min",[[15,"15 минут"],[30,"30 минут"],[60,"1 час"],[120,"2 часа"]])+'</div>'+
