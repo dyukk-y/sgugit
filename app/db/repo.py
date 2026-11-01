@@ -534,6 +534,43 @@ class Repo:
             r["avg"] = float(r["avg"])
         return r
 
+    async def teacher_account(self, uid: int) -> dict | None:
+        return await self.db.fetchone(
+            "SELECT ta.user_id, ta.teacher_id, t.name, t.norm FROM teacher_accounts ta "
+            "JOIN teachers t ON t.id = ta.teacher_id WHERE ta.user_id = ? AND t.hidden = 0", uid)
+
+    async def set_teacher_account(self, uid: int, teacher_id: int) -> bool:
+        teacher = await self.db.fetchone("SELECT id FROM teachers WHERE id = ? AND hidden = 0", teacher_id)
+        if not teacher:
+            return False
+        async with self.db.tx() as tx:
+            await tx.execute(
+                "INSERT INTO teacher_accounts (user_id, teacher_id, created_at) VALUES (?, ?, ?) "
+                "ON CONFLICT (user_id) DO UPDATE SET teacher_id = excluded.teacher_id, created_at = excluded.created_at",
+                uid, teacher_id, now_ts())
+            await tx.execute("UPDATE users SET role = 'teacher' WHERE id = ?", uid)
+        return True
+
+    async def switch_teacher_to_student(self, uid: int) -> None:
+        await self.db.execute("UPDATE users SET role = 'student' WHERE id = ? AND role = 'teacher'", uid)
+
+    async def teacher_free_room_data(self, day: str, minute: int) -> tuple[list[str], set[str]]:
+        """Return known rooms and rooms occupied at the requested minute, honoring group cancellations."""
+        rows = await self.db.fetchall("SELECT DISTINCT room FROM lessons WHERE room <> '' ORDER BY room")
+        rooms = [str(r["room"]).strip() for r in rows if str(r["room"] or "").strip()]
+        groups = await self.db.fetchall("SELECT DISTINCT group_id FROM lessons WHERE day = ?", day)
+        occupied: set[str] = set()
+        for group_row in groups:
+            for lesson in await self.lessons_day(int(group_row["group_id"]), day):
+                if lesson.get("cancelled"):
+                    continue
+                start = hhmm_to_min(lesson.get("start_t", ""))
+                end = hhmm_to_min(lesson.get("end_t", ""))
+                room = str(lesson.get("room") or "").strip()
+                if room and start is not None and end is not None and start <= minute < end:
+                    occupied.add(room)
+        return rooms, occupied
+
     async def teacher_subjects(self, tnorm: str, limit: int = 6) -> list[str]:
         rows = await self.db.fetchall("SELECT DISTINCT subject, teacher FROM lessons WHERE teacher <> ''")
         subs = sorted({r["subject"] for r in rows if tnorm in {teacher_key(n) for n in split_teachers(r["teacher"])}})
@@ -828,12 +865,27 @@ class Repo:
             "SELECT COUNT(*) FROM audit WHERE actor = ? AND action = 'fio_changed' AND ts >= ?", uid, since) or 0)
 
     async def teacher_lessons(self, surname: str, initials: str, d1: str, d2: str) -> list[dict]:
-        """Занятия преподавателя у всех групп в диапазоне дат (с названием группы)."""
+        """Занятия преподавателя у всех групп с учётом отмен, предложенных в групповых чатах."""
         rows = await self.db.fetchall(
             "SELECT l.*, g.name AS gname FROM lessons l JOIN groups g ON g.id = l.group_id "
-            "WHERE l.day >= ? AND l.day <= ? AND l.teacher <> '' ORDER BY l.day, l.start_t", d1, d2)
+            "WHERE l.day >= ? AND l.day <= ? AND l.teacher <> '' ORDER BY l.day, l.start_t, l.num", d1, d2)
         want = (surname, initials)
-        return [r for r in rows if any(same_person(name_parts(n), want) for n in split_teachers(r["teacher"]))]
+        out = [r for r in rows if any(same_person(name_parts(n), want) for n in split_teachers(r["teacher"]))]
+        gids = sorted({int(r["group_id"]) for r in out})
+        if gids:
+            changes = await self.db.fetchall(
+                "SELECT group_id, day, lesson_num, action, subject, author_label FROM group_schedule_changes "
+                "WHERE group_id IN (" + ",".join("?" * len(gids)) + ") AND day >= ? AND day <= ? AND status = 'applied' "
+                "AND action IN ('cancel', 'move')", *gids, d1, d2)
+            for lesson in out:
+                for change in changes:
+                    if (int(lesson["group_id"]) == int(change["group_id"]) and lesson["day"] == change["day"]
+                            and lesson["subject"].casefold() == change["subject"].casefold()
+                            and (change["action"] == "move" or int(lesson["num"]) == int(change["lesson_num"]))):
+                        lesson["cancelled"] = True
+                        lesson["change_author"] = change["author_label"]
+                        break
+        return out
 
     # ================= вопросы, ожидающие ответа в чатах =================
     async def add_pending(self, chat_id: int, message_id: int, user_id: int, text: str, intent: str, due_at: int) -> int:
