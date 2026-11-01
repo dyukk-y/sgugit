@@ -328,7 +328,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
         return Screen(f"{prefix}{when.capitalize()} занятий нет 🎉", kb_for(d))
     if name == "count":
         first, last = lessons[0], lessons[-1]
-        return Screen(f"{prefix}{when.capitalize()} пар: <b>{len(lessons)}</b>, с {first['start_t']} до {last['end_t']}.",
+        active_lessons = [l for l in lessons if not l.get("cancelled")]\n        if not active_lessons:\n            return Screen(f"{prefix}{when.capitalize()} занятий нет: все пары отменены.", kb_for(d))\n        first, last = active_lessons[0], active_lessons[-1]\n        return Screen(f"{prefix}{when.capitalize()} пар: <b>{len(active_lessons)}</b>, с {first['start_t']} до {last['end_t']}.",
                       kb_for(d))
     if name == "first":
         l = lessons[0]
