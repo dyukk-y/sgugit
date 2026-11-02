@@ -10,6 +10,7 @@ from app.bot.core import Btn, Ctx, Kb, Out, Screen, b, daily_quota, home_btn, na
 from app.db.repo import canonical_group_name, norm_group
 from app.services import format as fm
 from app.services.fio import validate_fio
+from app.services.nlu import detect_intent
 
 _FIO_TRIES: dict[int, list] = {}   # uid -> [попытки, заблокирован_до]
 _FB_LAST: dict[int, float] = {}
@@ -26,20 +27,18 @@ async def main_menu(ctx: Ctx) -> Screen:
     if ctx.repo.flag("maintenance"):
         head += "\n⚠️ Идут технические работы."
 
+    bot_link = f"https://t.me/{ctx.bot_username}?start=invite_{ctx.uid}"
+    from urllib.parse import quote
+    share_link = "https://t.me/share/url?url=" + quote(bot_link, safe="") + "&text=" + quote(
+        "Попробуй бота расписания СГУГиТ — расписание, задания и уведомления в Telegram.", safe="")
     rows: Kb = [
         [Btn("📅 Расписание", "s:d:today")],
-        [Btn("📝 Задания", "h:l:0"), Btn("🔔 Уведомления", "me:ntf")],
-        [Btn("👥 Другая группа", "me:other")],
-        [Btn("🔎 Найти преподавателя", "me:findt")],
-        [Btn("⚙️ Ещё", "me:menu")],
-        [Btn("➕ В группу", url=f"https://t.me/{ctx.bot_username}?startgroup=true"),
-         Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
-             url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")],
+        [Btn("📝 Задания", "h:l:0"), Btn("🤖 ИИ-помощник", "me:ai")],
+        [Btn("👥 Пригласить друзей", url=share_link)],
+        [Btn("🔔 Уведомления", "me:ntf"), Btn("👤 Профиль", "me:prof")],
+        [Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
+             url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=sgugit")],
     ]
-
-    if ctx.repo.flag("rating_enabled"):
-        rows[3].append(Btn("⭐Оценить преподавателя", "t:l:m:0"))
-
     return Screen(head, rows)
 
 
@@ -285,6 +284,10 @@ async def on_cb_me(ctx: Ctx, parts: list[str]) -> Out:
         return Out(screen=Screen(ls.HELP_TEXT + "\n\n<b>Полезные ссылки</b>", [[Btn("🌐 Сайт СГУГиТ", url="https://sgugit.ru/"), Btn("📅 Расписание вуза", url="https://sgugit.ru/raspisanie/")], [Btn("🏛 Структура и кафедры", url="https://sgugit.ru/university/struct/kafedry/")], nav("me:menu")]))
     if act == "ntf":
         return Out(screen=await notif_screen(ctx))
+    if act == "ai":
+        return Out(screen=Screen(
+            "🤖 <b>ИИ-помощник</b>\nЗадайте вопрос о расписании, занятиях или преподавателях обычными словами.",
+            [nav("m:home")]), state="me:ai", state_data={})
     if act == "n" and len(parts) >= 3:
         field, val = parts[1], parts[2]
         if field == "custom_evening":
@@ -428,6 +431,20 @@ async def _head_request(ctx: Ctx) -> Out:
 
 
 async def on_text_me(ctx: Ctx, state: str, data: dict, text: str) -> Out:
+    if state == "me:ai":
+        catalog = await ctx.repo.subject_catalog()
+        intent = detect_intent(text, ctx.today, catalog, await ctx.repo.known_surnames())
+        if intent is None:
+            return Out(screen=Screen(
+                "Не совсем понял вопрос. Попробуйте спросить, например: «какие завтра пары?», "
+                "«когда геодезия?» или «где следующая пара?».",
+                [nav("m:home")]), state="me:ai", state_data=data)
+        answer = await ls.answer_intent(ctx, intent, ctx.user.get("group_id"), ctx.user.get("subgroup"))
+        if answer is None:
+            return Out(screen=Screen("Не удалось найти ответ по текущим данным. Попробуйте переформулировать вопрос.",
+                                     [nav("m:home")]), state="me:ai", state_data=data)
+        answer.kb = [[Btn("🤖 Задать ещё вопрос", "me:ai")], nav("m:home")]
+        return Out(screen=answer, clear_state=True)
     if state == "me:n_evening_time":
         value = text.strip()
         if not tu.hhmm_to_min(value) and value != "00:00":
