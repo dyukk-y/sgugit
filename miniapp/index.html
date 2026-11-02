@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#21152d" />
+  <meta name="description" content="СГУГиТ — расписание и цифровые сервисы университета" />
+  <title>СГУГиТ · Расписание</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div class="blueprint blueprint-a" aria-hidden="true"></div>
+  <div class="blueprint blueprint-b" aria-hidden="true"></div>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img class="brand-mark" src="https://sgugit.ru/upload/university/normative-docs/logo.jpg" alt="Графический символ СГУГиТ">
+        <div><div class="brand-kicker">ЦИФРОВАЯ СРЕДА УНИВЕРСИТЕТА</div><div class="brand-name">СГУГиТ <span>РАСПИСАНИЕ</span></div></div>
+      </div>
+      <button class="avatar" id="profileShortcut" aria-label="Профиль">М</button>
+    </header>
+
+    <main>
+      <section class="screen active" id="homeScreen">
+        <div class="hero">
+          <div class="hero-copy">
+            <div class="eyebrow"><span class="pulse"></span> УЧЕБНЫЙ НАВИГАТОР</div>
+            <h1>Твоя учёба.<br><em>На точных координатах.</em></h1>
+            <p class="hero-sub">Расписание, аудитории и важные изменения — в одном пространстве.</p>
+            <div class="hero-meta"><span class="tag">МД-22.1</span><span class="muted">Понедельник · 2 ноября</span></div>
+          </div>
+          <div class="hero-art" aria-hidden="true">
+            <svg class="campus-drawing" viewBox="0 0 520 330" fill="none">
+              <defs><linearGradient id="facade" x1="80" y1="60" x2="420" y2="300" gradientUnits="userSpaceOnUse"><stop stop-color="#fff" stop-opacity=".2"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
+              <path class="draw-line" d="M48 252 259 88l211 164M80 252V143l179-55 180 55v109M112 252V155l147-45 148 45v97M145 252v-78l114-34 114 34v78M178 252v-60l81-24 81 24v60M210 252v-43l49-15 49 15v43" stroke="#8ed9f4" stroke-width="1.5"/>
+              <path class="draw-line delay-1" d="M48 252h422M80 143h358M112 155h294M145 174h228M178 192h162M259 88V38m-8 0h16m-8 0-16-16m16 16 16-16" stroke="#95c11f" stroke-width="1.4"/>
+              <path class="draw-line delay-2" d="M48 252 259 88l211 164M80 143l179-55 180 55M112 155l147-45 148 45" stroke="#e94e1b" stroke-opacity=".65" stroke-width="1"/>
+              <path d="M28 276h464M66 288h388M98 300h322" stroke="#fff" stroke-opacity=".13" stroke-dasharray="4 8"/>
+              <g class="survey-point"><circle cx="259" cy="88" r="5" fill="#95c11f"/><circle cx="259" cy="88" r="13" stroke="#95c11f" stroke-opacity=".5"/><path d="M259 68v-22m-20 42h40" stroke="#95c11f"/></g>
+              <g transform="translate(392 184)" stroke="#e94e1b" stroke-width="2" fill="none"><path d="M0 0 17 9 33 0 17 -9 0 0Z"/><path d="M17 9v29M17 38 2 76M17 38l18 38M17 38l-2 39M7 -2l-5 -21 15 -6 15 8 -5 20M17 -29v-12"/></g>
+              <path d="M392 143 259 88" stroke="#e94e1b" stroke-dasharray="5 5" opacity=".8"/>
+              <text x="270" y="70" fill="#95c11f" font-size="10" letter-spacing="2">ОПОРНАЯ ТОЧКА</text>
+              <text x="30" y="319" fill="#9b8ba7" font-size="9" letter-spacing="2">54°59' N  ·  82°52' E</text>
+            </svg>
+            <div class="art-caption"><span class="art-dot"></span> CAMPUS / DIGITAL TWIN <span>01—04</span></div>
+          </div>
+          <div class="hero-bottom"><span>СИБИРСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ</span><span>ГЕОСИСТЕМ И ТЕХНОЛОГИЙ</span></div>
+        </div>
+
+        <div class="section-head"><div><div class="eyebrow">СЕГОДНЯ · 02 НОЯБРЯ</div><h2>Учебный день</h2></div><button class="text-action" data-screen="scheduleScreen">Всё расписание <span>↗</span></button></div>
+        <div class="status-card">
+          <div class="status-icon">⌁</div><div class="status-main"><b>До следующей пары</b><span>Геодезия · аудитория 304</span></div><div class="countdown">00:42<span>МИН</span></div>
+        </div>
+        <div class="lesson-list">
+          <article class="lesson"><div class="lesson-time">09:00<small>10:30</small></div><div class="lesson-rail"><i></i></div><div class="lesson-info"><div class="lesson-top"><span class="lesson-type lecture">ЛЕКЦИЯ</span><span class="lesson-room">АУД. 218</span></div><h3>Высшая математика</h3><p>Иванова Н. В. · 1 пара</p></div></article>
+          <article class="lesson current"><div class="lesson-time">10:45<small>12:15</small></div><div class="lesson-rail"><i></i></div><div class="lesson-info"><div class="lesson-top"><span class="lesson-type practice">ПРАКТИКА</span><span class="lesson-room">АУД. 304</span></div><h3>Геодезия</h3><p>Петров А. С. · 2 пара</p></div><span class="now-badge">ДАЛЕЕ</span></article>
+          <article class="lesson"><div class="lesson-time">13:00<small>14:30</small></div><div class="lesson-rail"><i></i></div><div class="lesson-info"><div class="lesson-top"><span class="lesson-type lab">ЛАБОРАТОРНАЯ</span><span class="lesson-room">АУД. 412</span></div><h3>Информатика</h3><p>Сидоров И. П. · 3 пара</p></div></article>
+        </div>
+        <div class="quick-grid">
+          <button class="quick-tile" data-screen="scheduleScreen"><span class="tile-icon cyan">▤</span><b>Расписание</b><small>День, неделя, дата</small><span class="tile-arrow">↗</span></button>
+          <button class="quick-tile" data-screen="groupScreen"><span class="tile-icon lime">⌘</span><b>Моя группа</b><small>Связь и управление</small><span class="tile-arrow">↗</span></button>
+          <button class="quick-tile" data-screen="notificationsScreen"><span class="tile-icon orange">◉</span><b>Уведомления</b><small>Только важное</small><span class="tile-arrow">↗</span></button>
+        </div>
+        <div class="prototype-note">ПРЕДПРОСМОТР ИНТЕРФЕЙСА · ДАННЫЕ НА ЭКРАНЕ ДЕМОНСТРАЦИОННЫЕ</div>
+      </section>
+
+      <section class="screen" id="scheduleScreen">
+        <div class="page-heading"><div class="eyebrow">УЧЕБНЫЙ МАРШРУТ</div><h1>Расписание</h1><p>Все пары — чётко по времени и аудиториям.</p></div>
+        <div class="segmented"><button class="selected">Сегодня</button><button>Завтра</button><button>Неделя</button></div>
+        <div class="date-strip"><span>ПН</span><b>02</b><span>ВТ</span><b>03</b><span>СР</span><b>04</b><span>ЧТ</span><b>05</b><span>ПТ</span><b>06</b></div>
+        <div class="schedule-summary"><span>МД-22.1</span><span>ЧЁТНАЯ НЕДЕЛЯ</span><span>3 ПАРЫ</span></div>
+        <div class="lesson-list expanded">
+          <article class="lesson"><div class="lesson-time">09:00<small>10:30</small></div><div class="lesson-rail"><i></i></div><div class="lesson-info"><div class="lesson-top"><span class="lesson-type lecture">ЛЕКЦИЯ</span><span class="lesson-room">218</span></div><h3>Высшая математика</h3><p>Иванова Н. В. · 1 пара</p></div></article>
+          <article class="lesson current"><div class="lesson-time">10:45<small>12:15</small></div><div class="lesson-rail"><i></i></div><div class="lesson-info"><div class="lesson-top"><span class="lesson-type practice">ПРАКТИКА</span><span class="lesson-room">304</span></div><h3>Геодезия</h3><p>Петров А. С. · 2 пара</p></div><span class="now-badge">СЛЕДУЮЩАЯ</span></article>
+          <article class="lesson"><div class="lesson-time">13:00<small>14:30</small></div><div class="lesson-rail"><i></i></div><div class="lesson-info"><div class="lesson-top"><span class="lesson-type lab">ЛАБОРАТОРНАЯ</span><span class="lesson-room">412</span></div><h3>Информатика</h3><p>Сидоров И. П. · 3 пара</p></div></article>
+        </div>
+        <div class="empty-state"><span>⌖</span><div><b>Точность важна</b><p>Изменения в расписании группы будут отмечаться прямо здесь.</p></div></div>
+      </section>
+
+      <section class="screen" id="groupScreen">
+        <div class="page-heading"><div class="eyebrow">ПРОСТРАНСТВО ГРУППЫ</div><h1>Моя группа</h1><p>Управляй тем, как бот работает в общем чате.</p></div>
+        <div class="group-identity"><div class="group-symbol">МД</div><div><span>УЧЕБНАЯ ГРУППА</span><h2>МД-22.1</h2><small>Новосибирск · СГУГиТ</small></div><span class="connected">● ПОДКЛЮЧЕНА</span></div>
+        <div class="settings-block"><div class="block-title">ПОВЕДЕНИЕ БОТА <span>01 / 03</span></div>
+          <div class="setting-row"><div><b>Вечерняя сводка</b><small>Расписание на завтра в 20:00</small></div><button class="toggle on"></button></div>
+          <div class="setting-row"><div><b>Закреплять расписание</b><small>Открепить после начала первой пары</small></div><button class="toggle on"></button></div>
+          <div class="setting-row"><div><b>Сообщать об изменениях</b><small>Отмена, перенос или новая пара</small></div><button class="toggle on"></button></div>
+          <div class="setting-row"><div><b>Умные ответы</b><small>Отвечать на вопросы о расписании</small></div><button class="toggle on"></button></div>
+        </div>
+        <div class="settings-block"><div class="block-title">ЧИСТОТА ЧАТА <span>02 / 03</span></div>
+          <div class="setting-row"><div><b>Удалять команды и ответы</b><small>После завершения срока актуальности</small></div><button class="toggle on"></button></div>
+          <div class="setting-row"><div><b>Автоудаление ответов</b><small>Через 5 минут</small></div><button class="toggle on"></button></div>
+        </div>
+        <div class="permission-card"><div class="permission-symbol">⚑</div><div><b>Права бота</b><p>Для закрепления расписания нужно право закреплять сообщения. Для удаления чужих команд — право удалять сообщения. Приложение покажет, что требуется, и проверит доступные права.</p></div></div>
+      </section>
+
+      <section class="screen" id="notificationsScreen">
+        <div class="page-heading"><div class="eyebrow">ЦЕНТР СОБЫТИЙ</div><h1>Уведомления</h1><p>Никакого шума. Только то, что действительно важно.</p></div>
+        <div class="settings-block"><div class="block-title">МОИ УВЕДОМЛЕНИЯ <span>01 / 02</span></div>
+          <div class="setting-row"><div><b>Сводка на завтра</b><small>Каждый день · 20:00</small></div><button class="toggle on"></button></div>
+          <div class="setting-row"><div><b>Изменения расписания</b><small>Отмена, перенос, новая пара</small></div><button class="toggle on"></button></div>
+          <div class="setting-row"><div><b>Напоминание о паре</b><small>За 15 минут до начала</small></div><button class="toggle"></button></div>
+          <div class="setting-row"><div><b>Задания группы</b><small>Новые и изменённые задания</small></div><button class="toggle on"></button></div>
+        </div>
+        <div class="event-card"><span class="event-mark cyan"></span><div><small>СЕГОДНЯ · 14:12</small><b>Изменение расписания</b><p>Геодезия перенесена на 4 пару.</p></div><span class="event-state">НОВОЕ</span></div>
+        <div class="event-card"><span class="event-mark orange"></span><div><small>ВЧЕРА · 20:00</small><b>Сводка на завтра</b><p>Опубликовано расписание на 3 ноября.</p></div></div>
+      </section>
+
+      <section class="screen" id="profileScreen">
+        <div class="page-heading"><div class="eyebrow">ЛИЧНЫЙ ПРОФИЛЬ</div><h1>Профиль</h1><p>Персональные настройки и режим работы.</p></div>
+        <div class="profile-card"><div class="profile-avatar">М</div><div><span>СТУДЕНТ</span><h2>Михаил</h2><p>МД-22.1 · Подгруппа не выбрана</p></div><span class="profile-edit">↗</span></div>
+        <div class="settings-block"><div class="block-title">РОЛЬ В ПРИЛОЖЕНИИ <span>02 / 02</span></div>
+          <button class="role-choice selected" data-role="student"><span class="role-icon">⌂</span><span><b>Студент</b><small>Расписание, задания, группа</small></span><i>✓</i></button>
+          <button class="role-choice" data-role="teacher"><span class="role-icon">⌖</span><span><b>Преподаватель</b><small>Мои пары, свободные аудитории, поиск</small></span><i>○</i></button>
+        </div>
+        <div class="settings-block"><div class="block-title">О СЕРВИСЕ</div><div class="about-row"><span>Версия интерфейса</span><b>0.1 · Preview</b></div><div class="about-row"><span>Часовой пояс</span><b>Новосибирск</b></div><div class="about-row"><span>Связь с разработчиком</span><b>@YashaAgent</b></div></div>
+      </section>
+
+      <section class="screen" id="teacherScreen">
+        <div class="page-heading"><div class="eyebrow">КАБИНЕТ ПРЕПОДАВАТЕЛЯ</div><h1>Добрый день.</h1><p>Ваш рабочий день — в одном месте.</p></div>
+        <div class="teacher-card"><div class="teacher-monogram">ПА</div><div><span>ПРЕПОДАВАТЕЛЬ</span><h2>Александр Петров</h2><small>Геодезия · СГУГиТ</small></div></div>
+        <div class="teacher-actions"><button data-screen="scheduleScreen"><span>▤</span><b>Моё расписание</b><small>Пары на сегодня и неделю</small></button><button><span>⌖</span><b>Свободные аудитории</b><small>Номер, корпус и этаж</small></button><button><span>◎</span><b>Найти преподавателя</b><small>Кто и где сейчас занят</small></button><button data-screen="notificationsScreen"><span>✉</span><b>Поддержка</b><small>Помощь и обратная связь</small></button></div>
+        <div class="empty-state"><span>◷</span><div><b>Ближайшая пара</b><p>Демонстрационный экран. Реальное расписание подключим к справочнику после проверки источника данных.</p></div></div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Основная навигация">
+      <button class="nav-item active" data-screen="homeScreen"><span>⌂</span><small>Главная</small></button>
+      <button class="nav-item" data-screen="scheduleScreen"><span>▤</span><small>Расписание</small></button>
+      <button class="nav-item" data-screen="groupScreen"><span>⌘</span><small>Группа</small></button>
+      <button class="nav-item" data-screen="notificationsScreen"><span>◉</span><small>События</small></button>
+      <button class="nav-item" data-screen="profileScreen"><span>◌</span><small>Профиль</small></button>
+    </nav>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="./app.js"></script>
+</body>
+</html>
