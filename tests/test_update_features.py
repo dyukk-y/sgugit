@@ -20,6 +20,7 @@ from app.db.repo import Repo, ApplyResult
 from app.db.schema import migrate
 from app.models import LessonRec
 from app.services.notifier import Notifier
+from app.services import format as fm
 
 CFG = Settings("x", 1, "sqlite:///:memory:", "Asia/Novosibirsk", "u", 30, "/tmp/bk_test", "INFO")
 
@@ -35,6 +36,24 @@ async def make_repo():
 
 
 class Notif(unittest.TestCase):
+    def test_change_text_distinguishes_move_cancel_and_addition(self):
+        day = "2026-11-05"
+        old_move = (day, 1, "08:30", "10:05", "Геодезия", "Иванов И. И.", "310", "лекция", 0)
+        new_move = (day, 2, "10:15", "11:50", "Геодезия", "Иванов И. И.", "312", "лекция", 0)
+        cancelled = (day, 3, "12:00", "13:35", "Физика", "Петров П. П.", "210", "лекция", 0)
+        added = (day, 4, "14:00", "15:35", "История", "Сидоров С. С.", "115", "семинар", 0)
+        text = fm.changes_text("ИС-11", [{
+            "day": day, "removed": [old_move, cancelled], "added": [new_move, added]
+        }])
+        self.assertIn("Перенос:", text)
+        self.assertIn("Было:", text)
+        self.assertIn("Стало:", text)
+        self.assertIn("Отмена:", text)
+        self.assertIn("Добавлено:", text)
+        self.assertIn("Геодезия", text)
+        self.assertIn("Физика", text)
+        self.assertIn("История", text)
+
     def test_pin_until_last_lesson_and_toggles(self):
         async def go():
             db, r = await make_repo()
