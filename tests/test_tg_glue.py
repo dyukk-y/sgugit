@@ -161,7 +161,7 @@ class T(unittest.TestCase):
             await gcmd(msg(bot, 51, "/help", chat_id=-100, ctype="supergroup", mid=4))
             self.assertIn("/tomorrow", bot.of("reply")[-1]["text"])
             await gcmd(msg(bot, 51, "/schedule", chat_id=-100, ctype="supergroup", mid=4))
-            self.assertIn("Воскресенье", bot.of("reply")[-1]["text"])
+            self.assertIn(tu.DAYS_FULL[tu.today().weekday()], bot.of("reply")[-1]["text"])
             await gcmd(msg(bot, 51, "/homework", chat_id=-100, ctype="supergroup", mid=4))
             self.assertIn("заданий", bot.of("reply")[-1]["text"].lower())
             await repo.update_chat(-100, autodelete_min=0)
