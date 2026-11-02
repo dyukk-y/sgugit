@@ -100,7 +100,7 @@ class Screens(unittest.TestCase):
             self.assertIn("Настройки чата", scr.text)
             self.assertTrue(all(len(row) == 1 for row in scr.kb))  # одна настройка = одна кнопка на всю ширину
             labels = " ".join(b.text for row in scr.kb for b in row)
-            self.assertIn("Изменения расписания", labels); self.assertIn("Закреп", labels)
+            self.assertIn("Переносы, отмены и новые пары", labels); self.assertIn("Закреп", labels)
             await db.close()
         asyncio.run(go())
 
@@ -112,9 +112,9 @@ class Screens(unittest.TestCase):
             scr = await logic_user.notif_screen(ctx)
             for row in scr.kb:
                 self.assertLessEqual(len(row), 2, [b.text for b in row])
-            self.assertTrue(any("Изменения в расписании: ВКЛ" in b.text for row in scr.kb for b in row))
+            self.assertTrue(any("Переносы, отмены и новые пары: ВКЛ" in b.text for row in scr.kb for b in row))
             out = await logic_user.on_cb_me(ctx, ["n", "ch", "t"])
-            self.assertTrue(any("Изменения в расписании: ВЫКЛ" in b.text for row in out.screen.kb for b in row))
+            self.assertTrue(any("Переносы, отмены и новые пары: ВЫКЛ" in b.text for row in out.screen.kb for b in row))
             await db.close()
         asyncio.run(go())
 
