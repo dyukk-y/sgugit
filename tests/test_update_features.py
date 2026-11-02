@@ -110,6 +110,10 @@ class Screens(unittest.TestCase):
         async def go():
             db, r = await make_repo()
             await r.ensure_user(15)
+            group = await r.get_or_create_group("ИС-11")
+            day = tu.iso(tu.today() + timedelta(days=1))
+            await r.apply_lessons([LessonRec("ИС-11", day, 1, "08:30", "10:05", "Геодезия", "Иванов И. И.", "310", "лекция")], manual=False)
+            await r.update_user(15, group_id=group["id"])
             ctx = Ctx(r, CFG, await r.get_user(15), bot_username="sgugit_bot")
             menu = await logic_user.main_menu(ctx)
             self.assertEqual([len(row) for row in menu.kb], [1, 2, 1, 2, 1])
@@ -121,6 +125,9 @@ class Screens(unittest.TestCase):
             ai = await logic_user.on_cb_me(ctx, ["ai"])
             self.assertEqual(ai.state, "me:ai")
             self.assertIn("ИИ-помощник", ai.screen.text)
+            answer = await logic_user.on_text_me(ctx, "me:ai", {}, "какие завтра пары?")
+            self.assertIn("Геодезия", answer.screen.text)
+            self.assertTrue(answer.clear_state)
             await db.close()
         asyncio.run(go())
 
