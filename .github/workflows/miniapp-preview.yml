@@ -1,0 +1,40 @@
+name: Mini App preview
+
+on:
+  push:
+    branches:
+      - feature/sgugit-miniapp-prototype
+    paths:
+      - "miniapp/**"
+      - ".github/workflows/miniapp-preview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: miniapp-preview
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/sgugit-miniapp-prototype
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Mini App
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: miniapp
+      - name: Deploy preview
+        id: deployment
+        uses: actions/deploy-pages@v4
