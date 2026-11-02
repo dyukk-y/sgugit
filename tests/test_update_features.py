@@ -106,6 +106,24 @@ class Notif(unittest.TestCase):
 
 
 class Screens(unittest.TestCase):
+    def test_main_menu_layout_and_ai_entry(self):
+        async def go():
+            db, r = await make_repo()
+            await r.ensure_user(15)
+            ctx = Ctx(r, CFG, await r.get_user(15), bot_username="sgugit_bot")
+            menu = await logic_user.main_menu(ctx)
+            self.assertEqual([len(row) for row in menu.kb], [1, 2, 1, 2, 1])
+            labels = [b.text for row in menu.kb for b in row]
+            self.assertIn("🤖 ИИ-помощник", labels)
+            self.assertIn("👥 Пригласить друзей", labels)
+            self.assertIn("👤 Профиль", labels)
+            self.assertIn("💎 Спонсор", labels)
+            ai = await logic_user.on_cb_me(ctx, ["ai"])
+            self.assertEqual(ai.state, "me:ai")
+            self.assertIn("ИИ-помощник", ai.screen.text)
+            await db.close()
+        asyncio.run(go())
+
     def test_chat_settings_toggles_and_layout(self):
         async def go():
             db, r = await make_repo()
