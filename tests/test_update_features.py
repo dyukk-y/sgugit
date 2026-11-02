@@ -106,28 +106,23 @@ class Notif(unittest.TestCase):
 
 
 class Screens(unittest.TestCase):
-    def test_main_menu_layout_and_ai_entry(self):
+    def test_main_menu_layout_without_ai_or_friend_share(self):
         async def go():
             db, r = await make_repo()
             await r.ensure_user(15)
             group = await r.get_or_create_group("ИС-11")
-            day = tu.iso(tu.today() + timedelta(days=1))
-            await r.apply_lessons([LessonRec("ИС-11", day, 1, "08:30", "10:05", "Геодезия", "Иванов И. И.", "310", "лекция")], manual=False)
             await r.update_user(15, group_id=group["id"])
             ctx = Ctx(r, CFG, await r.get_user(15), bot_username="sgugit_bot")
             menu = await logic_user.main_menu(ctx)
-            self.assertEqual([len(row) for row in menu.kb], [1, 2, 1, 2, 1])
+            self.assertEqual([len(row) for row in menu.kb], [1, 1, 1, 2, 1])
             labels = [b.text for row in menu.kb for b in row]
-            self.assertIn("🤖 ИИ-помощник", labels)
-            self.assertIn("👥 Пригласить друзей", labels)
+            self.assertIn("📝 Задания", labels)
+            self.assertIn("👥 Другая группа", labels)
+            self.assertIn("🔔 Уведомления", labels)
             self.assertIn("👤 Профиль", labels)
             self.assertIn("💎 Спонсор", labels)
-            ai = await logic_user.on_cb_me(ctx, ["ai"])
-            self.assertEqual(ai.state, "me:ai")
-            self.assertIn("ИИ-помощник", ai.screen.text)
-            answer = await logic_user.on_text_me(ctx, "me:ai", {}, "какие завтра пары?")
-            self.assertIn("Геодезия", answer.screen.text)
-            self.assertTrue(answer.clear_state)
+            self.assertFalse(any("ИИ-помощник" in label for label in labels))
+            self.assertFalse(any("Пригласить друзей" in label for label in labels))
             await db.close()
         asyncio.run(go())
 
