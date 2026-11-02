@@ -224,6 +224,10 @@ class TgLayer(unittest.TestCase):
             app = tg.App(bot=bot, repo=r, cfg=cfg, sender=tg.Sender(bot, r), services={}, username="b")
             await background.push_backup(app, "первый запуск")
             self.assertEqual((len(bot.docs), len(bot.edits)), (1, 0)); mid = int(r.setting("backup_msg_id")); self.assertTrue(mid)
+            backup_files = [name for name in os.listdir(cfg.backup_dir) if name.endswith(".json.gz")]
+            self.assertTrue(backup_files)
+            self.assertEqual(os.stat(os.path.join(cfg.backup_dir, backup_files[0])).st_mode & 0o777, 0o600)
+            self.assertEqual(os.stat(cfg.backup_dir).st_mode & 0o777, 0o700)
             for i in range(3): await background.push_backup(app, "после изменений")
             self.assertEqual((len(bot.docs), len(bot.edits)), (1, 3))  # ни одного нового сообщения: только правки
             self.assertTrue(all(m == mid for m, _ in bot.edits)); self.assertIn("первый запуск", bot.edits[-1][1]); self.assertIn("после изменений", bot.edits[-1][1])
