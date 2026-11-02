@@ -36,13 +36,18 @@ class T(unittest.TestCase):
             sent.clear(); await n.tick(at(8, 6)); self.assertEqual(sent, [])
             await n.tick(at(9, 50)); self.assertEqual(sent, [])                # Физика сразу после Математики: без напоминания
             await n.tick(at(13, 40)); self.assertEqual([c for c, _ in sent], [2]); self.assertIn("История", sent[0][1])
+            # Пользователь может отключить изменения расписания отдельно от остальных уведомлений.
+            await r.ensure_user(4)
+            await r.update_user(4, group_id=g, n_changes=0)
             # изменения
             sent.clear()
             fut = tu.iso(tu.today() + timedelta(days=3))
             await r.apply_lessons([L(fut, 1, "Химия", "08:30", "10:05")], manual=False)
             res = await r.apply_lessons([L(fut, 1, "Химия", "09:00", "10:35")], manual=False)
             cnt = await n.notify_changes(res); self.assertEqual(cnt, 3); self.assertTrue(any("Изменения" in t for _, t in sent))
-            self.assertNotIn(3, [c for c, _ in sent]); self.assertIn(-5, [c for c, _ in sent])
+            self.assertNotIn(3, [c for c, _ in sent]); self.assertNotIn(4, [c for c, _ in sent])
+            self.assertIn(1, [c for c, _ in sent]); self.assertIn(2, [c for c, _ in sent])
+            self.assertIn(-5, [c for c, _ in sent])
             await db.close()
         asyncio.run(go())
 if __name__ == "__main__":

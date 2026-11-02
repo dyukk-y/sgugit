@@ -1,0 +1,45 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python sources
+        run: python -m compileall -q app tests
+      - name: Run full unit-test suite
+        run: python -m unittest discover -s tests -v
+
+  telegram-stub-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies without aiogram
+        run: |
+          grep -v '^aiogram' requirements.txt > /tmp/requirements-no-aiogram.txt
+          python -m pip install -r /tmp/requirements-no-aiogram.txt
+      - name: Run Telegram adapter tests with test doubles
+        run: python -m unittest discover -s tests -v

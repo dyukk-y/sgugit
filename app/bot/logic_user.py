@@ -28,18 +28,12 @@ async def main_menu(ctx: Ctx) -> Screen:
 
     rows: Kb = [
         [Btn("📅 Расписание", "s:d:today")],
-        [Btn("📝 Задания", "h:l:0"), Btn("🔔 Уведомления", "me:ntf")],
+        [Btn("📝 Задания", "h:l:0")],
         [Btn("👥 Другая группа", "me:other")],
-        [Btn("🔎 Найти преподавателя", "me:findt")],
-        [Btn("⚙️ Ещё", "me:menu")],
-        [Btn("➕ В группу", url=f"https://t.me/{ctx.bot_username}?startgroup=true"),
-         Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
-             url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")],
+        [Btn("🔔 Уведомления", "me:ntf"), Btn("👤 Профиль", "me:prof")],
+        [Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
+             url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=sgugit")],
     ]
-
-    if ctx.repo.flag("rating_enabled"):
-        rows[3].append(Btn("⭐Оценить преподавателя", "t:l:m:0"))
-
     return Screen(head, rows)
 
 
@@ -228,6 +222,7 @@ async def profile_screen(ctx: Ctx) -> Screen:
     kb: Kb = [[Btn("✏️ Изменить ФИО", "me:fio")], [Btn("🔄 Сменить группу", "me:grp")],
               [Btn("Подгруппа: все" + (" ✅" if not sub else ""), "me:sub:0"),
                Btn("1" + (" ✅" if sub == 1 else ""), "me:sub:1"), Btn("2" + (" ✅" if sub == 2 else ""), "me:sub:2")],
+              [Btn("➕ Добавить бота в группу", url=f"https://t.me/{ctx.bot_username}?startgroup=true")],
               nav("me:menu")]
     if not ctx.user.get("fio"):
         kb.insert(1, [Btn("✏️ Указать ФИО", "r:redo")])
@@ -254,7 +249,7 @@ async def notif_screen(ctx: Ctx) -> Screen:
     lines.append(f"Все уведомления: {'включены' if enabled else 'ВЫКЛЮЧЕНЫ'}")
     lines.append(f"🌙 Вечерняя сводка: {'в ' + u['n_evening_time'] if ev else 'выкл'}")
     lines.append(f"⏰ Перед парой: {'за ' + str(before) + ' мин' if before else 'выкл'}")
-    lines.append(f"🔄 Изменения в расписании: {'присылать' if ch else 'не присылать'}")
+    lines.append(f"🔄 Переносы, отмены и новые пары: {'присылать' if ch else 'не присылать'}")
     if not enabled:
         lines.append("\nСейчас ничего не приходит. Отдельные настройки сохранены и заработают после включения.")
     elif not ctx.repo.flag("notify_changes") and ch:
@@ -265,7 +260,7 @@ async def notif_screen(ctx: Ctx) -> Screen:
         [Btn((f"✅ " if u["n_evening_time"] == t else "") + f"🕒 {t}", f"me:n:et:{t.replace(':', '')}") for t in ("19:00", "20:00")],
         [Btn((f"✅ " if u["n_evening_time"] == t else "") + f"🕒 {t}", f"me:n:et:{t.replace(':', '')}") for t in ("21:00", "22:00")],
         [Btn("⌨️ Свое время сводки", "me:n:custom_evening")],
-        [Btn(f"🔄 Изменения в расписании: {_onoff(ch)}", "me:n:ch:t")],
+        [Btn(f"🔄 Переносы, отмены и новые пары: {_onoff(ch)}", "me:n:ch:t")],
         [Btn((("✅ " if before == m else "") + ("⏰ Перед парой: выкл" if m == 0 else f"⏰ За {m} мин")), f"me:n:bf:{m}") for m in (0, 15)],
         [Btn((("✅ " if before == m else "") + f"⏰ За {m} мин"), f"me:n:bf:{m}") for m in (30, 60)],
         [Btn("⌨️ Свой интервал (1–180 мин)", "me:n:custom_before")],

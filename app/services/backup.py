@@ -31,9 +31,20 @@ def parse_backup(blob: bytes) -> dict:
 
 
 def save_local(directory: str, name: str, blob: bytes, keep: int = 7) -> None:
-    os.makedirs(directory, exist_ok=True)
-    with open(os.path.join(directory, name), "wb") as f:
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    # Бэкапы содержат ФИО, Telegram ID и историю действий: ограничиваем доступ
+    # владельцем процесса на POSIX-системах (включая контейнер Bothost).
+    try:
+        os.chmod(directory, 0o700)
+    except OSError:
+        pass
+    path = os.path.join(directory, name)
+    with open(path, "wb") as f:
         f.write(blob)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
     files = sorted(glob.glob(os.path.join(directory, "backup-*.json.gz")), key=os.path.getmtime)
     for old in files[:-keep]:
         try:

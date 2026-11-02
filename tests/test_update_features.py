@@ -20,6 +20,7 @@ from app.db.repo import Repo, ApplyResult
 from app.db.schema import migrate
 from app.models import LessonRec
 from app.services.notifier import Notifier
+from app.services import format as fm
 
 CFG = Settings("x", 1, "sqlite:///:memory:", "Asia/Novosibirsk", "u", 30, "/tmp/bk_test", "INFO")
 
@@ -35,6 +36,24 @@ async def make_repo():
 
 
 class Notif(unittest.TestCase):
+    def test_change_text_distinguishes_move_cancel_and_addition(self):
+        day = "2026-11-05"
+        old_move = (day, 1, "08:30", "10:05", "Геодезия", "Иванов И. И.", "310", "лекция", 0)
+        new_move = (day, 2, "10:15", "11:50", "Геодезия", "Иванов И. И.", "312", "лекция", 0)
+        cancelled = (day, 3, "12:00", "13:35", "Физика", "Петров П. П.", "210", "лекция", 0)
+        added = (day, 4, "14:00", "15:35", "История", "Сидоров С. С.", "115", "семинар", 0)
+        text = fm.changes_text("ИС-11", [{
+            "day": day, "removed": [old_move, cancelled], "added": [new_move, added]
+        }])
+        self.assertIn("Перенос:", text)
+        self.assertIn("Было:", text)
+        self.assertIn("Стало:", text)
+        self.assertIn("Отмена:", text)
+        self.assertIn("Добавлено:", text)
+        self.assertIn("Геодезия", text)
+        self.assertIn("Физика", text)
+        self.assertIn("История", text)
+
     def test_pin_until_last_lesson_and_toggles(self):
         async def go():
             db, r = await make_repo()
@@ -87,6 +106,26 @@ class Notif(unittest.TestCase):
 
 
 class Screens(unittest.TestCase):
+    def test_main_menu_layout_without_ai_or_friend_share(self):
+        async def go():
+            db, r = await make_repo()
+            await r.ensure_user(15)
+            group = await r.get_or_create_group("ИС-11")
+            await r.update_user(15, group_id=group["id"])
+            ctx = Ctx(r, CFG, await r.get_user(15), bot_username="sgugit_bot")
+            menu = await logic_user.main_menu(ctx)
+            self.assertEqual([len(row) for row in menu.kb], [1, 1, 1, 2, 1])
+            labels = [b.text for row in menu.kb for b in row]
+            self.assertIn("📝 Задания", labels)
+            self.assertIn("👥 Другая группа", labels)
+            self.assertIn("🔔 Уведомления", labels)
+            self.assertIn("👤 Профиль", labels)
+            self.assertIn("💎 Спонсор", labels)
+            self.assertFalse(any("ИИ-помощник" in label for label in labels))
+            self.assertFalse(any("Пригласить друзей" in label for label in labels))
+            await db.close()
+        asyncio.run(go())
+
     def test_chat_settings_toggles_and_layout(self):
         async def go():
             db, r = await make_repo()
@@ -100,7 +139,7 @@ class Screens(unittest.TestCase):
             self.assertIn("Настройки чата", scr.text)
             self.assertTrue(all(len(row) == 1 for row in scr.kb))  # одна настройка = одна кнопка на всю ширину
             labels = " ".join(b.text for row in scr.kb for b in row)
-            self.assertIn("Изменения расписания", labels); self.assertIn("Закреп", labels)
+            self.assertIn("Переносы, отмены и новые пары", labels); self.assertIn("Закреп", labels)
             await db.close()
         asyncio.run(go())
 
@@ -112,9 +151,9 @@ class Screens(unittest.TestCase):
             scr = await logic_user.notif_screen(ctx)
             for row in scr.kb:
                 self.assertLessEqual(len(row), 2, [b.text for b in row])
-            self.assertTrue(any("Изменения в расписании: ВКЛ" in b.text for row in scr.kb for b in row))
+            self.assertTrue(any("Переносы, отмены и новые пары: ВКЛ" in b.text for row in scr.kb for b in row))
             out = await logic_user.on_cb_me(ctx, ["n", "ch", "t"])
-            self.assertTrue(any("Изменения в расписании: ВЫКЛ" in b.text for row in out.screen.kb for b in row))
+            self.assertTrue(any("Переносы, отмены и новые пары: ВЫКЛ" in b.text for row in out.screen.kb for b in row))
             await db.close()
         asyncio.run(go())
 
@@ -187,6 +226,10 @@ class TgLayer(unittest.TestCase):
             app = tg.App(bot=bot, repo=r, cfg=cfg, sender=tg.Sender(bot, r), services={}, username="b")
             await background.push_backup(app, "первый запуск")
             self.assertEqual((len(bot.docs), len(bot.edits)), (1, 0)); mid = int(r.setting("backup_msg_id")); self.assertTrue(mid)
+            backup_files = [name for name in os.listdir(cfg.backup_dir) if name.endswith(".json.gz")]
+            self.assertTrue(backup_files)
+            self.assertEqual(os.stat(os.path.join(cfg.backup_dir, backup_files[0])).st_mode & 0o777, 0o600)
+            self.assertEqual(os.stat(cfg.backup_dir).st_mode & 0o777, 0o700)
             for i in range(3): await background.push_backup(app, "после изменений")
             self.assertEqual((len(bot.docs), len(bot.edits)), (1, 3))  # ни одного нового сообщения: только правки
             self.assertTrue(all(m == mid for m, _ in bot.edits)); self.assertIn("первый запуск", bot.edits[-1][1]); self.assertIn("после изменений", bot.edits[-1][1])

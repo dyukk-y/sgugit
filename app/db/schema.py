@@ -113,7 +113,11 @@ _V11 = [
     "UPDATE users SET role = 'student' WHERE role = 'head'",
     "UPDATE head_requests SET status = 'disabled' WHERE status IN ('pending', 'approved')",
 ]
-MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11)]
+_V12 = [
+    "ALTER TABLE users ADD COLUMN sponsor_confirmed INTEGER NOT NULL DEFAULT 0",
+    "UPDATE users SET sponsor_confirmed = 1 WHERE group_id IS NOT NULL AND fio IS NOT NULL",
+]
+MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12)]
 
 
 async def migrate(db: Database) -> int:

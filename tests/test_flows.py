@@ -87,17 +87,19 @@ class T(unittest.TestCase):
             s = await Sim().setup()
             await s.repo.get_or_create_group("Э-22.1")
             out = await s.do(777, command="start")
-            self.assertTrue(any(b.url and "startgroup=true" in b.url for row in out.screen.kb for b in row))
             out = await s.do(777, text="e221")  # латинская раскладка: E часто вводят вместо Э
             self.assertIn("r:g:", " ".join(datas(out)))
             gid = next(d for d in datas(out) if d.startswith("r:g:"))
             out = await s.do(777, callback=gid)
             out = await s.do(777, text="Смирнова Анна Сергеевна")
             out = await s.do(777, callback="r:ok")
-            # В основном меню есть отдельная кнопка добавления в группу с корректной deep-link-ссылкой.
+            # Приглашение друзей находится в главном меню; добавление бота в учебный чат — в профиле.
             urls = [b.url for row in out.screen.kb for b in row if b.url]
-            self.assertTrue(any(u and "startgroup=true" in u for u in urls))
-            self.assertTrue(any(u == "https://t.me/theyasha_bot" for u in urls))
+            self.assertTrue(any(u and "t.me/share/url" in u for u in urls))
+            self.assertTrue(any(u and "theyasha_bot" in u and "start=sgugit" in u for u in urls))
+            profile = await s.do(777, callback="me:prof")
+            profile_urls = [b.url for row in profile.screen.kb for b in row if b.url]
+            self.assertTrue(any(u and "startgroup=true" in u for u in profile_urls))
             await s.db.close()
         run(go())
 
