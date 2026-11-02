@@ -42,4 +42,4 @@ jobs:
           grep -v '^aiogram' requirements.txt > /tmp/requirements-no-aiogram.txt
           python -m pip install -r /tmp/requirements-no-aiogram.txt
       - name: Run Telegram adapter tests with test doubles
-        run: python -m unittest tests.test_tg_glue tests.test_update_features -v
+        run: python -m unittest discover -s tests -v
