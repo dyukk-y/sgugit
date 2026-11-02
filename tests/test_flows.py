@@ -96,7 +96,7 @@ class T(unittest.TestCase):
             # Приглашение друзей находится в главном меню; добавление бота в учебный чат — в профиле.
             urls = [b.url for row in out.screen.kb for b in row if b.url]
             self.assertTrue(any(u and "t.me/share/url" in u for u in urls))
-            self.assertTrue(any(u == "https://t.me/theyasha_bot" for u in urls))
+            self.assertTrue(any(u and "theyasha_bot" in u and "start=sgugit" in u for u in urls))
             profile = await s.do(777, callback="me:prof")
             profile_urls = [b.url for row in profile.screen.kb for b in row if b.url]
             self.assertTrue(any(u and "startgroup=true" in u for u in profile_urls))
