@@ -227,6 +227,7 @@ async def profile_screen(ctx: Ctx) -> Screen:
     kb: Kb = [[Btn("✏️ Изменить ФИО", "me:fio")], [Btn("🔄 Сменить группу", "me:grp")],
               [Btn("Подгруппа: все" + (" ✅" if not sub else ""), "me:sub:0"),
                Btn("1" + (" ✅" if sub == 1 else ""), "me:sub:1"), Btn("2" + (" ✅" if sub == 2 else ""), "me:sub:2")],
+              [Btn("➕ Добавить бота в группу", url=f"https://t.me/{ctx.bot_username}?startgroup=true")],
               nav("me:menu")]
     if not ctx.user.get("fio"):
         kb.insert(1, [Btn("✏️ Указать ФИО", "r:redo")])
