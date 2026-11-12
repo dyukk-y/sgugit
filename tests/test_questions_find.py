@@ -49,7 +49,7 @@ class T(unittest.TestCase):
             t = (await logic_find.teacher_answer(ctx, "крылов аа", date(2026, 10, 15))).text; self.assertIn("Завтра", t); self.assertIn("ИС-11", t)
             # через NLU в личке и в группе
             g = (await r.search_groups("ис11"))[0]["id"]
-            u = await r.touch_user(5, None, None); await r.update_user(5, group_id=g); u = await r.get_user(5)
+            u = await r.touch_user(5, None, None); await r.update_user(5, group_id=g, fio="Смирнова Анна Сергеевна", fio_status="verified"); u = await r.get_user(5)
             out = await router.handle_text(Ctx(r, CFG, u, now=NOW), "где найти препода Крылова А.А.")
             self.assertIn("Кафедра геодезии", out.screen.text)
             out = await router.handle_text(Ctx(r, CFG, u, now=NOW), "а завтра будет мгп?")
@@ -130,9 +130,12 @@ class T2(unittest.TestCase):
             out = await do(1, document=("d.csv", "ФИО;Подразделение;Кабинет\nМусор;x;1\n".encode())); self.assertIn("Ничего не загружено", out.screen.text)
             out = await do(1, document=("d.csv", "ФИО;Подразделение;Кабинет\nВолков Виктор Викторович;Кафедра химии;101\n".encode())); self.assertIn("загружен", out.screen.text)
             self.assertEqual((await r.find_staff("волков"))[0]["unit"], "Кафедра химии")
-            self.assertTrue((await do(300, callback="ad:dir")).toast)          # обычный пользователь не может
-            # пользователь ищет преподавателя через меню
+            # Проверяем права обычного, но зарегистрированного пользователя.
             g = (await r.search_groups("ис11"))[0]["id"]
+            await do(300, command="start")
+            await r.update_user(300, group_id=g, fio="Смирнова Анна Сергеевна", fio_status="verified")
+            self.assertTrue((await do(300, callback="ad:dir")).toast)
+            # пользователь ищет преподавателя через меню
             await do(100, command="start"); await r.update_user(100, group_id=g, fio="Смирнова Анна Сергеевна", fio_status="verified")
             out = await do(100, callback="me:findt"); self.assertEqual(out.state, "me:findt")
             out = await do(100, text="Волков"); self.assertIn("Кафедра химии", out.screen.text); self.assertIn("101", out.screen.text)
