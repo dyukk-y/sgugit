@@ -580,7 +580,7 @@ def _inline_pretty_schedule(text: str) -> str:
     lines = text.splitlines()
     out: list[str] = ["📚 <b>РАСПИСАНИЕ</b>"]
     i = 0
-    lesson_head = re.compile(r"^(?:<s>)?<b>(\\d{2})</b> ·\\s*(.+?)–(.+?)(?:</s>)?$")
+    lesson_head = re.compile(r"^(?:<s>)?<b>(\d{2})</b> ·\s*(.+?)–(.+?)(?:</s>)?$")
     while i < len(lines):
         line = lines[i].strip()
         match = lesson_head.match(line)
@@ -590,7 +590,7 @@ def _inline_pretty_schedule(text: str) -> str:
             card = [f"⏰ <b>{fm.esc(start_time)}–{fm.esc(end_time)}</b>  ·  <b>ПАРА {number}</b>"]
             i += 1
             detail: list[str] = []
-            while i < len(lines) and lines[i].strip() and len(detail) < 3:
+            while i < len(lines) and lines[i].strip() and len(detail) < 4:
                 if lesson_head.match(lines[i].strip()) or lines[i].lstrip().startswith("📅 "):
                     break
                 detail.append(lines[i].strip())
@@ -604,18 +604,18 @@ def _inline_pretty_schedule(text: str) -> str:
                     card.append("  ·  ".join(detail[1:]))
             if cancelled:
                 card.append("❌ <b>ЗАНЯТИЕ ОТМЕНЕНО</b>")
-            out.append("<blockquote>" + "\\n".join(card) + "</blockquote>")
+            out.append("<blockquote>" + "\n".join(card) + "</blockquote>")
             continue
         if line.startswith(("▶️ ", "⏭ ")):
             out.append("<blockquote>" + line + "</blockquote>")
         elif line.startswith("Группа "):
             out.append("🎓 <b>" + line + "</b>")
         elif line.startswith("📅 <b>"):
-            out.append("\\n" + line)
+            out.append("\n" + line)
         else:
             out.append(lines[i])
         i += 1
-    rendered = "\\n".join(out)
+    rendered = "\n".join(out)
     # Telegram ограничивает длину текста; не режем HTML посередине тега.
     return rendered if len(rendered) <= MAX_TEXT else text[:MAX_TEXT]
 
