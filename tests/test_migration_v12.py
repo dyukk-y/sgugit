@@ -12,7 +12,12 @@ class MigrationV14Tests(unittest.TestCase):
             await db.connect()
             try:
                 await migrate(db)
+                # Seed representative pre-v12 production rows before simulating an upgrade.
                 await db.execute("INSERT INTO settings (k, v) VALUES (?, ?)", "keep_me", "unchanged")
+                await db.execute("INSERT INTO groups (id, name, norm, created_at) VALUES (?, ?, ?, ?)", 7, "ИС-21", "ис-21", 100)
+                await db.execute("INSERT INTO users (id, group_id, fio, created_at, last_seen) VALUES (?, ?, ?, ?, ?)", 101, 7, "Иванов Иван", 110, 120)
+                await db.execute("INSERT INTO lessons (id, group_id, day, num, start_t, end_t, subject) VALUES (?, ?, ?, ?, ?, ?, ?)", 201, 7, "2026-11-16", 1, "09:00", "10:30", "Математика")
+                await db.execute("INSERT INTO chats (chat_id, title, group_id) VALUES (?, ?, ?)", -100123, "ИС-21", 7)
                 await db.execute("DROP TABLE group_schedule_changes")
                 await db.execute("DROP TABLE teacher_accounts")
                 await db.execute("ALTER TABLE chats DROP COLUMN cleanup_on")
@@ -30,6 +35,10 @@ class MigrationV14Tests(unittest.TestCase):
                     "ix_gsc_group_day_status")
                 self.assertEqual(version, 15)
                 self.assertEqual(saved, "unchanged")
+                self.assertEqual(await db.scalar("SELECT fio FROM users WHERE id = ?", 101), "Иванов Иван")
+                self.assertEqual(await db.scalar("SELECT subject FROM lessons WHERE id = ?", 201), "Математика")
+                self.assertEqual(await db.scalar("SELECT title FROM chats WHERE chat_id = ?", -100123), "ИС-21")
+                self.assertEqual(await db.scalar("SELECT name FROM groups WHERE id = ?", 7), "ИС-21")
                 self.assertEqual(table, 1)
                 self.assertEqual(index, 1)
                 teacher_accounts = await db.scalar(
