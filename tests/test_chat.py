@@ -21,6 +21,8 @@ class T(unittest.TestCase):
                 for want in seq:
                     await lc.apply(r, chat, u5, act); chat = await r.get_chat(-7); self.assertEqual(chat[field], want)
             await lc.apply(r, chat, u5, "ev"); chat = await r.get_chat(-7); self.assertEqual(chat["evening_on"], 1)
+            for act, field, expected in (("no", "notifications_on", 0), ("pq", "private_questions", 1), ("cl", "cleanup_on", 1)):
+                await lc.apply(r, chat, u5, act); chat = await r.get_chat(-7); self.assertEqual(chat[field], expected)
             u7 = await r.ensure_user(7); await r.update_user(7, role="head", group_id=g["id"]); u7 = await r.get_user(7)
             self.assertTrue(lc.can_manage(u7, chat, 1))
             await db.close()
