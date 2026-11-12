@@ -35,25 +35,23 @@ async def main_menu(ctx: Ctx) -> Screen:
     if ctx.repo.flag("maintenance"):
         head += "\n⚠️ Идут технические работы."
 
+    sponsor = Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
+                  url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")
     rows: Kb = [
         [Btn("📅 Расписание", "s:d:today")],
-        [Btn("📝 ДЗ", "h:l:0"), Btn("🔔 Уведомления", "me:ntf")],
-        [Btn("👥 Другая", "me:other")],
-        [Btn("🔎 Преподаватель", "me:findt")],
-        [Btn("⚙️ Ещё", "me:menu")],
+        [Btn("📝 Задания", "h:l:0"), Btn("🔔 Уведомления", "me:ntf")],
+        [Btn("👥 Другая группа", "me:other")],
+        [Btn("🔎 Найти преподавателя", "me:findt")],
     ]
-    if show_add_group:
-        rows.append([Btn("➕ В чат", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages"),
-                     Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
-                         url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")])
-    else:
-        rows.append([Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
-                         url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")])
-
     if ctx.repo.flag("rating_enabled"):
-        rows[3].append(Btn("⭐ Оценки", "t:l:m:0"))
+        rows[3].append(Btn("⭐ Оценить преподавателя", "t:l:m:0"))
     if not ctx.is_admin:
-        rows.insert(4, [Btn("👨‍🏫 Я преподаватель", "p:register")])
+        rows.append([Btn("👨‍🏫 Я преподаватель", "p:register")])
+    if show_add_group:
+        rows.append([Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")])
+    # Настройки и спонсор всегда стоят рядом; длинные кнопки на мобильном
+    # автоматически разнесёт to_markup, если они не помещаются в один ряд.
+    rows.append([Btn("⚙️ Настройки", "me:menu"), sponsor])
 
     return Screen(head, rows)
 
