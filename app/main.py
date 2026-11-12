@@ -144,7 +144,7 @@ async def main() -> None:
             finally:
                 await runner.cleanup()
         else:
-            await dp.start_polling(bot, allowed_updates=["message", "callback_query", "my_chat_member"])
+            await dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES)
     finally:
         for t in tasks:
             t.cancel()
