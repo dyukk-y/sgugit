@@ -553,6 +553,12 @@ def build_router(app: App) -> Router:
     async def private_photo(message: Message) -> None:
         if message.from_user is None or not message.photo:
             return
+        if not await _private_user_registered(app, message.from_user):
+            out = await run_process(app, message.from_user, command="start")
+            await render(app, message.chat.id, out)
+            await deliver_side_effects(app, message.chat.id, out)
+            await safe_delete(message)
+            return
         out = await run_process(app, message.from_user, attachment_file_id=message.photo[-1].file_id,
                                 attachment_kind="photo", attachment_caption=message.caption or "")
         await render(app, message.chat.id, out)
@@ -562,6 +568,12 @@ def build_router(app: App) -> Router:
     @r.message(private, F.document)
     async def private_document(message: Message) -> None:
         if message.from_user is None or message.document is None:
+            return
+        if not await _private_user_registered(app, message.from_user):
+            out = await run_process(app, message.from_user, command="start")
+            await render(app, message.chat.id, out)
+            await deliver_side_effects(app, message.chat.id, out)
+            await safe_delete(message)
             return
         doc = message.document
         if (doc.file_size or 0) > MAX_UPLOAD:
