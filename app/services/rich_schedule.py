@@ -5,11 +5,11 @@ from __future__ import annotations
 def schedule_rich_html(text: str) -> str:
     """Преобразует HTML-экран расписания в блоки rich message, сохраняя inline-разметку."""
     blocks: list[str] = []
-    for index, raw in enumerate(text.splitlines()):
+    for raw in text.splitlines():
         line = raw.strip()
         if not line:
             continue
-        if index == 0 and line.startswith("<b>") and "</b>" in line:
+        if not blocks and line.startswith("<b>") and "</b>" in line:
             end = line.find("</b>")
             blocks.append(f"<h1>{line[3:end]}</h1>{line[end + 4:]}")
         elif line.startswith("📅 <b>") and "</b>" in line:
