@@ -1,4 +1,4 @@
-"""Регистрация, профиль, уведомления, заявка на старосту, прочие экраны меню «Ещё»."""
+"""Регистрация, профиль, уведомления и прочие экраны меню «Ещё»."""
 from __future__ import annotations
 
 import time
@@ -426,35 +426,7 @@ async def on_cb_me(ctx: Ctx, parts: list[str]) -> Out:
                                      "Чтобы начать заново, нажмите /start."), clear_state=True)
         return Out(screen=Screen("Удалить ФИО, группу и настройки? Это нельзя отменить.",
                                  [[Btn("Да, удалить", "me:del:y"), Btn("Отмена", "me:mydata")]]))
-    if act == "head":
-        return Out(screen=await more_menu(ctx), toast="Функция старосты отключена")
     return Out(toast="Неизвестное действие")
-
-
-async def _head_request(ctx: Ctx) -> Out:
-    repo = ctx.repo
-    if ctx.is_head or ctx.is_admin:
-        return Out(toast="У вас уже есть расширенные права", alert=True)
-    if ctx.user.get("head_blocked"):
-        return Out(toast="Недоступно", alert=True)
-    if not ctx.verified or not ctx.registered:
-        return Out(toast="Сначала нужно подтверждённое ФИО", alert=True)
-    last = await repo.request_for_user(ctx.uid)
-    if last and last["status"] == "pending":
-        return Out(screen=Screen("Ваша заявка уже на рассмотрении. Сообщим о решении.", [nav("me:menu")]))
-    rid = await repo.create_request(ctx.uid, ctx.user["group_id"])
-    g = await ctx.group()
-    text = (f"👑 <b>Заявка на старосту</b>\n{fm.esc(ctx.user.get('fio') or '')} (ID {ctx.uid}"
-            f"{', @' + fm.esc(ctx.user['username']) if ctx.user.get('username') else ''})\n"
-            f"Группа: {fm.esc(g['name']) if g else '—'}")
-    kb = [[Btn("✅ Одобрить", f"ad:rqd:{rid}:ok"), Btn("❌ Отказать", f"ad:rqd:{rid}:no")]]
-    out = Out(screen=Screen("Заявка отправлена администраторам. Сообщим о решении.", [nav("me:menu")]))
-    admins = [ctx.cfg.superadmin_id]
-    for a in await repo.users_with_role("admin"):
-        if "requests" in (a.get("admin_perms") or "").split(","):
-            admins.append(a["id"])
-    out.notify = [(aid, Screen(text, kb)) for aid in dict.fromkeys(admins)]
-    return out
 
 
 async def on_text_me(ctx: Ctx, state: str, data: dict, text: str) -> Out:
