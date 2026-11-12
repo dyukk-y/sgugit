@@ -577,7 +577,9 @@ def _inline_pretty_schedule(text: str) -> str:
             continue
         out.append(line)
         i += 1
-    return "\n".join(out)[:MAX_TEXT]
+    rendered = "\n".join(out)
+    # Не обрезаем HTML посередине тега: при длинной неделе оставляем исходный компактный текст.
+    return rendered if len(rendered) <= MAX_TEXT else text[:MAX_TEXT]
 
 
 def build_router(app: App) -> Router:
