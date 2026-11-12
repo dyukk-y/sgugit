@@ -82,6 +82,23 @@ class T(unittest.TestCase):
             await s.db.close()
         run(go())
 
+    def test_add_group_button_hidden_after_user_added_bot(self):
+        async def go():
+            s = await Sim().setup()
+            gid = (await s.repo.get_or_create_group("ИС-11"))["id"]
+            await s.repo.touch_user(777, None, None)
+            await s.repo.update_user(777, group_id=gid, fio="Смирнова Анна Сергеевна", fio_status="verified")
+            out = await s.do(777, command="start")
+            buttons = [b for row in out.screen.kb for b in row]
+            self.assertTrue(any(b.url and "startgroup" in b.url for b in buttons))
+            await s.repo.upsert_chat(-100777, "Тестовая группа", gid, 777)
+            out = await s.do(777, command="start")
+            buttons = [b for row in out.screen.kb for b in row]
+            self.assertFalse(any(b.url and "startgroup" in b.url for b in buttons))
+            self.assertTrue(any(b.url and "theyasha_bot" in b.url for b in buttons))
+            await s.db.close()
+        run(go())
+
     def test_registration_and_schedule(self):
         async def go():
             s = await Sim().setup()
