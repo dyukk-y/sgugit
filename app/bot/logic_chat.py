@@ -48,7 +48,7 @@ async def screen(repo: Repo, chat: dict) -> Screen:
             f"🔔 Все групповые уведомления: {'включены' if all_on else 'выключены'}\n"
             f"📩 Ответы на вопросы о расписании: {'в личные сообщения' if private_on else 'в группу'}\n"
             f"🧹 Очистка вопросов после последней пары: {'включена' if cleanup_on else 'выключена'}\n"
-            f"🔔 Переносы, отмены и новые пары: {'присылать' if ch_on else 'не присылать'}\n"
+            f"🔔 Изменения расписания (переносы, отмены и новые пары): {'присылать' if ch_on else 'не присылать'}\n"
             f"💬 Умные ответы: {SMART_LABEL.get(chat['smart_mode'], chat['smart_mode'])}")
     if ev_on and pin_on:
         text += "\n\nℹ️ Для закрепа боту нужно право «Закреплять сообщения» (сделайте его администратором)."
@@ -59,7 +59,7 @@ async def screen(repo: Repo, chat: dict) -> Screen:
         [Btn(f"🔔 Все групповые уведомления: {_onoff(all_on)}", f"cs:{cid}:no")],
         [Btn(f"📩 Приватные ответы о расписании: {_onoff(private_on)}", f"cs:{cid}:pq")],
         [Btn(f"🧹 Очистка вопросов: {_onoff(cleanup_on)}", f"cs:{cid}:cl")],
-        [Btn(f"🔔 Переносы, отмены и новые пары: {_onoff(ch_on)}", f"cs:{cid}:ch")],
+        [Btn(f"🔔 Изменения расписания (переносы, отмены и новые пары): {_onoff(ch_on)}", f"cs:{cid}:ch")],
         [Btn(f"💬 Умные ответы: {SHORT_SMART.get(chat['smart_mode'], chat['smart_mode'])}", f"cs:{cid}:sm")],
         [Btn(f"⏳ Ждать ответа людей: {chat.get('wait_min', 60)} мин", f"cs:{cid}:wt")],
         [Btn(f"🧹 Автоудаление ответов: {'выкл' if not ad else f'{ad} мин'}", f"cs:{cid}:ad")],
