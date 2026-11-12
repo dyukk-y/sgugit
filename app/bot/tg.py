@@ -57,20 +57,34 @@ MOBILE_PAIR_MAX = 13
 
 
 def _mobile_rows(kb: Kb) -> Kb:
-    """Оставляет рядом только короткие подписи: Telegram делит ширину ряда поровну,
-    поэтому две длинные кнопки на телефоне становятся нечитаемыми."""
+    """Компактно группирует короткие кнопки, не дробя навигацию на лишние ряды."""
     out: Kb = []
+    pending: list[Btn] = []
+
+    def flush() -> None:
+        while pending:
+            out.append(pending[:3])
+            del pending[:3]
+
     for row in kb:
-        if len(row) <= 1:
-            out.append(row)
+        lengths = [len(button.text) for button in row]
+        if len(row) == 1 and lengths[0] <= MOBILE_SHORT_BTN:
+            pending.extend(row)
+            if len(pending) >= 3:
+                flush()
             continue
-        lengths = [len(b.text) for b in row]
-        # Короткие навигационные/числовые кнопки можно группировать; пару обычных
-        # кнопок оставляем рядом только если каждая подпись действительно компактна.
-        if all(n <= MOBILE_SHORT_BTN for n in lengths) or (len(row) == 2 and max(lengths) <= MOBILE_PAIR_MAX):
+
+        flush()
+        if not row:
+            continue
+        if all(n <= MOBILE_SHORT_BTN for n in lengths) or (
+            len(row) == 2 and max(lengths) <= MOBILE_PAIR_MAX
+        ):
             out.append(row)
         else:
-            out.extend([b] for b in row)
+            out.extend([button] for button in row)
+
+    flush()
     return out
 
 
