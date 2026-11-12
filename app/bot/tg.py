@@ -32,6 +32,19 @@ MAX_UPLOAD = 5 * 1024 * 1024
 _TAG_RE = re.compile(r"</?[a-zA-Z][^>]*>")
 
 
+async def _answer_inline_query(query: InlineQuery, results: list) -> None:
+    """Telegram может закрыть inline query, пока БД/сеть ещё отвечают. Не роняем dispatcher."""
+    try:
+        await query.answer(results[:10], cache_time=15, is_personal=True)
+    except TelegramBadRequest as exc:
+        if _is(exc, "query is too old", "response timeout expired", "query id is invalid"):
+            log.debug("Inline query expired before answer: %s", query.id)
+            return
+        log.warning("Не удалось ответить на inline query %s: %s", query.id, exc)
+    except TelegramAPIError:
+        log.exception("Ошибка Telegram при ответе на inline query %s", query.id)
+
+
 def strip_tags(text: str) -> str:
     import html
 
@@ -560,18 +573,6 @@ def build_router(app: App) -> Router:
     if hasattr(r, "inline_query"):
         # ---------------- Inline mode: быстрый выбор вида расписания прямо в любом чате ----------------
         @r.inline_query()
-        async def _answer_inline(query: InlineQuery, results: list) -> None:
-            """Telegram может закрыть inline query, пока БД/сеть ещё отвечают. Не роняем dispatcher."""
-            try:
-                await query.answer(results[:10], cache_time=15, is_personal=True)
-            except TelegramBadRequest as exc:
-                if _is(exc, "query is too old", "response timeout expired", "query id is invalid"):
-                    log.debug("Inline query expired before answer: %s", query.id)
-                    return
-                log.warning("Не удалось ответить на inline query %s: %s", query.id, exc)
-            except TelegramAPIError:
-                log.exception("Ошибка Telegram при ответе на inline query %s", query.id)
-
         async def inline_schedule(query: InlineQuery) -> None:
             raw = (query.query or "").strip()
             today = tu.now_local().date()
@@ -597,7 +598,7 @@ def build_router(app: App) -> Router:
                     input_message_content=InputTextMessageContent(
                         message_text="📅 <b>Расписание СГУГиТ</b>\\n\\n" + hint,
                         parse_mode="HTML", disable_web_page_preview=True))
-                await _answer_inline(query, [result])
+                await _answer_inline_query(query, [result])
                 return
 
             async def build_group_results(group_row: dict) -> list:
@@ -633,7 +634,7 @@ def build_router(app: App) -> Router:
             # к БД не должны съедать весь короткий срок жизни inline query.
             batches = await asyncio.gather(*(build_group_results(g) for g in groups if g))
             results = [item for batch in batches for item in batch]
-            await _answer_inline(query, results)
+            await _answer_inline_query(query, results)
 
     # ---------------- личные сообщения ----------------
     @r.message(private, F.text.startswith("/"))
