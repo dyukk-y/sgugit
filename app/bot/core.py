@@ -126,7 +126,12 @@ class Ctx:
 
     @property
     def registered(self) -> bool:
-        return self.user.get("group_id") is not None
+        """Полная регистрация: группа + ФИО для студента, связанная запись для преподавателя."""
+        if self.is_admin:
+            return True
+        if self.role == "teacher":
+            return bool(self.user.get("_teacher_registered"))
+        return self.user.get("group_id") is not None and bool(str(self.user.get("fio") or "").strip())
 
     @property
     def verified(self) -> bool:
