@@ -560,6 +560,18 @@ def build_router(app: App) -> Router:
     if hasattr(r, "inline_query"):
         # ---------------- Inline mode: быстрый выбор вида расписания прямо в любом чате ----------------
         @r.inline_query()
+        async def _answer_inline(query: InlineQuery, results: list) -> None:
+            """Telegram может закрыть inline query, пока БД/сеть ещё отвечают. Не роняем dispatcher."""
+            try:
+                await query.answer(results[:10], cache_time=15, is_personal=True)
+            except TelegramBadRequest as exc:
+                if _is(exc, "query is too old", "response timeout expired", "query id is invalid"):
+                    log.debug("Inline query expired before answer: %s", query.id)
+                    return
+                log.warning("Не удалось ответить на inline query %s: %s", query.id, exc)
+            except TelegramAPIError:
+                log.exception("Ошибка Telegram при ответе на inline query %s", query.id)
+
         async def inline_schedule(query: InlineQuery) -> None:
             raw = (query.query or "").strip()
             today = tu.now_local().date()
@@ -583,22 +595,22 @@ def build_router(app: App) -> Router:
                 result = InlineQueryResultArticle(
                     id="inline-help", title=title, description=hint[:180],
                     input_message_content=InputTextMessageContent(
-                        message_text="📅 <b>Расписание СГУГиТ</b>\n\n" + hint,
+                        message_text="📅 <b>Расписание СГУГиТ</b>\\n\\n" + hint,
                         parse_mode="HTML", disable_web_page_preview=True))
-                await query.answer([result], cache_time=10, is_personal=True)
+                await _answer_inline(query, [result])
                 return
 
-            results = []
-            for group_row in groups:
+            async def build_group_results(group_row: dict) -> list:
                 if not group_row:
-                    continue
+                    return []
                 gid = int(group_row["id"])
                 title = str(group_row["name"])
-                views = ([("day", "Сегодня", today), ("day", "Завтра", today + timedelta(days=1)),
+                views = ([( "day", "Сегодня", today), ("day", "Завтра", today + timedelta(days=1)),
                           ("week", "На неделю", tu.monday_of(today))]
-                         if mode == "choices" else [(mode, "На неделю" if mode == "week" else
-                                                    tu.fmt_date(selected_day), selected_day)])
-                for view, label, day in views:
+                         if mode == "choices" else
+                         [(mode, "На неделю" if mode == "week" else tu.fmt_date(selected_day), selected_day)])
+
+                async def build_view(view: str, label: str, day: date):
                     if view == "week":
                         monday = tu.monday_of(day)
                         sunday = monday + timedelta(days=6)
@@ -608,13 +620,20 @@ def build_router(app: App) -> Router:
                         lessons = await app.repo.lessons_day(gid, tu.iso(day))
                         body = fm.day_text(day, lessons, group_name=title)
                     count = len(lessons)
-                    results.append(InlineQueryResultArticle(
+                    return InlineQueryResultArticle(
                         id=f"g{gid}-{view}-{tu.iso(day)}", title=f"{title} · {label}",
                         description=(f"{count} занятий · нажмите, чтобы отправить" if count else
                                      "Занятий нет · нажмите, чтобы отправить"),
                         input_message_content=InputTextMessageContent(
-                            message_text=body, parse_mode="HTML", disable_web_page_preview=True)))
-            await query.answer(results[:10], cache_time=15, is_personal=True)
+                            message_text=body, parse_mode="HTML", disable_web_page_preview=True))
+
+                return await asyncio.gather(*(build_view(view, label, day) for view, label, day in views))
+
+            # Не ждём каждую группу и каждый день последовательно: медленные запросы
+            # к БД не должны съедать весь короткий срок жизни inline query.
+            batches = await asyncio.gather(*(build_group_results(g) for g in groups if g))
+            results = [item for batch in batches for item in batch]
+            await _answer_inline(query, results)
 
     # ---------------- личные сообщения ----------------
     @r.message(private, F.text.startswith("/"))
