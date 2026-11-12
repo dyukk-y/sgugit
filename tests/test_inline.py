@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from datetime import date
 
-from aiogram.exceptions import TelegramBadRequest
+from unittest.mock import patch
 from app.bot.tg import _answer_inline_query, _parse_inline_query
 
 
@@ -41,11 +41,14 @@ class InlineQueryParsingTests(unittest.TestCase):
                          ("ИС-11 корпус", "choices", self.today))
 
     def test_expired_query_is_ignored_without_raising(self):
+        class ExpiredQueryError(Exception):
+            pass
         class Query:
             id = "expired"
             async def answer(self, *args, **kwargs):
-                raise TelegramBadRequest("query is too old and response timeout expired")
-        asyncio.run(_answer_inline_query(Query(), [object()]))
+                raise ExpiredQueryError("query is too old and response timeout expired")
+        with patch("app.bot.tg.TelegramBadRequest", ExpiredQueryError):
+            asyncio.run(_answer_inline_query(Query(), [object()]))
 
 
 if __name__ == "__main__":
