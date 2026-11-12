@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from app import timeutil as tu
-from app.bot import logic_admin, logic_head, logic_hw, logic_schedule as ls, logic_teacher, logic_teachers, logic_user
+from app.bot import logic_admin, logic_hw, logic_schedule as ls, logic_teacher, logic_teachers, logic_user
 from app.bot.core import Btn, Ctx, Out, Screen, home_btn
 from app.services import format as fm
 from app.services.nlu import Intent, detect_intent, parse_hw_phrase
@@ -46,7 +46,7 @@ async def handle_callback(ctx: Ctx, data: str) -> Out:
     if head == "me":
         return await logic_user.on_cb_me(ctx, rest)
     if head == "hd":
-        return Out(toast="Панель старост отключена", alert=True)
+        return Out(toast="Функции старост отключены", alert=True)
     if ctx.role == "teacher" and head in ("s", "h", "t"):
         return Out(screen=await logic_teacher.menu(ctx), clear_state=True)
     if head in ("s", "h", "t") and not ctx.registered:
@@ -102,8 +102,6 @@ async def handle_text(ctx: Ctx, text: str) -> Out:
             return await logic_teachers.on_text(ctx, state, data, text)
         if prefix == "ad":
             return await logic_admin.on_text(ctx, state, data, text)
-        if prefix == "hd":
-            return await logic_head.on_text(ctx, state, data, text)
     if ctx.role == "teacher":
         return Out(screen=await logic_teacher.menu(ctx), clear_state=True)
     if not ctx.registered:

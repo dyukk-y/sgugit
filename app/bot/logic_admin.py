@@ -12,7 +12,7 @@ from app.services import format as fm
 from app.services.fio import describe_reasons, short_name, validate_fio
 
 PAGE = 6
-DEFAULT_ADMIN_PERMS = ("users", "requests", "homework", "teachers", "stats")
+DEFAULT_ADMIN_PERMS = ("users", "homework", "teachers", "stats")
 BOOL_SETTINGS = {
     "rating_enabled": "Раздел «Преподаватели»",
     "hw_show_author": "Показывать автора задания",
@@ -57,7 +57,6 @@ async def menu_screen(ctx: Ctx) -> Screen:
             rows.append(pair)
 
     pend_fio = await ctx.repo.count("users", "fio_status = 'pending'") if ctx.can("users") else 0
-    pend_rq = await ctx.repo.count("head_requests", "status = 'pending'") if ctx.can("requests") else 0
     pend_hw = await ctx.repo.count("homework", "status = 'pending'") if ctx.can("homework") else 0
     add([Btn("📊 Статистика", "ad:stats")] if ctx.can("stats") else [])
     add([Btn("👥 Пользователи", "ad:u")] if ctx.can("users") else [])
@@ -109,7 +108,6 @@ async def user_card(ctx: Ctx, uid: int) -> Out:
              f"Группа: {fm.esc(g['name']) if g else '—'}",
              f"ФИО: {u['fio_status']}", f"Роль: {role}",
              f"Бан: {'да 🚫' if u['banned'] else 'нет'}",
-             f"Блок заявки на старосту: {'да' if u['head_blocked'] else 'нет'}" if ctx.is_super else "",
              f"Регистрация: {reg} · активность: {seen}"]
     kb: Kb = []
     if u["fio_status"] == "pending" and u.get("fio") and not (is_target_super and not ctx.is_super):
@@ -156,8 +154,8 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
 
     if act == "menu":
         return Out(screen=await menu_screen(ctx), clear_state=True)
-    if act in {"rq", "rqd", "hm"}:
-        return Out(toast="Функции старост отключены", alert=True)
+    if act in {"rq", "rqd", "hm", "uh", "uc"}:
+        return Out(toast="Эта функция больше не поддерживается", alert=True)
     if act == "uitext":
         if not ctx.is_super:
             return _deny()
@@ -297,32 +295,6 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             out.notify = [(uid, Screen("Администратор попросил указать ФИО заново. Нажмите /start."))]
         await repo.audit(ctx.uid, f"fio_{arg2}", str(uid))
         return out
-    if act == "uh" and arg.isdigit():
-        if not _need(ctx, "requests"):
-            return _deny()
-        uid = int(arg)
-        u = await repo.get_user(uid)
-        if not u or u["role"] == "admin" or uid == ctx.cfg.superadmin_id:
-            return _deny()
-        if u["role"] == "head":
-            await repo.update_user(uid, role="student")
-            await repo.audit(ctx.uid, "head_remove", str(uid))
-            out = await user_card(ctx, uid)
-            out.notify = [(uid, Screen("Роль старосты снята администратором."))]
-            return out
-        if not u.get("group_id"):
-            return Out(toast="У пользователя нет группы", alert=True)
-        await repo.update_user(uid, role="head")
-        await repo.audit(ctx.uid, "head_assign", str(uid))
-        out = await user_card(ctx, uid)
-        out.notify = [(uid, Screen("🎉 Вы назначены старостой группы. Откройте «Ещё → Панель старосты»."))]
-        return out
-    if act == "uc" and arg.isdigit():
-        if not _need(ctx, sup=True):
-            return _deny()
-        await repo.update_user(int(arg), head_blocked=0)
-        await repo.audit(ctx.uid, "head_unblock", arg)
-        return await user_card(ctx, int(arg))
     if act == "ur" and arg.isdigit():
         if not _need(ctx, sup=True):
             return _deny()
@@ -347,56 +319,6 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             kb.append(pager("ad:fq", page, total, PAGE))
         kb.append(nav("ad:menu"))
         return Out(screen=Screen(f"<b>ФИО на проверке: {total}</b>" + ("" if rows else "\nОчередь пуста."), kb))
-
-    # ---- заявки старост ----
-    if act == "rq":
-        if not _need(ctx, "requests"):
-            return _deny()
-        reqs = await repo.pending_requests(6)
-        lines = [f"<b>Заявки на старосту: {len(reqs)}</b>"]
-        kb = []
-        for r in reqs:
-            u = await repo.get_user(r["user_id"])
-            g = await repo.get_group(r["group_id"])
-            who = (u.get("fio") if u else None) or str(r["user_id"])
-            lines.append(f"• {fm.esc(who)} · {fm.esc(g['name']) if g else '—'}")
-            kb.append([Btn(f"✅ {who[:16]}", f"ad:rqd:{r['id']}:ok"), Btn("❌", f"ad:rqd:{r['id']}:no"),
-                       Btn("👤", f"ad:u:{r['user_id']}")])
-        if not reqs:
-            lines.append("Заявок нет.")
-        kb.append([Btn("➕ Назначить по @username/ID", "ad:hm")])
-        kb.append(nav("ad:menu"))
-        return Out(screen=Screen("\n".join(lines), kb))
-    if act == "rqd" and arg.isdigit() and arg2 in ("ok", "no"):
-        if not _need(ctx, "requests"):
-            return _deny()
-        req = await repo.get_request(int(arg))
-        if not req:
-            return Out(toast="Заявка не найдена", alert=True)
-        if req["status"] != "pending":
-            return Out(screen=Screen("Эта заявка уже обработана.", [nav("ad:rq")]), toast="Уже обработана")
-        u = await repo.get_user(req["user_id"])
-        if not u:
-            return Out(toast="Пользователь не найден", alert=True)
-        if not await repo.decide_request(req["id"], "approved" if arg2 == "ok" else "rejected", ctx.uid):
-            return Out(toast="Уже обработана", alert=True)
-        if arg2 == "ok":
-            if u["role"] == "student" and u.get("group_id"):
-                await repo.update_user(u["id"], role="head")
-            await repo.audit(ctx.uid, "head_approve", str(u["id"]))
-            note = "🎉 Заявка одобрена: вы теперь староста. Откройте «Ещё → Панель старосты»."
-        else:
-            await repo.update_user(u["id"], head_blocked=1)
-            await repo.audit(ctx.uid, "head_reject", str(u["id"]))
-            note = "К сожалению, заявка на старосту отклонена."
-        out = Out(screen=Screen("Решение сохранено ✅", [nav("ad:rq")]), toast="Готово")
-        out.notify = [(u["id"], Screen(note))]
-        return out
-    if act == "hm":
-        if not _need(ctx, "requests"):
-            return _deny()
-        return Out(screen=Screen("Введите @username или Telegram ID пользователя, которого нужно назначить старостой.",
-                                 [nav("ad:rq")]), state="ad:head_assign", state_data={})
 
     # ---- расписание ----
     if act == "sch":
@@ -587,7 +509,7 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             return _deny()
         if arg == "grp":
             return Out(screen=Screen("Введите название группы.", [nav("ad:bc")]), state="ad:bc_group", state_data={})
-        if arg in ("all", "heads"):
+        if arg == "all":
             return Out(screen=Screen("Напишите текст рассылки одним сообщением.", [nav("ad:bc")]),
                        state="ad:bc_text", state_data={"aud": arg})
     if act == "bcp":
@@ -816,8 +738,6 @@ async def _recipients(ctx: Ctx, data: dict) -> list[int]:
     aud = data.get("aud")
     if aud == "all":
         rows = await repo.db.fetchall("SELECT id FROM users WHERE banned = 0 AND bot_blocked = 0")
-    elif aud == "heads":
-        rows = await repo.db.fetchall("SELECT id FROM users WHERE role = 'head' AND banned = 0 AND bot_blocked = 0")
     else:
         rows = await repo.db.fetchall(
             "SELECT id FROM users WHERE group_id = ? AND banned = 0 AND bot_blocked = 0", data.get("gid"))
@@ -869,17 +789,6 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
                        state="ad:user_search", state_data={})
         out = await user_card(ctx, u["id"])
         out.clear_state = True
-        return out
-    if state == "ad:head_assign" and ctx.can("requests"):
-        u = await repo.find_user(text)
-        if not u or not u.get("group_id") or u["role"] == "admin" or u["id"] == ctx.cfg.superadmin_id:
-            return Out(screen=Screen("Пользователь не найден или ещё не выбрал группу в боте. Попробуйте ещё раз.",
-                                     [nav("ad:rq")]), state="ad:head_assign", state_data={})
-        await repo.update_user(u["id"], role="head")
-        await repo.audit(ctx.uid, "head_assign", str(u["id"]))
-        out = await user_card(ctx, u["id"])
-        out.clear_state = True
-        out.notify = [(u["id"], Screen("🎉 Вы назначены старостой группы. Откройте «Ещё → Панель старосты»."))]
         return out
     if state == "ad:group_add" and ctx.can("schedule"):
         names = [n.strip() for n in text.replace("\n", ",").split(",") if n.strip()][:50]
