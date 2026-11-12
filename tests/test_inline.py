@@ -53,10 +53,10 @@ class InlineQueryParsingTests(unittest.TestCase):
                          ("ИС-11 корпус", "choices", self.today))
 
     def test_inline_schedule_uses_modern_cards_for_group_and_teacher_lessons(self):
-        source = ("<b>Пятница, 13 ноября</b>\\nГруппа ИС-11\\n"
-                  "▶️ <b>Сейчас идёт: Математика</b> · до 10:00\\n\\n"
-                  "<b>01</b> ·  08:30–10:00\\n📘 Математика\\n"
-                  "🎓 лекция  ·  👨‍🏫 Иванов  ·  📍 301\\n"
+        source = ("<b>Пятница, 13 ноября</b>\nГруппа ИС-11\n"
+                  "▶️ <b>Сейчас идёт: Математика</b> · до 10:00\n\n"
+                  "<b>01</b> ·  08:30–10:00\n📘 Математика\n"
+                  "🎓 лекция  ·  👨‍🏫 Иванов  ·  📍 301\n"
                   "👥 Группа: ИС-11")
         rendered = _inline_pretty_schedule(source)
         self.assertTrue(rendered.startswith("📚 <b>РАСПИСАНИЕ</b>"))
