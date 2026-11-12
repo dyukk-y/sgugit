@@ -602,7 +602,10 @@ def _inline_pretty_schedule(text: str) -> str:
                     # первые две буквы названия предмета.
                     subject = "📖 <b>" + subject[2:] + "</b>"
                 card.append(subject)
-                card.extend(detail[1:])
+                for item in detail[1:]:
+                    if item.startswith("📍 ") and "<b>" not in item:
+                        item = "📍 <b>" + item[2:] + "</b>"
+                    card.append(item)
             if cancelled:
                 card.append("❌ <b>ЗАНЯТИЕ ОТМЕНЕНО</b>")
             out.append("<blockquote>" + "\n".join(card) + "</blockquote>")
@@ -611,6 +614,14 @@ def _inline_pretty_schedule(text: str) -> str:
             out.append("<blockquote>" + line + "</blockquote>")
         elif line.startswith("Группа "):
             out.append("🎓 <b>" + line + "</b>")
+        elif line.startswith(("🏛 ", "🚪 ")):
+            section = [line]
+            i += 1
+            if i < len(lines) and lines[i].strip() and not lines[i].strip().startswith(section_starts):
+                section.append(lines[i].strip())
+                i += 1
+            out.append("<blockquote>" + "\n".join(section) + "</blockquote>")
+            continue
         elif line.startswith("📅 <b>"):
             out.append("\n" + line)
         else:
