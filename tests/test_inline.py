@@ -3,8 +3,13 @@ import unittest
 from datetime import date
 
 from unittest.mock import patch
-from app.bot.tg import (_answer_inline_query, _inline_pretty_schedule, _looks_like_group_query,
-                        _parse_inline_query, _teacher_result_id)
+from app.bot.tg import (
+    _answer_inline_query,
+    _inline_pretty_schedule,
+    _looks_like_group_query,
+    _parse_inline_query,
+    _teacher_result_id,
+)
 
 
 class InlineQueryParsingTests(unittest.TestCase):
@@ -48,23 +53,12 @@ class InlineQueryParsingTests(unittest.TestCase):
                          ("ИС-11 корпус", "choices", self.today))
 
     def test_inline_schedule_wraps_lessons_as_readable_cards(self):
-        source = ("<b>Пятница, 13 ноября</b>
-Группа ИС-11
-
-"
-                  "<b>01</b> · 08:30–10:00
-📘 Математика
-🎓 лекция · 👨‍🏫 Иванов · 📍 301
-
-"
-                  "<b>02</b> · 10:15–11:45
-📘 Физика
-🧪 лабораторная · 📍 202")
+        source = ("<b>Пятница, 13 ноября</b>\\nГруппа ИС-11\\n\\n"
+                  "<b>01</b> · 08:30–10:00\\n📘 Математика\\n🎓 лекция · 👨‍🏫 Иванов · 📍 301\\n\\n"
+                  "<b>02</b> · 10:15–11:45\\n📘 Физика\\n🧪 лабораторная · 📍 202")
         rendered = _inline_pretty_schedule(source)
-        self.assertIn("<blockquote><b>01</b> · 08:30–10:00
-📘 Математика", rendered)
-        self.assertIn("<blockquote><b>02</b> · 10:15–11:45
-📘 Физика", rendered)
+        self.assertIn("<blockquote><b>01</b> · 08:30–10:00\\n📘 Математика", rendered)
+        self.assertIn("<blockquote><b>02</b> · 10:15–11:45\\n📘 Физика", rendered)
         self.assertIn("Группа ИС-11", rendered)
 
     def test_teacher_result_id_is_ascii_and_bounded(self):
