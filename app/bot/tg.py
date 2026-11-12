@@ -79,6 +79,8 @@ def _mobile_rows(kb: Kb) -> Kb:
             continue
         if all(n <= MOBILE_SHORT_BTN for n in lengths) or (
             len(row) == 2 and max(lengths) <= MOBILE_PAIR_MAX
+        ) or (
+            len(row) == 3 and max(lengths) <= 8
         ):
             out.append(row)
         else:
