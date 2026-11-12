@@ -68,14 +68,14 @@ class InlineQueryParsingTests(unittest.TestCase):
         self.assertIn("🎓 <b>Группа ИС-11</b>", rendered)
 
     def test_inline_teacher_subject_keeps_first_letters_and_department_is_separate(self):
-        source = ("🧑‍🏫 <b>Иванов И.И.</b>\\n"
-                  "▶️ <b>Сейчас ведёт пару до 10:00</b>\\n"
-                  "<b>01</b> ·  08:30–10:00\\n"
-                  "📘 Математика высшая\\n"
-                  "🎓 лекция  ·  👨‍🏫 Иванов И.И.  ·  📍 301\\n"
-                  "🏛 <b>Кафедра</b>\\n"
-                  "Кафедра информационных технологий\\n"
-                  "🚪 <b>Кабинет кафедры</b>\\n"
+        source = ("🧑‍🏫 <b>Иванов И.И.</b>\n"
+                  "▶️ <b>Сейчас ведёт пару до 10:00</b>\n"
+                  "<b>01</b> ·  08:30–10:00\n"
+                  "📘 Математика высшая\n"
+                  "🎓 лекция  ·  👨‍🏫 Иванов И.И.  ·  📍 301\n"
+                  "🏛 <b>Кафедра</b>\n"
+                  "Кафедра информационных технологий\n"
+                  "🚪 <b>Кабинет кафедры</b>\n"
                   "305")
         rendered = _inline_pretty_schedule(source)
         self.assertIn("📖 <b>Математика высшая</b>", rendered)
