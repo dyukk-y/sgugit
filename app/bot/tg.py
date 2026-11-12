@@ -784,8 +784,28 @@ def build_router(app: App) -> Router:
                         "После настройки бот покажет расписание на день и неделю, тип занятия, следующую пару "
                         "и задания. Можно задавать вопросы обычными словами, отвечая на сообщение бота.\n\n"
                         "Команды /settings, /today, /tomorrow, /week, /next и /hw остаются запасным вариантом.")
+            # Небольшие кнопки под приветствием: открыть личного бота для настройки
+            # или сразу вставить расписание этой группы через Telegram Inline Mode.
+            if group:
+                markup = InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="📅 Вставить расписание",
+                        switch_inline_query_current_chat=group["name"],
+                    ),
+                    InlineKeyboardButton(
+                        text="⚙️ Настроить",
+                        url=f"https://t.me/{app.username}?start=group_access",
+                    ),
+                ]])
+            else:
+                markup = InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="👤 Настроить бота",
+                        url=f"https://t.me/{app.username}?start=group_access",
+                    )
+                ]])
             try:
-                await app.bot.send_message(event.chat.id, text)
+                await app.bot.send_message(event.chat.id, text, reply_markup=markup)
             except TelegramAPIError:
                 log.warning("Не удалось отправить приветствие в чат %s", event.chat.id)
 
