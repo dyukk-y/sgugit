@@ -4,6 +4,7 @@ from __future__ import annotations
 from app import timeutil as tu
 
 import asyncio
+import hashlib
 import io
 import logging
 import re
@@ -35,7 +36,7 @@ _TAG_RE = re.compile(r"</?[a-zA-Z][^>]*>")
 async def _answer_inline_query(query: InlineQuery, results: list) -> None:
     """Telegram может закрыть inline query, пока БД/сеть ещё отвечают. Не роняем dispatcher."""
     try:
-        await query.answer(results[:10], cache_time=15, is_personal=True)
+        await query.answer(results[:50], cache_time=15, is_personal=True)
     except TelegramBadRequest as exc:
         if _is(exc, "query is too old", "response timeout expired", "query id is invalid"):
             log.debug("Inline query expired before answer: %s", query.id)
@@ -558,6 +559,42 @@ def _parse_inline_query(raw: str, today: date) -> tuple[str, str, date]:
     return group, mode, selected
 
 
+
+def _looks_like_group_query(value: str) -> bool:
+    """Код группы содержит цифры; фамилии не должны запускать поиск групп."""
+    return bool(re.fullmatch(r"[A-Za-zА-Яа-яЁё]{1,8}[- ]?\d{1,4}(?:[. -]\d{1,3})?", value.strip()))
+
+
+def _teacher_result_id(name: str) -> str:
+    """Stable ASCII inline-result ID within Telegram's 64-byte limit."""
+    digest = hashlib.sha1(name.casefold().encode("utf-8")).hexdigest()[:20]
+    return f"teacher-{digest}"
+
+
+def _inline_pretty_schedule(text: str) -> str:
+    """Делает компактные карточки пар для HTML-сообщения inline mode."""
+    lines = text.splitlines()
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if re.match(r"^(?:<s>)?<b>\d{2}</b> ·", line):
+            card = [line]
+            i += 1
+            while i < len(lines) and len(card) < 6 and lines[i].strip():
+                if re.match(r"^(?:<s>)?<b>\d{2}</b> ·", lines[i]) or lines[i].startswith("📅 "):
+                    break
+                card.append(lines[i])
+                i += 1
+            out.append("<blockquote>" + "\n".join(card) + "</blockquote>")
+            continue
+        out.append(line)
+        i += 1
+    rendered = "\n".join(out)
+    # Не обрезаем HTML посередине тега: при длинной неделе оставляем исходный компактный текст.
+    return rendered if len(rendered) <= MAX_TEXT else text[:MAX_TEXT]
+
+
 def build_router(app: App) -> Router:
     r = Router(name="main")
     async def _is_bot_admin(uid: int) -> bool:
@@ -578,25 +615,59 @@ def build_router(app: App) -> Router:
             today = tu.now_local().date()
             group_query, mode, selected_day = _parse_inline_query(raw, today)
 
-            if not group_query and query.from_user is not None:
+            teacher_query = re.sub(r"^(?:преподаватель|препод)\s+", "", raw, flags=re.I).strip()
+            explicit_teacher = teacher_query != raw
+            # Коды учебных групп содержат номер (например, ИС-11). Обычную фамилию
+            # нельзя отправлять в нечёткий поиск групп: он может перехватить запрос.
+            group_like = _looks_like_group_query(group_query)
+            if not raw and query.from_user is not None:
                 user = await app.repo.get_user(query.from_user.id)
                 own_group = await app.repo.get_group(user["group_id"]) if user and user.get("group_id") else None
                 groups = [own_group] if own_group else []
             else:
-                groups = await app.repo.search_groups(group_query, 3) if group_query else []
+                groups = []
+
+            # «преподаватель Иванов» — явный поиск преподавателя.
+            # Обычную фамилию без кода группы также сначала проверяем в справочнике и расписании.
+            if raw and (explicit_teacher or not group_like):
+                from app.bot import logic_find
+                from app.bot.core import Ctx
+                teacher_input = teacher_query if explicit_teacher else raw
+                teacher_input, teacher_mode, teacher_day = _parse_inline_query(teacher_input, today)
+                inline_ctx = Ctx(app.repo, app.cfg, {"id": query.from_user.id, "role": "student"})
+                teacher_screen = await logic_find.teacher_answer(
+                    inline_ctx, teacher_input, teacher_day if teacher_mode == "day" else None)
+                teacher_text = teacher_screen.text[:MAX_TEXT]
+                not_found = ("не нашёл ни в расписании" in teacher_text
+                             or "не нашёл ни в расписании, ни в справочнике" in teacher_text)
+                if not not_found:
+                    clean_name = teacher_input or teacher_query or raw
+                    result = InlineQueryResultArticle(
+                        id=_teacher_result_id(clean_name),
+                        title=f"👨‍🏫 {clean_name[:55]}",
+                        description="Преподаватель · ближайшая пара · аудитория и подразделение",
+                        input_message_content=InputTextMessageContent(
+                            message_text=_inline_pretty_schedule(teacher_text),
+                            parse_mode="HTML", disable_web_page_preview=True))
+                    await _answer_inline_query(query, [result])
+                    return
+
+            # Нечёткий поиск групп выполняем только для строк, похожих на код группы.
+            if not groups and group_like and not explicit_teacher:
+                groups = await app.repo.search_groups(group_query, 10)
 
             if not groups:
                 if not raw:
-                    hint = ("Выберите формат расписания своей группы или введите название другой группы. "
-                            "Примеры: ИС-11, ИС-11 завтра, ИС-11 неделя, ИС-11 25.11.")
+                    hint = ("Выберите формат расписания своей группы или введите фамилию преподавателя. "
+                            "Примеры: ИС-11, ИС-11 завтра, ИС-11 неделя, преподаватель Иванов.")
                     title = "📅 Расписание вашей группы" if query.from_user else "📅 Расписание группы"
                 else:
-                    hint = f"Не нашёл группу «{fm.esc(group_query or raw)}». Проверьте название, например ИС-11."
-                    title = "Группа не найдена"
+                    hint = f"Не нашёл группу или преподавателя «{fm.esc(group_query or raw)}». Проверьте запрос."
+                    title = "Ничего не найдено"
                 result = InlineQueryResultArticle(
                     id="inline-help", title=title, description=hint[:180],
                     input_message_content=InputTextMessageContent(
-                        message_text="📅 <b>Расписание СГУГиТ</b>\\n\\n" + hint,
+                        message_text="📅 <b>Расписание СГУГиТ</b>\n\n" + hint,
                         parse_mode="HTML", disable_web_page_preview=True))
                 await _answer_inline_query(query, [result])
                 return
@@ -632,9 +703,31 @@ def build_router(app: App) -> Router:
                         monday = tu.monday_of(day)
                         lessons = [l for l in week_lessons if tu.iso(monday) <= l["day"] <= tu.iso(monday + timedelta(days=6))]
                         body = fm.week_text(monday, lessons, group_name=title)
+                        if monday <= today <= monday + timedelta(days=6):
+                            today_lessons = [l for l in lessons if l["day"] == tu.iso(today)]
+                            current, upcoming = fm.now_status(today_lessons, tu.now_local())
+                            status = (f"▶️ <b>Сейчас идёт: {fm.esc(current['subject'])}</b> · до {fm.esc(current['end_t'])}"
+                                      if current else
+                                      f"⏭ <b>Следующая: {fm.esc(upcoming['subject'])}</b> · {fm.esc(upcoming['start_t'])}–{fm.esc(upcoming['end_t'])}"
+                                      if upcoming else "")
+                            if status:
+                                parts = body.splitlines()
+                                parts.insert(2, status)
+                                body = "\n".join(parts)
                     else:
                         lessons = [l for l in week_lessons if l["day"] == tu.iso(day)]
                         body = fm.day_text(day, lessons, group_name=title)
+                        if day == today:
+                            current, upcoming = fm.now_status(lessons, tu.now_local())
+                            status = (f"▶️ <b>Сейчас идёт: {fm.esc(current['subject'])}</b> · до {fm.esc(current['end_t'])}"
+                                      if current else
+                                      f"⏭ <b>Следующая: {fm.esc(upcoming['subject'])}</b> · {fm.esc(upcoming['start_t'])}–{fm.esc(upcoming['end_t'])}"
+                                      if upcoming else "")
+                            if status:
+                                parts = body.splitlines()
+                                parts.insert(2, status)
+                                body = "\n".join(parts)
+                    body = _inline_pretty_schedule(body)
                     count = len(lessons)
                     built.append(InlineQueryResultArticle(
                         id=f"g{gid}-{view}-{tu.iso(day)}", title=f"{title} · {label}",

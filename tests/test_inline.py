@@ -3,12 +3,24 @@ import unittest
 from datetime import date
 
 from unittest.mock import patch
-from app.bot.tg import _answer_inline_query, _parse_inline_query
+from app.bot.tg import (
+    _answer_inline_query,
+    _inline_pretty_schedule,
+    _looks_like_group_query,
+    _parse_inline_query,
+    _teacher_result_id,
+)
 
 
 class InlineQueryParsingTests(unittest.TestCase):
     def setUp(self):
         self.today = date(2026, 11, 13)  # Friday
+
+    def test_inline_query_classifier_separates_teacher_surnames_from_group_codes(self):
+        for value in ("Иванов", "Петрова", "Сидоров А.А."):
+            self.assertFalse(_looks_like_group_query(value))
+        for value in ("ИС-11", "ИС11", "МД-22.1", "Э 22 1"):
+            self.assertTrue(_looks_like_group_query(value))
 
     def test_group_without_modifier_offers_choices(self):
         self.assertEqual(_parse_inline_query("ИС-11", self.today),
@@ -39,6 +51,36 @@ class InlineQueryParsingTests(unittest.TestCase):
     def test_unknown_last_word_is_part_of_group_query(self):
         self.assertEqual(_parse_inline_query("ИС-11 корпус", self.today),
                          ("ИС-11 корпус", "choices", self.today))
+
+    def test_inline_schedule_wraps_lessons_as_readable_cards(self):
+        source = ("<b>Пятница, 13 ноября</b>\nГруппа ИС-11\n\n"
+                  "<b>01</b> · 08:30–10:00\n📘 Математика\n🎓 лекция · 👨‍🏫 Иванов · 📍 301\n\n"
+                  "<b>02</b> · 10:15–11:45\n📘 Физика\n🧪 лабораторная · 📍 202")
+        rendered = _inline_pretty_schedule(source)
+        self.assertIn("<blockquote><b>01</b> · 08:30–10:00\n📘 Математика", rendered)
+        self.assertIn("<blockquote><b>02</b> · 10:15–11:45\n📘 Физика", rendered)
+        self.assertIn("Группа ИС-11", rendered)
+
+    def test_teacher_result_id_is_ascii_and_bounded(self):
+        result_id = _teacher_result_id("ОченьДлиннаяФамилия" * 8)
+        self.assertLessEqual(len(result_id.encode("utf-8")), 64)
+        self.assertTrue(result_id.isascii())
+        self.assertEqual(result_id, _teacher_result_id("ОченьДлиннаяФамилия" * 8))
+
+    def test_inline_answer_keeps_up_to_telegram_limit(self):
+        class Query:
+            id = "valid"
+            def __init__(self):
+                self.results = None
+                self.kwargs = None
+            async def answer(self, results, **kwargs):
+                self.results = results
+                self.kwargs = kwargs
+        query = Query()
+        results = [object() for _ in range(50)]
+        asyncio.run(_answer_inline_query(query, results))
+        self.assertEqual(query.results, results)
+        self.assertTrue(query.kwargs["is_personal"])
 
     def test_expired_query_is_ignored_without_raising(self):
         class ExpiredQueryError(Exception):
