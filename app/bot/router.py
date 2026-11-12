@@ -45,6 +45,8 @@ async def handle_callback(ctx: Ctx, data: str) -> Out:
         return await logic_user.on_cb_register(ctx, rest)
     if head == "me":
         return await logic_user.on_cb_me(ctx, rest)
+    if head == "hd":
+        return Out(toast="Функции старост отключены", alert=True)
     if ctx.role == "teacher" and head in ("s", "h", "t"):
         return Out(screen=await logic_teacher.menu(ctx), clear_state=True)
     if head in ("s", "h", "t") and not ctx.registered:
