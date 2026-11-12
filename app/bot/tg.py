@@ -251,9 +251,13 @@ async def render(app: App, chat_id: int, out: Out, source: Message | None = None
     old = app.anchors.get(chat_id)
     try:
         if scr.rich:
-            msg = await app.bot.send_rich_message(
-                chat_id=chat_id, rich_message=InputRichMessage(html=schedule_rich_html(scr.text)),
-                reply_markup=to_markup(scr.kb))
+            try:
+                msg = await app.bot.send_rich_message(
+                    chat_id=chat_id, rich_message=InputRichMessage(html=schedule_rich_html(scr.text)),
+                    reply_markup=to_markup(scr.kb))
+            except TelegramAPIError as e:
+                log.debug("Rich send недоступен, используем обычный текст: %s", e)
+                msg = await app.bot.send_message(chat_id, scr.text[:MAX_TEXT], reply_markup=to_markup(scr.kb))
         else:
             msg = await app.bot.send_message(chat_id, scr.text[:MAX_TEXT], reply_markup=to_markup(scr.kb))
     except TelegramBadRequest as e:
