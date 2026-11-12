@@ -3,7 +3,7 @@ import unittest
 from datetime import date
 
 from unittest.mock import patch
-from app.bot.tg import _answer_inline_query, _inline_pretty_schedule, _parse_inline_query
+from app.bot.tg import _answer_inline_query, _inline_pretty_schedule, _parse_inline_query, _teacher_result_id
 
 
 class InlineQueryParsingTests(unittest.TestCase):
@@ -48,6 +48,12 @@ class InlineQueryParsingTests(unittest.TestCase):
         self.assertIn("<blockquote><b>01</b> · 08:30–10:00\n📘 Математика", rendered)
         self.assertIn("<blockquote><b>02</b> · 10:15–11:45\n📘 Физика", rendered)
         self.assertIn("Группа ИС-11", rendered)
+
+    def test_teacher_result_id_is_ascii_and_bounded(self):
+        result_id = _teacher_result_id("ОченьДлиннаяФамилия" * 8)
+        self.assertLessEqual(len(result_id.encode("utf-8")), 64)
+        self.assertTrue(result_id.isascii())
+        self.assertEqual(result_id, _teacher_result_id("ОченьДлиннаяФамилия" * 8))
 
     def test_expired_query_is_ignored_without_raising(self):
         class ExpiredQueryError(Exception):
