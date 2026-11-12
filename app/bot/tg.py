@@ -569,7 +569,7 @@ def _inline_pretty_schedule(text: str) -> str:
             card = [line]
             i += 1
             while i < len(lines) and len(card) < 6 and lines[i].strip():
-                if re.match(r"^(?:<s>)?<b>\\d{2}</b> ·", lines[i]) or lines[i].startswith("📅 "):
+                if re.match(r"^(?:<s>)?<b>\d{2}</b> ·", lines[i]) or lines[i].startswith("📅 "):
                     break
                 card.append(lines[i])
                 i += 1
