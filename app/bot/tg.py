@@ -10,7 +10,7 @@ import re
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from aiogram import BaseMiddleware, Bot, F, Router
@@ -480,6 +480,53 @@ def _cmd_parts(text: str) -> tuple[str, str]:
     return name, args.strip()
 
 
+
+_INLINE_MODIFIERS = {
+    "сегодня": "today", "завтра": "tomorrow", "послезавтра": "aftertomorrow",
+    "неделя": "week", "наделю": "week", "week": "week",
+}
+_INLINE_WEEKDAYS = {
+    "пн": 0, "понедельник": 0, "вт": 1, "вторник": 1, "ср": 2, "среда": 2,
+    "чт": 3, "четверг": 3, "пт": 4, "пятница": 4, "сб": 5, "суббота": 5,
+    "вс": 6, "воскресенье": 6,
+}
+
+
+def _parse_inline_query(raw: str, today: date) -> tuple[str, str, date]:
+    """Разбирает «группа [сегодня|завтра|неделя|дата|день недели]»."""
+    parts = raw.strip().split()
+    if not parts:
+        return "", "choices", today
+    token = parts[-1].casefold().replace("ё", "е")
+    mode = _INLINE_MODIFIERS.get(token)
+    selected = today
+    if mode is None and token in _INLINE_WEEKDAYS:
+        selected = today + timedelta(days=(_INLINE_WEEKDAYS[token] - today.weekday()) % 7)
+        mode = "day"
+    if mode is None:
+        from datetime import datetime
+        for fmt in ("%d.%m.%Y", "%d.%m"):
+            try:
+                parsed = datetime.strptime(token, fmt).date()
+                selected = parsed if fmt == "%d.%m.%Y" else parsed.replace(year=today.year)
+                mode = "day"
+                break
+            except ValueError:
+                continue
+    if mode is None:
+        return raw.strip(), "choices", today
+    group = " ".join(parts[:-1]).strip()
+    if not group:
+        return raw.strip(), "choices", today
+    if mode == "today":
+        selected, mode = today, "day"
+    elif mode == "tomorrow":
+        selected, mode = today + timedelta(days=1), "day"
+    elif mode == "aftertomorrow":
+        selected, mode = today + timedelta(days=2), "day"
+    return group, mode, selected
+
+
 def build_router(app: App) -> Router:
     r = Router(name="main")
     async def _is_bot_admin(uid: int) -> bool:
@@ -493,36 +540,63 @@ def build_router(app: App) -> Router:
     group = F.chat.type.in_({"group", "supergroup"})
 
     if hasattr(r, "inline_query"):
-        # ---------------- Inline mode: расписание в любом чате без добавления бота ----------------
+        # ---------------- Inline mode: быстрый выбор вида расписания прямо в любом чате ----------------
         @r.inline_query()
         async def inline_schedule(query: InlineQuery) -> None:
             raw = (query.query or "").strip()
-            if not raw:
+            today = tu.now_local().date()
+            group_query, mode, selected_day = _parse_inline_query(raw, today)
+
+            if not group_query and query.from_user is not None:
+                user = await app.repo.get_user(query.from_user.id)
+                own_group = await app.repo.get_group(user["group_id"]) if user and user.get("group_id") else None
+                groups = [own_group] if own_group else []
+            else:
+                groups = await app.repo.search_groups(group_query, 3) if group_query else []
+
+            if not groups:
+                if not raw:
+                    hint = ("Выберите формат расписания своей группы или введите название другой группы. "
+                            "Примеры: ИС-11, ИС-11 завтра, ИС-11 неделя, ИС-11 25.11.")
+                    title = "📅 Расписание вашей группы" if query.from_user else "📅 Расписание группы"
+                else:
+                    hint = f"Не нашёл группу «{fm.esc(group_query or raw)}». Проверьте название, например ИС-11."
+                    title = "Группа не найдена"
                 result = InlineQueryResultArticle(
-                    id="help", title="Расписание группы", description="Введите группу, например ИС-11",
-                    input_message_content=InputTextMessageContent(message_text="Введите @имя_бота ИС-11, чтобы вставить расписание группы."))
+                    id="inline-help", title=title, description=hint[:180],
+                    input_message_content=InputTextMessageContent(
+                        message_text="📅 <b>Расписание СГУГиТ</b>\n\n" + hint,
+                        parse_mode="HTML", disable_web_page_preview=True))
                 await query.answer([result], cache_time=10, is_personal=True)
                 return
-            groups = await app.repo.search_groups(raw, 3)
+
             results = []
             for group_row in groups:
+                if not group_row:
+                    continue
                 gid = int(group_row["id"])
-                today = tu.iso(tu.now_local().date())
-                lessons = await app.repo.lessons_day(gid, today)
                 title = str(group_row["name"])
-                if lessons:
-                    body = "📅 <b>Расписание · " + fm.esc(title) + " · " + tu.fmt_date(tu.parse_iso(today)) + "</b>\n\n" + fm.day_text(tu.parse_iso(today), lessons, None)
-                else:
-                    body = "📅 <b>Расписание · " + fm.esc(title) + "</b>\nНа сегодня занятий в базе нет."
-                results.append(InlineQueryResultArticle(
-                    id=f"group-{gid}", title=f"{title} — расписание на сегодня",
-                    description=f"{len(lessons)} занятий" if lessons else "Занятий на сегодня нет",
-                    input_message_content=InputTextMessageContent(message_text=body, parse_mode="HTML", disable_web_page_preview=True)))
-            if not results:
-                results = [InlineQueryResultArticle(id="notfound", title="Группа не найдена",
-                    description="Проверьте написание, например ИС-11",
-                    input_message_content=InputTextMessageContent(message_text=f"Не нашёл группу «{fm.esc(raw)}». Проверьте написание."))]
-            await query.answer(results[:10], cache_time=20, is_personal=True)
+                views = ([("day", "Сегодня", today), ("day", "Завтра", today + timedelta(days=1)),
+                          ("week", "На неделю", tu.monday_of(today))]
+                         if mode == "choices" else [(mode, "На неделю" if mode == "week" else
+                                                    tu.fmt_date(selected_day), selected_day)])
+                for view, label, day in views:
+                    if view == "week":
+                        monday = tu.monday_of(day)
+                        sunday = monday + timedelta(days=6)
+                        lessons = await app.repo.lessons_range(gid, tu.iso(monday), tu.iso(sunday))
+                        body = fm.week_text(monday, lessons, group_name=title)
+                    else:
+                        lessons = await app.repo.lessons_day(gid, tu.iso(day))
+                        body = fm.day_text(day, lessons, group_name=title)
+                    count = len(lessons)
+                    results.append(InlineQueryResultArticle(
+                        id=f"g{gid}-{view}-{tu.iso(day)}", title=f"{title} · {label}",
+                        description=(f"{count} занятий · нажмите, чтобы отправить" if count else
+                                     "Занятий нет · нажмите, чтобы отправить"),
+                        input_message_content=InputTextMessageContent(
+                            message_text=body, parse_mode="HTML", disable_web_page_preview=True)))
+            await query.answer(results[:10], cache_time=15, is_personal=True)
 
     # ---------------- личные сообщения ----------------
     @r.message(private, F.text.startswith("/"))
