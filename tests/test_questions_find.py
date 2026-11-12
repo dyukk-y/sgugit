@@ -38,6 +38,13 @@ class T(unittest.TestCase):
             t = (await logic_find.teacher_answer(ctx, "крылов аа")).text
             self.assertIn("Сейчас ведёт пару до 11:50", t); self.assertIn("215", t); self.assertIn("Кафедра геодезии", t); self.assertIn("корпус 2, каб. 215", t)
             self.assertNotIn("Борис", t)
+            # Расписание чужой группы использует тот же rich-шаблон, что и основная группа.
+            other_gid = (await r.search_groups("гд21"))[0]["id"]
+            from app.bot import logic_schedule
+            other_day = await logic_schedule.day_screen(ctx, "today", other_gid)
+            other_week = await logic_schedule.week_screen(ctx, "cur", other_gid)
+            self.assertTrue(other_day.rich)
+            self.assertTrue(other_week.rich)
             t = (await logic_find.teacher_answer(ctx, "крылов")).text
             self.assertIn("уточните инициалы", t); self.assertIn("Кафедра физики", t); self.assertIn("кабинет подразделения в справочнике не указан", t.lower())
             t = (await logic_find.teacher_answer(ctx, "иванова")).text
