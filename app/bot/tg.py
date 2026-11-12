@@ -565,7 +565,7 @@ def _inline_pretty_schedule(text: str) -> str:
     i = 0
     while i < len(lines):
         line = lines[i]
-        if re.match(r"^(?:<s>)?<b>\\d{2}</b> ·", line):
+        if re.match(r"^(?:<s>)?<b>\d{2}</b> ·", line):
             card = [line]
             i += 1
             while i < len(lines) and len(card) < 6 and lines[i].strip():
@@ -573,11 +573,11 @@ def _inline_pretty_schedule(text: str) -> str:
                     break
                 card.append(lines[i])
                 i += 1
-            out.append("<blockquote>" + "\\n".join(card) + "</blockquote>")
+            out.append("<blockquote>" + "\n".join(card) + "</blockquote>")
             continue
         out.append(line)
         i += 1
-    return "\\n".join(out)[:MAX_TEXT]
+    return "\n".join(out)[:MAX_TEXT]
 
 
 def build_router(app: App) -> Router:
