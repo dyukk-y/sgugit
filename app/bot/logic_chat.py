@@ -15,7 +15,7 @@ EVENING_TIMES = ["19:00", "20:00", "21:00", "22:00"]
 
 
 def can_manage(user: dict | None, chat: dict, super_id: int, tg_admin: bool = False) -> bool:
-    """Управлять чатом может добавивший бота, староста этой группы, админ бота, админ чата в Telegram."""
+    """Управлять чатом может добавивший бота, админ бота или админ чата в Telegram."""
     if user is None:
         return tg_admin
     uid = user["id"]
@@ -23,7 +23,7 @@ def can_manage(user: dict | None, chat: dict, super_id: int, tg_admin: bool = Fa
         return True
     if user.get("role") == "admin":
         return True
-    return user.get("role") == "head" and chat.get("group_id") is not None and user.get("group_id") == chat["group_id"]
+    return False
 
 
 def _onoff(on: bool) -> str:
