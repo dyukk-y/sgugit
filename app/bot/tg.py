@@ -16,7 +16,7 @@ from typing import Any
 from aiogram import BaseMiddleware, Bot, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import (BufferedInputFile, CallbackQuery, ChatMemberUpdated, InlineKeyboardButton,
-                           InlineKeyboardMarkup, Message, ReplyParameters, InlineQuery, InlineQueryResultArticle, InputTextMessageContent)
+                           InlineKeyboardMarkup, Message, ReplyParameters, InlineQuery, InlineQueryResultArticle, InputTextMessageContent, InputRichMessage)
 
 from app.bot import logic_chat, router as logic_router, runtime
 from app.bot.core import Btn, Ctx, Kb, Out, Screen
@@ -24,6 +24,7 @@ from app.config import Settings
 from app.db.repo import Repo
 from app.services import format as fm
 from app.services.group_schedule_changes import parse_group_change
+from app.services.rich_schedule import schedule_rich_html
 
 log = logging.getLogger(__name__)
 MAX_TEXT = 4096
@@ -212,6 +213,14 @@ async def safe_delete(message: Message | None) -> None:
 async def _edit(app: App, chat_id: int, message_id: int, scr: Screen) -> bool:
     text = scr.text[:MAX_TEXT]
     markup = to_markup(scr.kb)
+    if scr.rich:
+        try:
+            await app.bot.edit_message_text(chat_id=chat_id, message_id=message_id,
+                                            rich_message=InputRichMessage(html=schedule_rich_html(text)),
+                                            reply_markup=markup)
+            return True
+        except TelegramAPIError as e:
+            log.debug("Rich edit недоступен, используем обычный текст: %s", e)
     try:
         await app.bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, reply_markup=markup)
         return True
@@ -241,7 +250,12 @@ async def render(app: App, chat_id: int, out: Out, source: Message | None = None
         return
     old = app.anchors.get(chat_id)
     try:
-        msg = await app.bot.send_message(chat_id, scr.text[:MAX_TEXT], reply_markup=to_markup(scr.kb))
+        if scr.rich:
+            msg = await app.bot.send_rich_message(
+                chat_id=chat_id, rich_message=InputRichMessage(html=schedule_rich_html(scr.text)),
+                reply_markup=to_markup(scr.kb))
+        else:
+            msg = await app.bot.send_message(chat_id, scr.text[:MAX_TEXT], reply_markup=to_markup(scr.kb))
     except TelegramBadRequest as e:
         if _is(e, "can't parse entities"):
             msg = await app.bot.send_message(chat_id, strip_tags(scr.text)[:MAX_TEXT], reply_markup=to_markup(scr.kb),
@@ -895,12 +909,12 @@ def build_router(app: App) -> Router:
             if cleanup_day and chat.get("cleanup_on", 0) and message.ephemeral_message_id is None:
                 delete_at = await _group_cleanup_timestamp(app, chat["group_id"], cleanup_day)
                 if delete_at:
-                    sent = await _reply_group(app, message, scr.text, chat, auto_delete=False)
+                    sent = await _reply_group(app, message, scr.text, chat, auto_delete=False, rich=scr.rich)
                     if sent:
                         await _schedule_group_cleanup(app, message.chat.id, message.message_id, sent.message_id, delete_at)
                         scheduled = True
             if not scheduled:
-                await _reply_group(app, message, scr.text, chat)
+                await _reply_group(app, message, scr.text, chat, rich=scr.rich)
 
     @r.message(group, F.text)
     async def group_text(message: Message) -> None:
@@ -1015,9 +1029,12 @@ async def _safe_answer(cb: CallbackQuery, text: str | None = None, alert: bool =
 
 
 async def _reply_group(app: App, message: Message, text: str, chat: dict | None,
-                      auto_delete: bool = True) -> Message | None:
+                      auto_delete: bool = True, rich: bool = False) -> Message | None:
     try:
-        sent = await message.reply(text[:MAX_TEXT])
+        if rich:
+            sent = await message.reply_rich(InputRichMessage(html=schedule_rich_html(text)))
+        else:
+            sent = await message.reply(text[:MAX_TEXT])
     except TelegramBadRequest as e:
         if not _is(e, "can't parse entities"):
             log.warning("Ответ в группе не отправлен: %s", e)
