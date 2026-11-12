@@ -124,4 +124,4 @@ async def teacher_answer(ctx: Ctx, query: str, day: date | None = None) -> Scree
         head = "Нашёл нескольких с такой фамилией, уточните инициалы:\n\n"
     if len(items) > 4:
         blocks.append(f"…и ещё {len(items) - 4}. Уточните инициалы.")
-    return Screen((head + "\n\n".join(blocks))[:3800])
+    return Screen((head + "\n\n".join(blocks))[:3800], rich=True)

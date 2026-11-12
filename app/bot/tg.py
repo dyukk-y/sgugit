@@ -32,6 +32,19 @@ MAX_UPLOAD = 5 * 1024 * 1024
 _TAG_RE = re.compile(r"</?[a-zA-Z][^>]*>")
 
 
+async def _answer_inline_query(query: InlineQuery, results: list) -> None:
+    """Telegram может закрыть inline query, пока БД/сеть ещё отвечают. Не роняем dispatcher."""
+    try:
+        await query.answer(results[:10], cache_time=15, is_personal=True)
+    except TelegramBadRequest as exc:
+        if _is(exc, "query is too old", "response timeout expired", "query id is invalid"):
+            log.debug("Inline query expired before answer: %s", query.id)
+            return
+        log.warning("Не удалось ответить на inline query %s: %s", query.id, exc)
+    except TelegramAPIError:
+        log.exception("Ошибка Telegram при ответе на inline query %s", query.id)
+
+
 def strip_tags(text: str) -> str:
     import html
 
@@ -583,38 +596,59 @@ def build_router(app: App) -> Router:
                 result = InlineQueryResultArticle(
                     id="inline-help", title=title, description=hint[:180],
                     input_message_content=InputTextMessageContent(
-                        message_text="📅 <b>Расписание СГУГиТ</b>\n\n" + hint,
+                        message_text="📅 <b>Расписание СГУГиТ</b>\\n\\n" + hint,
                         parse_mode="HTML", disable_web_page_preview=True))
-                await query.answer([result], cache_time=10, is_personal=True)
+                await _answer_inline_query(query, [result])
                 return
 
-            results = []
-            for group_row in groups:
+            async def build_group_results(group_row: dict) -> list:
                 if not group_row:
-                    continue
+                    return []
                 gid = int(group_row["id"])
                 title = str(group_row["name"])
-                views = ([("day", "Сегодня", today), ("day", "Завтра", today + timedelta(days=1)),
+                views = ([( "day", "Сегодня", today), ("day", "Завтра", today + timedelta(days=1)),
                           ("week", "На неделю", tu.monday_of(today))]
-                         if mode == "choices" else [(mode, "На неделю" if mode == "week" else
-                                                    tu.fmt_date(selected_day), selected_day)])
+                         if mode == "choices" else
+                         [(mode, "На неделю" if mode == "week" else tu.fmt_date(selected_day), selected_day)])
+
+                # Для трёх быстрых вариантов загружаем диапазон недели одним запросом,
+                # а не делаем отдельный SQL-запрос для каждого дня и недели.
+                if mode == "choices":
+                    monday = tu.monday_of(today)
+                    sunday = monday + timedelta(days=6)
+                    end_day = max(sunday, today + timedelta(days=1))
+                    week_lessons = await app.repo.lessons_range(gid, tu.iso(monday), tu.iso(end_day))
+                else:
+                    view, label, day = views[0]
+                    if view == "week":
+                        monday = tu.monday_of(day)
+                        week_lessons = await app.repo.lessons_range(gid, tu.iso(monday), tu.iso(monday + timedelta(days=6)))
+                    else:
+                        week_lessons = await app.repo.lessons_day(gid, tu.iso(day))
+
+                built = []
                 for view, label, day in views:
                     if view == "week":
                         monday = tu.monday_of(day)
-                        sunday = monday + timedelta(days=6)
-                        lessons = await app.repo.lessons_range(gid, tu.iso(monday), tu.iso(sunday))
+                        lessons = [l for l in week_lessons if tu.iso(monday) <= l["day"] <= tu.iso(monday + timedelta(days=6))]
                         body = fm.week_text(monday, lessons, group_name=title)
                     else:
-                        lessons = await app.repo.lessons_day(gid, tu.iso(day))
+                        lessons = [l for l in week_lessons if l["day"] == tu.iso(day)]
                         body = fm.day_text(day, lessons, group_name=title)
                     count = len(lessons)
-                    results.append(InlineQueryResultArticle(
+                    built.append(InlineQueryResultArticle(
                         id=f"g{gid}-{view}-{tu.iso(day)}", title=f"{title} · {label}",
                         description=(f"{count} занятий · нажмите, чтобы отправить" if count else
                                      "Занятий нет · нажмите, чтобы отправить"),
                         input_message_content=InputTextMessageContent(
                             message_text=body, parse_mode="HTML", disable_web_page_preview=True)))
-            await query.answer(results[:10], cache_time=15, is_personal=True)
+                return built
+
+            # Не ждём каждую группу и каждый день последовательно: медленные запросы
+            # к БД не должны съедать весь короткий срок жизни inline query.
+            batches = await asyncio.gather(*(build_group_results(g) for g in groups if g))
+            results = [item for batch in batches for item in batch]
+            await _answer_inline_query(query, results)
 
     # ---------------- личные сообщения ----------------
     @r.message(private, F.text.startswith("/"))
@@ -966,7 +1000,16 @@ def build_router(app: App) -> Router:
                 r"\b(расписан\w*|пара|пары|занят\w*|аудитор\w*|предмет\w*|кто ведет|кто ведёт|где проходит|сегодня|завтра|послезавтра)\b",
                 request_text.casefold()):
             try:
-                await app.bot.send_message(message.from_user.id, scr.text[:MAX_TEXT])
+                if scr.rich:
+                    try:
+                        await app.bot.send_rich_message(
+                            chat_id=message.from_user.id,
+                            rich_message=InputRichMessage(html=schedule_rich_html(scr.text)))
+                    except TelegramAPIError as e:
+                        log.debug("Rich DM недоступен, используем обычный текст: %s", e)
+                        await app.bot.send_message(message.from_user.id, scr.text[:MAX_TEXT])
+                else:
+                    await app.bot.send_message(message.from_user.id, scr.text[:MAX_TEXT])
             except TelegramForbiddenError:
                 link = f"https://t.me/{app.username}?start=group_access"
                 await _reply_group(app, message,
@@ -990,11 +1033,11 @@ def build_router(app: App) -> Router:
         if cleanup_day:
             delete_at = await _group_cleanup_timestamp(app, chat["group_id"], cleanup_day)
             if delete_at:
-                sent = await _reply_group(app, message, scr.text, chat, auto_delete=False)
+                sent = await _reply_group(app, message, scr.text, chat, auto_delete=False, rich=scr.rich)
                 if sent:
                     await _schedule_group_cleanup(app, message.chat.id, message.message_id, sent.message_id, delete_at)
                     return
-        await _reply_group(app, message, scr.text, chat)
+        await _reply_group(app, message, scr.text, chat, rich=scr.rich)
 
     return r
 
