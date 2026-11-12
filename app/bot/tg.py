@@ -611,24 +611,38 @@ def build_router(app: App) -> Router:
                          if mode == "choices" else
                          [(mode, "На неделю" if mode == "week" else tu.fmt_date(selected_day), selected_day)])
 
-                async def build_view(view: str, label: str, day: date):
+                # Для трёх быстрых вариантов загружаем диапазон недели одним запросом,
+                # а не делаем отдельный SQL-запрос для каждого дня и недели.
+                if mode == "choices":
+                    monday = tu.monday_of(today)
+                    sunday = monday + timedelta(days=6)
+                    end_day = max(sunday, today + timedelta(days=1))
+                    week_lessons = await app.repo.lessons_range(gid, tu.iso(monday), tu.iso(end_day))
+                else:
+                    view, label, day = views[0]
                     if view == "week":
                         monday = tu.monday_of(day)
-                        sunday = monday + timedelta(days=6)
-                        lessons = await app.repo.lessons_range(gid, tu.iso(monday), tu.iso(sunday))
+                        week_lessons = await app.repo.lessons_range(gid, tu.iso(monday), tu.iso(monday + timedelta(days=6)))
+                    else:
+                        week_lessons = await app.repo.lessons_day(gid, tu.iso(day))
+
+                built = []
+                for view, label, day in views:
+                    if view == "week":
+                        monday = tu.monday_of(day)
+                        lessons = [l for l in week_lessons if tu.iso(monday) <= l["day"] <= tu.iso(monday + timedelta(days=6))]
                         body = fm.week_text(monday, lessons, group_name=title)
                     else:
-                        lessons = await app.repo.lessons_day(gid, tu.iso(day))
+                        lessons = [l for l in week_lessons if l["day"] == tu.iso(day)]
                         body = fm.day_text(day, lessons, group_name=title)
                     count = len(lessons)
-                    return InlineQueryResultArticle(
+                    built.append(InlineQueryResultArticle(
                         id=f"g{gid}-{view}-{tu.iso(day)}", title=f"{title} · {label}",
                         description=(f"{count} занятий · нажмите, чтобы отправить" if count else
                                      "Занятий нет · нажмите, чтобы отправить"),
                         input_message_content=InputTextMessageContent(
-                            message_text=body, parse_mode="HTML", disable_web_page_preview=True))
-
-                return await asyncio.gather(*(build_view(view, label, day) for view, label, day in views))
+                            message_text=body, parse_mode="HTML", disable_web_page_preview=True)))
+                return built
 
             # Не ждём каждую группу и каждый день последовательно: медленные запросы
             # к БД не должны съедать весь короткий срок жизни inline query.
