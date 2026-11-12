@@ -42,7 +42,7 @@ async def screen(repo: Repo, chat: dict) -> Screen:
             "Нажмите на пункт, чтобы переключить его. Текущее значение написано на кнопке.\n\n"
             f"🌙 Вечерняя сводка на завтра: {'в ' + chat['evening_time'] if ev_on else 'выкл'}\n"
             f"📌 Закреп сводки: {'до начала первой пары' if ev_on and pin_on else 'выкл'}\n"
-            f"🔔 Изменения расписания: {'присылать' if ch_on else 'не присылать'}\n"
+            f"🔔 Переносы, отмены и новые пары: {'присылать' if ch_on else 'не присылать'}\n"
             f"💬 Умные ответы: {SMART_LABEL.get(chat['smart_mode'], chat['smart_mode'])}")
     if ev_on and pin_on:
         text += "\n\nℹ️ Для закрепа боту нужно право «Закреплять сообщения» (сделайте его администратором)."
@@ -50,7 +50,7 @@ async def screen(repo: Repo, chat: dict) -> Screen:
         [Btn(f"🌙 Вечерняя сводка: {_onoff(ev_on)}", f"cs:{cid}:ev")],
         [Btn(f"🕘 Время сводки: {chat['evening_time']}", f"cs:{cid}:et")],
         [Btn(f"📌 Закреп до первой пары: {_onoff(pin_on)}", f"cs:{cid}:pn")],
-        [Btn(f"🔔 Изменения расписания: {_onoff(ch_on)}", f"cs:{cid}:ch")],
+        [Btn(f"🔔 Переносы, отмены и новые пары: {_onoff(ch_on)}", f"cs:{cid}:ch")],
         [Btn(f"💬 Умные ответы: {SHORT_SMART.get(chat['smart_mode'], chat['smart_mode'])}", f"cs:{cid}:sm")],
         [Btn(f"⏳ Ждать ответа людей: {chat.get('wait_min', 60)} мин", f"cs:{cid}:wt")],
         [Btn(f"🧹 Автоудаление ответов: {'выкл' if not ad else f'{ad} мин'}", f"cs:{cid}:ad")],
