@@ -108,7 +108,7 @@ async def day_screen(ctx: Ctx, token: str = "today", other: int | None = None) -
         kb.append([home_btn()])
     else:
         kb.append([Btn("↩ Моё расписание", "s:d:today"), home_btn()])
-    return Screen(text, kb)
+    return Screen(text, kb, rich=True)
 
 
 async def week_screen(ctx: Ctx, token: str = "cur", other: int | None = None) -> Screen:
@@ -143,7 +143,7 @@ async def week_screen(ctx: Ctx, token: str = "cur", other: int | None = None) ->
         days_row,
         [Btn("Сегодня", f"s:d:today{sfx}"), home_btn()],
     ]
-    return Screen(text, kb)
+    return Screen(text, kb, rich=True)
 
 
 async def calendar_screen(ctx: Ctx, ym: str, other: int | None = None) -> Screen:
@@ -187,7 +187,7 @@ async def next_lesson_screen(ctx: Ctx) -> Screen:
     if not gid:
         return Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]])
     text = await next_lesson_text(ctx, gid, ctx.user.get("subgroup"))
-    return Screen(text, [[Btn("📅 Сегодня", "s:d:today"), home_btn()]])
+    return Screen(text, [[Btn("📅 Сегодня", "s:d:today"), home_btn()]], rich=True)
 
 
 async def next_lesson_text(ctx: Ctx, gid: int, subgroup: int | None) -> str:
@@ -278,7 +278,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
         monday = tu.monday_of(base) + timedelta(days=7 if (intent.week_shift == 1 and intent.day is None) else 0)
         lessons = await repo.lessons_range(gid, tu.iso(monday), tu.iso(monday + timedelta(days=6)), subgroup)
         kb = [[Btn("📅 Открыть неделю", f"s:w:{tu.iso(monday)}")]] if allow_kb else None
-        return Screen(fm.week_text(monday, lessons, ctx.parity(monday)), kb)
+        return Screen(fm.week_text(monday, lessons, ctx.parity(monday)), kb, rich=True)
 
     if name == "hw":
         return await _answer_hw(ctx, intent, gid)
@@ -323,7 +323,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
                 return Screen(f"{prefix}{when.capitalize()}: пары №{intent.num} нет.", kb_for(d))
             return Screen(f"{prefix}{when.capitalize()}:\n{fm.lesson_block(hit[0])}", kb_for(d))
         hw = await repo.hw_counts_for_day(gid, tu.iso(d))
-        return Screen((prefix + "\n\n" if prefix else "") + fm.day_text(d, lessons, ctx.parity(d), hw), kb_for(d))
+        return Screen((prefix + "\n\n" if prefix else "") + fm.day_text(d, lessons, ctx.parity(d), hw), kb_for(d), rich=True)
     if not lessons:
         return Screen(f"{prefix}{when.capitalize()} занятий нет 🎉", kb_for(d))
     if name == "count":
