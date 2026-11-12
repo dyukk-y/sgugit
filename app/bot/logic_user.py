@@ -14,15 +14,22 @@ from app.services.fio import validate_fio
 _FIO_TRIES: dict[int, list] = {}   # uid -> [попытки, заблокирован_до]
 _FB_LAST: dict[int, float] = {}
 
-WELCOME = ("<b>Привет! Я бот расписания СГУГиТ</b> 👋\n"
-           "Помогаю студентам с расписанием и заданиями, а преподавателям — с личным расписанием и свободными аудиториями.\n\n"
-           "Если вы студент, напишите свою группу, например: <code>ИС-11</code>. "
-           "Если вы преподаватель, нажмите кнопку «Я преподаватель».")
+WELCOME = ("<b>Бот расписания СГУГиТ</b> 👋\n"
+           "Студент — отправьте группу (например, <code>ИС-11</code>).\n"
+           "Преподаватель — нажмите «Я преподаватель».")
+
+
+async def _show_add_group_button(ctx: Ctx) -> bool:
+    """Показывает приглашение добавить бота, только если пользователь ещё не добавлял его в активную группу."""
+    added = await ctx.repo.db.fetchone(
+        "SELECT 1 FROM chats WHERE added_by = ? AND active = 1 LIMIT 1", ctx.uid)
+    return added is None
 
 
 async def main_menu(ctx: Ctx) -> Screen:
     if ctx.role == "teacher":
         return await logic_teacher.menu(ctx)
+    show_add_group = await _show_add_group_button(ctx)
     group = await ctx.group()
     head = (ctx.repo.setting("interface_main_text") or "<b>Привет! Я бот СГУГиТ 👋</b>\n📅 Расписание на день и неделю\n🎓 Типы занятий и время пар\n📝 Задания группы · 👨‍🏫 Поиск преподавателей\n🔔 Напоминания — настройте под себя\n\n<b>Главное меню</b>") + (f"\n👥 Группа: {fm.esc(group['name'])}" if group else "")
     if ctx.repo.flag("maintenance"):
@@ -34,10 +41,14 @@ async def main_menu(ctx: Ctx) -> Screen:
         [Btn("👥 Другая группа", "me:other")],
         [Btn("🔎 Найти преподавателя", "me:findt")],
         [Btn("⚙️ Настройки", "me:menu")],
-        [Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages"),
-         Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
-             url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")],
     ]
+    if show_add_group:
+        rows.append([Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages"),
+                     Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
+                         url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")])
+    else:
+        rows.append([Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
+                         url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")])
 
     if ctx.repo.flag("rating_enabled"):
         rows[3].append(Btn("⭐Оценить преподавателя", "t:l:m:0"))
@@ -61,10 +72,10 @@ async def start(ctx: Ctx) -> Out:
         return Out(screen=Screen("Введите ФИО: <code>Фамилия Имя Отчество</code>",
                                  [[Btn("👨‍🏫 Я преподаватель", "p:register")]]),
                    state="reg:fio", state_data={})
-    welcome = Screen(ctx.repo.setting("welcome_text") or WELCOME, [
-        [Btn("👨‍🏫 Я преподаватель", "p:register")],
-        [Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")],
-    ])
+    welcome_rows: Kb = [[Btn("👨‍🏫 Я преподаватель", "p:register")]]
+    if await _show_add_group_button(ctx):
+        welcome_rows.append([Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")])
+    welcome = Screen(ctx.repo.setting("welcome_text") or WELCOME, welcome_rows)
     return Out(screen=welcome, state="reg:group", state_data={})
 
 
@@ -80,7 +91,7 @@ async def _after_group(ctx: Ctx, gid: int) -> Out:
     ctx._group_loaded = False
     if had_fio:
         return Out(screen=await main_menu(ctx), clear_state=True, toast="Группа изменена")
-    return Out(screen=Screen("Отлично! Теперь напишите ваше ФИО полностью: <code>Фамилия Имя Отчество</code>"),
+    return Out(screen=Screen("Теперь введите ФИО: <code>Фамилия Имя Отчество</code>"),
                state="reg:fio", state_data={})
 
 
@@ -94,12 +105,12 @@ async def on_cb_register(ctx: Ctx, parts: list[str]) -> Out:
             return Out(toast="Группа не найдена", alert=True)
         return await _after_group(ctx, g["id"])
     if act == "redo":
-        return Out(screen=Screen("Напишите ФИО ещё раз: <code>Фамилия Имя Отчество</code>"), state="reg:fio", state_data={})
+        return Out(screen=Screen("Введите ФИО: <code>Фамилия Имя Отчество</code>"), state="reg:fio", state_data={})
     if act == "ok":
         state, data = await ctx.repo.get_state(ctx.uid)
         fio, verdict = data.get("fio"), data.get("verdict")
         if state != "reg:fio_confirm" or not fio:
-            return Out(screen=Screen("Давайте ещё раз. Напишите ФИО: <code>Фамилия Имя Отчество</code>"),
+            return Out(screen=Screen("Введите ФИО: <code>Фамилия Имя Отчество</code>"),
                        state="reg:fio", state_data={})
         status = "pending"  # подтверждает только автопроверка (после паузы и всех проверок) или администратор
         dup = await ctx.repo.fio_duplicate(ctx.user.get("group_id"), fio, ctx.uid)
