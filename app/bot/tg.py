@@ -771,7 +771,8 @@ def build_router(app: App) -> Router:
                         "💬 Ответьте на сообщение бота или упомяните его и задайте вопрос обычными словами: "
                         "«какие завтра пары?», «что у нас на неделе?», «какая следующая пара?».\n\n"
                         "⚙️ Для управления чатом нажмите единственную кнопку под этим сообщением — откроется личный бот, а в нём панель настроек. "
-                        "Команды /today, /tomorrow, /week, /next и /hw отвечают лично вызвавшему участнику.\n\n"
+                        "Команды /today, /tomorrow, /week, /next и /hw отвечают лично вызвавшему участнику.\n"
+                        "Преподаватели могут создать опрос: /poll вопрос | вариант 1 | вариант 2.\n\n"
                         "🔧 В панели можно включить вечернюю сводку, закреп и автоматическую очистку вопросов. "
                         "Для закрепа нужно право «Закреплять сообщения», а для удаления команд участников — «Удалять сообщения».\n\n"
                         "ℹ️ В стандартном режиме Telegram бот видит команды, упоминания и ответы на его сообщения. "
@@ -813,7 +814,7 @@ def build_router(app: App) -> Router:
     async def group_command(message: Message) -> None:
         if message.from_user is None or message.from_user.is_bot:
             return
-        name, _ = _cmd_parts(message.text or "")
+        name, args = _cmd_parts(message.text or "")
         # команда адресована другому боту?
         head = (message.text or "").split(" ")[0]
         if "@" in head and head.split("@")[1].lower() != app.username.lower():
@@ -854,6 +855,31 @@ def build_router(app: App) -> Router:
             else:
                 text = "Группа чата пока не выбрана. Откройте /settings и привяжите свою группу."
             await _reply_group(app, message, text, chat)
+            return
+        if name == "poll":
+            # Создавать общегрупповые опросы могут только пользователи с подтверждённой связкой преподавателя.
+            account = await app.repo.teacher_account(message.from_user.id)
+            if not account:
+                await _reply_group(app, message, "Создавать опросы могут только зарегистрированные преподаватели.", chat)
+                return
+            if not chat or not chat.get("group_id"):
+                await _reply_group(app, message, "Сначала привяжите этот чат к учебной группе через /settings.", chat)
+                return
+            from app.bot.polls import parse_poll_spec
+            parsed = parse_poll_spec(args)
+            if parsed is None:
+                await _reply_group(app, message,
+                    "Формат: <code>/poll Вопрос | вариант 1 | вариант 2</code>\nОт 2 до 10 вариантов, каждый до 100 символов.", chat)
+                return
+            question, options = parsed
+            try:
+                await app.bot.send_poll(message.chat.id, question=question, options=options,
+                                        is_anonymous=True, allows_multiple_answers=False)
+            except TelegramAPIError as e:
+                log.warning("Не удалось создать опрос в чате %s: %s", message.chat.id, e)
+                await _reply_group(app, message, "Не удалось опубликовать опрос. Проверьте права бота в группе.", chat)
+            else:
+                await _reply_group(app, message, "📊 Опрос опубликован.", chat)
             return
         if name not in logic_router.GROUP_COMMANDS:
             return
