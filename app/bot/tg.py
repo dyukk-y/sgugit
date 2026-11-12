@@ -4,6 +4,7 @@ from __future__ import annotations
 from app import timeutil as tu
 
 import asyncio
+import hashlib
 import io
 import logging
 import re
@@ -35,7 +36,7 @@ _TAG_RE = re.compile(r"</?[a-zA-Z][^>]*>")
 async def _answer_inline_query(query: InlineQuery, results: list) -> None:
     """Telegram может закрыть inline query, пока БД/сеть ещё отвечают. Не роняем dispatcher."""
     try:
-        await query.answer(results[:10], cache_time=15, is_personal=True)
+        await query.answer(results[:50], cache_time=15, is_personal=True)
     except TelegramBadRequest as exc:
         if _is(exc, "query is too old", "response timeout expired", "query id is invalid"):
             log.debug("Inline query expired before answer: %s", query.id)
@@ -558,6 +559,12 @@ def _parse_inline_query(raw: str, today: date) -> tuple[str, str, date]:
     return group, mode, selected
 
 
+def _teacher_result_id(name: str) -> str:
+    """Stable ASCII inline-result ID within Telegram's 64-byte limit."""
+    digest = hashlib.sha1(name.casefold().encode("utf-8")).hexdigest()[:20]
+    return f"teacher-{digest}"
+
+
 def _inline_pretty_schedule(text: str) -> str:
     """Делает компактные карточки пар для HTML-сообщения inline mode."""
     lines = text.splitlines()
@@ -611,7 +618,7 @@ def build_router(app: App) -> Router:
                 own_group = await app.repo.get_group(user["group_id"]) if user and user.get("group_id") else None
                 groups = [own_group] if own_group else []
             else:
-                groups = await app.repo.search_groups(search_value, 3) if search_value and not explicit_teacher else []
+                groups = await app.repo.search_groups(search_value, 10) if search_value and not explicit_teacher else []
 
             if not groups and (explicit_teacher or bool(raw)):
                 from app.bot import logic_find
@@ -622,7 +629,7 @@ def build_router(app: App) -> Router:
                 if "не нашёл ни в расписании" not in teacher_text:
                     clean_name = teacher_query if explicit_teacher else raw
                     result = InlineQueryResultArticle(
-                        id="teacher-" + re.sub(r"[^a-zA-Zа-яА-Я0-9_-]", "-", clean_name)[:48],
+                        id=_teacher_result_id(clean_name),
                         title=f"👨‍🏫 {clean_name[:55]}",
                         description="Расписание, текущая или ближайшая пара и информация о подразделении",
                         input_message_content=InputTextMessageContent(
