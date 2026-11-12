@@ -43,7 +43,13 @@ def _lesson_compact_lines(l: dict) -> list[str]:
         details.append(f"📍 {esc(l['room'])}")
     if l.get("subgroup"):
         details.append(f"👥 подгруппа {esc(str(l['subgroup']))}")
+    if l.get("cancelled"):
+        head, subject = f"<s>{head}</s>", f"<s>{subject}</s>"
     lines = [head, subject, "  ·  ".join(details)]
+    if l.get("cancelled"):
+        lines.append(f"❌ <b>Занятие отменено</b> · по информации от {esc(l.get('change_author') or 'студента')}")
+    elif l.get("student_added"):
+        lines.append(f"➕ <b>Добавлено студентом</b> · по информации от {esc(l.get('change_author') or 'студента')}")
     return lines
 
 
@@ -138,6 +144,8 @@ def now_status(lessons_today: list[dict], now: datetime) -> tuple[dict | None, d
     cur = nxt = None
     m = now.hour * 60 + now.minute
     for l in lessons_today:
+        if l.get("cancelled"):
+            continue
         s, e = tu.hhmm_to_min(l["start_t"]), tu.hhmm_to_min(l["end_t"])
         if s is None or e is None:
             continue
@@ -149,25 +157,44 @@ def now_status(lessons_today: list[dict], now: datetime) -> tuple[dict | None, d
 
 
 def changes_text(group_name: str, changes: list[dict]) -> str:
-    """changes: [{'day', 'removed': [keys], 'added': [keys]}], key = (day,num,start,end,subject,teacher,room,kind,sub)."""
-    lines = [f"🔔 <b>Изменения в расписании</b> · {esc(group_name)}"]
+    """Показывает переносы как переносы, а не как две несвязанные операции.
+    Сопоставляем только однозначные пары с тем же предметом и подгруппой;
+    неоднозначные случаи оставляем отдельными отменами/добавлениями."""
+    lines = [f"🔔 <b>Изменения расписания</b> · {esc(group_name)}"]
 
     def fmt(k: tuple) -> str:
-        room = f", {esc(k[6])}" if k[6] else ""
-        return f"{num_emoji(k[1])} {k[2]}–{k[3]} {esc(k[4])}{room}"
+        room = f", ауд. {esc(k[6])}" if k[6] else ""
+        return f"{num_emoji(k[1])} {esc(k[2])}–{esc(k[3])} {esc(k[4])}{room}"
 
     for ch in changes[:7]:
         d = tu.parse_iso(ch["day"])
-        lines.append("")
-        lines.append(f"<b>{tu.fmt_date(d)}</b>")
-        for k in ch["removed"][:6]:
-            lines.append(f"➖ {fmt(k)}")
-        for k in ch["added"][:6]:
-            lines.append(f"➕ {fmt(k)}")
+        lines.extend(["", f"<b>{tu.fmt_date(d)}</b>"])
+        removed = list(ch["removed"][:20])
+        added = list(ch["added"][:20])
+        used_removed: set[int] = set()
+        used_added: set[int] = set()
+        for ri, old in enumerate(removed):
+            candidates = [ai for ai, new in enumerate(added)
+                          if ai not in used_added and old[4] == new[4] and old[8] == new[8]]
+            reverse = [rj for rj, candidate in enumerate(removed)
+                       if rj not in used_removed and candidate[4] == old[4] and candidate[8] == old[8]]
+            if len(candidates) == 1 and len(reverse) == 1:
+                ai = candidates[0]
+                new = added[ai]
+                used_removed.add(ri)
+                used_added.add(ai)
+                lines.append(f"🔁 <b>Перенос:</b> {esc(old[4])}")
+                lines.append(f"   Было: {fmt(old)}")
+                lines.append(f"   Стало: {fmt(new)}")
+        for ri, old in enumerate(removed):
+            if ri not in used_removed:
+                lines.append(f"❌ <b>Отмена:</b> {fmt(old)}")
+        for ai, new in enumerate(added):
+            if ai not in used_added:
+                lines.append(f"➕ <b>Добавлено:</b> {fmt(new)}")
     if len(changes) > 7:
-        lines.append(f"\n…и ещё изменений: {len(changes) - 7}")
+        lines.append(f"\n…и ещё дней с изменениями: {len(changes) - 7}")
     return "\n".join(lines)[:MAX_LEN]
-
 
 def _ics_escape(s: str) -> str:
     return (s or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")

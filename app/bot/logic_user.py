@@ -5,7 +5,7 @@ import time
 from datetime import timedelta
 
 from app import timeutil as tu
-from app.bot import logic_schedule as ls
+from app.bot import logic_schedule as ls, logic_teacher
 from app.bot.core import Btn, Ctx, Kb, Out, Screen, b, daily_quota, home_btn, nav
 from app.db.repo import canonical_group_name, norm_group
 from app.services import format as fm
@@ -15,12 +15,14 @@ _FIO_TRIES: dict[int, list] = {}   # uid -> [попытки, заблокиро�
 _FB_LAST: dict[int, float] = {}
 
 WELCOME = ("<b>Привет! Я бот расписания СГУГиТ</b> 👋\n"
-           "Мне нужны ваша группа и ФИО: по ним я показываю расписание, задания группы и даю оценить "
-           "преподавателей. Данные видят только администраторы бота.\n\n"
-           "Напишите вашу группу, например: <code>ИС-11</code>")
+           "Помогаю студентам с расписанием и заданиями, а преподавателям — с личным расписанием и свободными аудиториями.\n\n"
+           "Если вы студент, напишите свою группу, например: <code>ИС-11</code>. "
+           "Если вы преподаватель, нажмите кнопку «Я преподаватель».")
 
 
 async def main_menu(ctx: Ctx) -> Screen:
+    if ctx.role == "teacher":
+        return await logic_teacher.menu(ctx)
     group = await ctx.group()
     head = (ctx.repo.setting("interface_main_text") or "<b>Привет! Я бот СГУГиТ 👋</b>\n📅 Расписание на день и неделю\n🎓 Типы занятий и время пар\n📝 Задания группы · 👨‍🏫 Поиск преподавателей\n🔔 Напоминания — настройте под себя\n\n<b>Главное меню</b>") + (f"\n👥 Группа: {fm.esc(group['name'])}" if group else "")
     if ctx.repo.flag("maintenance"):
@@ -32,27 +34,34 @@ async def main_menu(ctx: Ctx) -> Screen:
         [Btn("👥 Другая группа", "me:other")],
         [Btn("🔎 Найти преподавателя", "me:findt")],
         [Btn("⚙️ Ещё", "me:menu")],
-        [Btn("➕ В группу", url=f"https://t.me/{ctx.bot_username}?startgroup=true"),
+        [Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages"),
          Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
              url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")],
     ]
 
     if ctx.repo.flag("rating_enabled"):
         rows[3].append(Btn("⭐Оценить преподавателя", "t:l:m:0"))
+    if not ctx.is_admin:
+        rows.insert(4, [Btn("👨‍🏫 Я преподаватель", "p:register")])
 
     return Screen(head, rows)
 
 
 async def start(ctx: Ctx) -> Out:
     await ctx.repo.update_user(ctx.uid, private_started=1)
+    if ctx.role == "teacher":
+        return Out(screen=await logic_teacher.menu(ctx), clear_state=True)
     ctx.user["private_started"] = 1
     if ctx.registered and ctx.user.get("fio"):
         return Out(screen=await main_menu(ctx), clear_state=True)
     if ctx.registered:
-        return Out(screen=Screen("Напишите ваше ФИО полностью: <code>Фамилия Имя Отчество</code>"),
+        return Out(screen=Screen("Напишите ваше ФИО полностью: <code>Фамилия Имя Отчество</code>",
+                                 [[Btn("👨‍🏫 Я преподаватель", "p:register")]]),
                    state="reg:fio", state_data={})
-    welcome = Screen(ctx.repo.setting("welcome_text") or WELCOME, [[Btn(
-        "➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup=true")]])
+    welcome = Screen(ctx.repo.setting("welcome_text") or WELCOME, [
+        [Btn("👨‍🏫 Я преподаватель", "p:register")],
+        [Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")],
+    ])
     return Out(screen=welcome, state="reg:group", state_data={})
 
 
@@ -199,6 +208,8 @@ async def on_text_register(ctx: Ctx, state: str, data: dict, text: str) -> Out:
 
 # ---------------- меню «Ещё» ----------------
 async def more_menu(ctx: Ctx) -> Screen:
+    if ctx.role == "teacher":
+        return await logic_teacher.menu(ctx)
     # Здесь только дополнительные действия: пункты главного меню не дублируем.
     kb: Kb = [
         [Btn("👤 Профиль", "me:prof")],
@@ -219,7 +230,7 @@ def _status_text(ctx: Ctx) -> str:
 async def profile_screen(ctx: Ctx) -> Screen:
     g = await ctx.group()
     sub = ctx.user.get("subgroup")
-    role = {"super": "главный администратор", "admin": "администратор"}.get(ctx.role, "студент")
+    role = {"super": "главный администратор", "admin": "администратор", "teacher": "преподаватель"}.get(ctx.role, "студент")
     lines = ["<b>Профиль</b>",
              f"Группа: {fm.esc(g['name']) if g else '—'}",
              f"ФИО: {fm.esc(ctx.user.get('fio') or '—')} ({_status_text(ctx)})",
@@ -282,6 +293,8 @@ async def on_cb_me(ctx: Ctx, parts: list[str]) -> Out:
     if act == "prof":
         return Out(screen=await profile_screen(ctx))
     if act == "help":
+        if ctx.role == "teacher":
+            return Out(screen=await logic_teacher.on_cb(ctx, ["help"]))
         return Out(screen=Screen(ls.HELP_TEXT + "\n\n<b>Полезные ссылки</b>", [[Btn("🌐 Сайт СГУГиТ", url="https://sgugit.ru/"), Btn("📅 Расписание вуза", url="https://sgugit.ru/raspisanie/")], [Btn("🏛 Структура и кафедры", url="https://sgugit.ru/university/struct/kafedry/")], nav("me:menu")]))
     if act == "ntf":
         return Out(screen=await notif_screen(ctx))

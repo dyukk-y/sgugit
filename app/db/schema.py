@@ -11,11 +11,11 @@ TABLES = [
     "meta", "settings", "groups", "users", "lessons", "teachers", "ratings", "homework",
     "hw_done", "head_requests", "chats", "audit", "notif_log", "stopwords", "aliases", "snapshots",
     "staff", "units", "pending_questions", "support_messages", "support_tickets", "scheduled_deletions",
-    "pinned_messages",
+    "pinned_messages", "group_schedule_changes", "teacher_accounts",
 ]
 # таблицы с автоинкрементным id (нужны для сброса последовательностей в PostgreSQL)
 SERIAL_TABLES = ["groups", "lessons", "teachers", "homework", "head_requests", "audit", "snapshots", "staff", "units",
-                 "pending_questions", "support_messages", "support_tickets", "scheduled_deletions", "pinned_messages"]
+                 "pending_questions", "support_messages", "support_tickets", "scheduled_deletions", "pinned_messages", "group_schedule_changes"]
 
 _V1 = [
     "CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)",
@@ -113,7 +113,30 @@ _V11 = [
     "UPDATE users SET role = 'student' WHERE role = 'head'",
     "UPDATE head_requests SET status = 'disabled' WHERE status IN ('pending', 'approved')",
 ]
-MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11)]
+_V12 = [
+    """CREATE TABLE IF NOT EXISTS group_schedule_changes (
+        id {PK}, group_id BIGINT NOT NULL, chat_id BIGINT NOT NULL,
+        day TEXT NOT NULL, lesson_num INTEGER NOT NULL,
+        action TEXT NOT NULL, subject TEXT NOT NULL,
+        start_t TEXT NOT NULL DEFAULT '', end_t TEXT NOT NULL DEFAULT '',
+        author_id BIGINT NOT NULL, author_label TEXT NOT NULL,
+        source_message_id BIGINT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+        created_at BIGINT NOT NULL, decided_at BIGINT
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_gsc_group_day_status ON group_schedule_changes (group_id, day, status)",
+]
+_V13 = [
+    """CREATE TABLE IF NOT EXISTS teacher_accounts (
+        user_id BIGINT PRIMARY KEY, teacher_id BIGINT NOT NULL, created_at BIGINT NOT NULL
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_teacher_accounts_teacher ON teacher_accounts (teacher_id)",
+]
+_V14 = [
+    "ALTER TABLE chats ADD COLUMN notifications_on INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE chats ADD COLUMN cleanup_on INTEGER NOT NULL DEFAULT 0",
+]
+_V15 = ["ALTER TABLE chats ADD COLUMN private_questions INTEGER NOT NULL DEFAULT 0"]
+MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12), (13, _V13), (14, _V14), (15, _V15)]
 
 
 async def migrate(db: Database) -> int:
