@@ -52,20 +52,22 @@ def strip_tags(text: str) -> str:
     return html.unescape(_TAG_RE.sub("", text))
 
 
-MOBILE_ROW_CHARS = 26   # суммарная длина подписей, при которой два-три кнопки в ряду ещё читаются на телефоне
-MOBILE_SHORT_BTN = 6    # короткие кнопки (◀ 2/5 ▶, числа календаря) остаются в ряду
+MOBILE_SHORT_BTN = 6
+MOBILE_PAIR_MAX = 13
 
 
 def _mobile_rows(kb: Kb) -> Kb:
-    """На ПК кнопки в ряду растягиваются на всю ширину, на телефоне делят её поровну и обрезают подписи с «…».
-    Ряд с длинными подписями поэтому разбиваем так, чтобы каждая кнопка получила целую строку."""
+    """Оставляет рядом только короткие подписи: Telegram делит ширину ряда поровну,
+    поэтому две длинные кнопки на телефоне становятся нечитаемыми."""
     out: Kb = []
     for row in kb:
         if len(row) <= 1:
             out.append(row)
             continue
         lengths = [len(b.text) for b in row]
-        if all(n <= MOBILE_SHORT_BTN for n in lengths) or sum(lengths) <= MOBILE_ROW_CHARS:
+        # Короткие навигационные/числовые кнопки можно группировать; пару обычных
+        # кнопок оставляем рядом только если каждая подпись действительно компактна.
+        if all(n <= MOBILE_SHORT_BTN for n in lengths) or (len(row) == 2 and max(lengths) <= MOBILE_PAIR_MAX):
             out.append(row)
         else:
             out.extend([b] for b in row)
