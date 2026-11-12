@@ -69,7 +69,9 @@ def schedule_rich_html(text: str) -> str:
     for index, line in enumerate(lines):
         if index == 0 and line.startswith("<b>") and "</b>" in line:
             end = line.find("</b>")
-            blocks.append(f"<h1>{line[3:end]}</h1>{line[end + 4:]}")
+            # Не используем h1: в Telegram он визуально непропорционально крупный.
+            # Название экрана остаётся компактным, как подпись над расписанием.
+            blocks.append(f"<p><b>{line[3:end]}</b>{line[end + 4:]}</p>")
             continue
 
         if line.startswith("📅 <b>") and "</b>" in line:
@@ -109,7 +111,7 @@ def _render_day_lines(lines: list[str]) -> str:
             if index < len(lines) and lines[index].startswith(("🎓", "🧪", "🛠", "📚")):
                 card.append(lines[index])
                 index += 1
-            while index < len(lines) and lines[index].startswith(("❌", "➕", "✏️", "📎")):
+            while index < len(lines) and lines[index].startswith(("❌", "➕", "✏️", "📎", "👥 Группа:")):
                 card.append(lines[index])
                 index += 1
             rendered.append(_lesson_card(card))
