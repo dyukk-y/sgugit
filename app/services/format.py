@@ -193,8 +193,8 @@ def changes_text(group_name: str, changes: list[dict]) -> str:
             if ai not in used_added:
                 lines.append(f"➕ <b>Добавлено:</b> {fmt(new)}")
     if len(changes) > 7:
-        lines.append(f"\\n…и ещё дней с изменениями: {len(changes) - 7}")
-    return "\\n".join(lines)[:MAX_LEN]
+        lines.append(f"\n…и ещё дней с изменениями: {len(changes) - 7}")
+    return "\n".join(lines)[:MAX_LEN]
 
 def _ics_escape(s: str) -> str:
     return (s or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
