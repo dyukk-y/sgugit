@@ -86,6 +86,8 @@ async def _after_group(ctx: Ctx, gid: int) -> Out:
 
 async def on_cb_register(ctx: Ctx, parts: list[str]) -> Out:
     act = parts[0] if parts else ""
+    if act in ("redo", "ok") and not ctx.user.get("group_id"):
+        return await start(ctx)
     if act == "g" and len(parts) > 1 and parts[1].isdigit():
         g = await ctx.repo.get_group(int(parts[1]))
         if not g:
