@@ -16,6 +16,7 @@ class MigrationV14Tests(unittest.TestCase):
                 await db.execute("DROP TABLE group_schedule_changes")
                 await db.execute("DROP TABLE teacher_accounts")
                 await db.execute("ALTER TABLE chats DROP COLUMN cleanup_on")
+                await db.execute("ALTER TABLE chats DROP COLUMN private_questions")
                 await db.execute("ALTER TABLE chats DROP COLUMN notifications_on")
                 await db.execute("UPDATE meta SET v = ? WHERE k = ?", "11", "schema_version")
 
@@ -27,7 +28,7 @@ class MigrationV14Tests(unittest.TestCase):
                 index = await db.scalar(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?",
                     "ix_gsc_group_day_status")
-                self.assertEqual(version, 14)
+                self.assertEqual(version, 15)
                 self.assertEqual(saved, "unchanged")
                 self.assertEqual(table, 1)
                 self.assertEqual(index, 1)
@@ -39,6 +40,7 @@ class MigrationV14Tests(unittest.TestCase):
                 names = {row["name"] for row in columns}
                 self.assertIn("notifications_on", names)
                 self.assertIn("cleanup_on", names)
+                self.assertIn("private_questions", names)
             finally:
                 await db.close()
 
