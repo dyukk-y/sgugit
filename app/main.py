@@ -39,9 +39,13 @@ async def set_commands(bot: Bot) -> None:
                BotCommand(command="tomorrow", description="Расписание на завтра"), BotCommand(command="week", description="Расписание на неделю"),
                BotCommand(command="next", description="Следующая пара"), BotCommand(command="hw", description="Задания группы"),
                BotCommand(command="help", description="Помощь")]
-    groups = [BotCommand(command="today", description="Расписание на сегодня"), BotCommand(command="tomorrow", description="Расписание на завтра"),
-              BotCommand(command="week", description="Расписание на неделю"), BotCommand(command="next", description="Следующая пара"),
-              BotCommand(command="hw", description="Задания группы"), BotCommand(command="settings", description="Настройки чата")]
+    # Команды расписания и настройки приватны для вызвавшего участника группы.
+    groups = [BotCommand(command="today", description="Расписание на сегодня", is_ephemeral=True),
+              BotCommand(command="tomorrow", description="Расписание на завтра", is_ephemeral=True),
+              BotCommand(command="week", description="Расписание на неделю", is_ephemeral=True),
+              BotCommand(command="next", description="Следующая пара", is_ephemeral=True),
+              BotCommand(command="hw", description="Задания группы", is_ephemeral=True),
+              BotCommand(command="settings", description="Настройки чата", is_ephemeral=True)]
     try:
         await bot.set_my_commands(private, scope=BotCommandScopeAllPrivateChats())
         await bot.set_my_commands(groups, scope=BotCommandScopeAllGroupChats())
