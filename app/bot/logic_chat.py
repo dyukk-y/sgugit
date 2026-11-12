@@ -53,17 +53,17 @@ async def screen(repo: Repo, chat: dict) -> Screen:
     if ev_on and pin_on:
         text += "\n\nℹ️ Для закрепа боту нужно право «Закреплять сообщения» (сделайте его администратором)."
     kb: Kb = [
-        [Btn(f"🌙 Вечерняя сводка: {_onoff(ev_on)}", f"cs:{cid}:ev")],
+        [Btn(f"🌙 Сводка: {_onoff(ev_on)}", f"cs:{cid}:ev")],
         [Btn(f"🕘 Время сводки: {chat['evening_time']}", f"cs:{cid}:et")],
-        [Btn(f"📌 Закреп до первой пары: {_onoff(pin_on)}", f"cs:{cid}:pn")],
-        [Btn(f"🔔 Все групповые уведомления: {_onoff(all_on)}", f"cs:{cid}:no")],
-        [Btn(f"📩 Приватные ответы о расписании: {_onoff(private_on)}", f"cs:{cid}:pq")],
+        [Btn(f"📌 Закреп сводки: {_onoff(pin_on)}", f"cs:{cid}:pn")],
+        [Btn(f"🔔 Уведомления группы: {_onoff(all_on)}", f"cs:{cid}:no")],
+        [Btn(f"📩 Ответы о расписании: {'в личку' if private_on else 'в группу'}", f"cs:{cid}:pq")],
         [Btn(f"🧹 Очистка вопросов: {_onoff(cleanup_on)}", f"cs:{cid}:cl")],
-        [Btn(f"🔔 Изменения расписания (переносы, отмены и новые пары): {_onoff(ch_on)}", f"cs:{cid}:ch")],
+        [Btn(f"🔔 Изменения расписания: {_onoff(ch_on)}", f"cs:{cid}:ch")],
         [Btn(f"💬 Умные ответы: {SHORT_SMART.get(chat['smart_mode'], chat['smart_mode'])}", f"cs:{cid}:sm")],
-        [Btn(f"⏳ Ждать ответа людей: {chat.get('wait_min', 60)} мин", f"cs:{cid}:wt")],
-        [Btn(f"🧹 Автоудаление ответов: {'выкл' if not ad else f'{ad} мин'}", f"cs:{cid}:ad")],
-        [Btn("🔗 Привязать к моей группе", f"cs:{cid}:grp")],
+        [Btn(f"⏳ Ожидание ответа: {chat.get('wait_min', 60)} мин", f"cs:{cid}:wt")],
+        [Btn(f"🧹 Удаление ответов: {'выкл' if not ad else f'{ad} мин'}", f"cs:{cid}:ad")],
+        [Btn("🔗 Привязать группу", f"cs:{cid}:grp")],
     ]
     return Screen(text, kb)
 
