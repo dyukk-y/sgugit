@@ -562,7 +562,7 @@ def _parse_inline_query(raw: str, today: date) -> tuple[str, str, date]:
 
 def _looks_like_group_query(value: str) -> bool:
     """Код группы содержит цифры; фамилии не должны запускать поиск групп."""
-    return bool(re.fullmatch(r"[A-Za-zА-Яа-яЁё]{1,8}[- ]?\d{1,4}(?:[.-]\d{1,3})?", value.strip()))
+    return bool(re.fullmatch(r"[A-Za-zА-Яа-яЁё]{1,8}[- ]?\d{1,4}(?:[. -]\d{1,3})?", value.strip()))
 
 
 def _teacher_result_id(name: str) -> str:
