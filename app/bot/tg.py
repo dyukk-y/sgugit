@@ -771,7 +771,7 @@ def build_router(app: App) -> Router:
                         "💬 Ответьте на сообщение бота или упомяните его и задайте вопрос обычными словами: "
                         "«какие завтра пары?», «что у нас на неделе?», «какая следующая пара?».\n\n"
                         "⚙️ Для управления чатом нажмите единственную кнопку под этим сообщением — откроется личный бот, а в нём панель настроек. "
-                        "Команды /today, /tomorrow, /week, /next и /hw оставлены как запасной способ.\n\n"
+                        "Команды /today, /tomorrow, /week, /next и /hw отвечают лично вызвавшему участнику.\n\n"
                         "🔧 В панели можно включить вечернюю сводку, закреп и автоматическую очистку вопросов. "
                         "Для закрепа нужно право «Закреплять сообщения», а для удаления команд участников — «Удалять сообщения».\n\n"
                         "ℹ️ В стандартном режиме Telegram бот видит команды, упоминания и ответы на его сообщения. "
@@ -866,7 +866,7 @@ def build_router(app: App) -> Router:
         if scr:
             cleanup_day = (tu.today() + timedelta(days=1)) if name == "tomorrow" else (tu.today() if name == "today" else None)
             scheduled = False
-            if cleanup_day and chat.get("cleanup_on", 0):
+            if cleanup_day and chat.get("cleanup_on", 0) and message.ephemeral_message_id is None:
                 delete_at = await _group_cleanup_timestamp(app, chat["group_id"], cleanup_day)
                 if delete_at:
                     sent = await _reply_group(app, message, scr.text, chat, auto_delete=False)
@@ -1001,7 +1001,8 @@ async def _reply_group(app: App, message: Message, text: str, chat: dict | None,
         log.warning("Ответ в группе не отправлен: %s", e)
         return None
     minutes = (chat or {}).get("autodelete_min", 0)
-    if auto_delete and minutes:
+    # Эфемерные ответы Telegram исчезают сами; у них нет обычного message_id для планировщика.
+    if auto_delete and minutes and sent.ephemeral_message_id is None:
         await app.repo.db.execute(
             "INSERT INTO scheduled_deletions (chat_id, message_id, delete_at) VALUES (?, ?, ?)",
             int(message.chat.id), int(sent.message_id), tu.now_ts() + max(60, int(minutes) * 60))
