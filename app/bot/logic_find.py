@@ -17,7 +17,7 @@ def _parse_query(query: str) -> tuple[str, str]:
 
 
 def _lesson_line(l: dict, with_day: bool = False) -> str:
-    room = f", ауд. {fm.esc(l['room'])}" if l["room"] else ""
+    room = f", ауд. <b>{fm.esc(l['room'])}</b>" if l["room"] else ""
     day = f"{tu.fmt_date(tu.parse_iso(l['day']))}, " if with_day else ""
     return f"{day}{l['start_t']}–{l['end_t']} · {fm.esc(l['subject'])} · гр. {fm.esc(l['gname'])}{room}"
 
@@ -39,7 +39,7 @@ async def _directory_lines(ctx: Ctx, staff_row: dict | None) -> list[str]:
         room = fm.esc(u["room"]).replace("кабинет №", "").strip()
         if not room.casefold().startswith("корпус "):
             room = room.replace("каб. ", "").strip()
-        lines.append(f"🚪 <b>Кабинет кафедры</b>\n{room}")
+        lines.append(f"🚪 <b>Кабинет кафедры</b>\n<b>{room}</b>")
     else:
         lines.append("🚪 <b>Кабинет кафедры</b>\nКабинет подразделения в справочнике не указан (нет подтверждённых данных).")
     return lines
