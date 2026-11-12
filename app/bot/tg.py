@@ -606,7 +606,7 @@ def _inline_pretty_schedule(text: str) -> str:
                 card.append("❌ <b>ЗАНЯТИЕ ОТМЕНЕНО</b>")
             out.append("<blockquote>" + "\n".join(card) + "</blockquote>")
             continue
-        if line.startswith(("▶️ ", "⏭ ")):
+        if line.startswith(("▶️ ", "⏭ ", "⏭️ ")):
             out.append("<blockquote>" + line + "</blockquote>")
         elif line.startswith("Группа "):
             out.append("🎓 <b>" + line + "</b>")
