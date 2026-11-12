@@ -609,11 +609,11 @@ def build_router(app: App) -> Router:
             today = tu.now_local().date()
             group_query, mode, selected_day = _parse_inline_query(raw, today)
 
-            teacher_query = re.sub(r"^(?:преподаватель|препод)\\s+", "", raw, flags=re.I).strip()
+            teacher_query = re.sub(r"^(?:преподаватель|препод)\s+", "", raw, flags=re.I).strip()
             explicit_teacher = teacher_query != raw
             # Коды учебных групп содержат номер (например, ИС-11). Обычную фамилию
             # нельзя отправлять в нечёткий поиск групп: он может перехватить запрос.
-            group_like = bool(re.fullmatch(r"[A-Za-zА-Яа-яЁё]{1,8}[- ]?\\d{1,4}(?:[.-]\\d{1,3})?", group_query))
+            group_like = bool(re.fullmatch(r"[A-Za-zА-Яа-яЁё]{1,8}[- ]?\d{1,4}(?:[.-]\d{1,3})?", group_query))
             if not raw and query.from_user is not None:
                 user = await app.repo.get_user(query.from_user.id)
                 own_group = await app.repo.get_group(user["group_id"]) if user and user.get("group_id") else None
@@ -661,7 +661,7 @@ def build_router(app: App) -> Router:
                 result = InlineQueryResultArticle(
                     id="inline-help", title=title, description=hint[:180],
                     input_message_content=InputTextMessageContent(
-                        message_text="📅 <b>Расписание СГУГиТ</b>\\n\\n" + hint,
+                        message_text="📅 <b>Расписание СГУГиТ</b>\n\n" + hint,
                         parse_mode="HTML", disable_web_page_preview=True))
                 await _answer_inline_query(query, [result])
                 return
