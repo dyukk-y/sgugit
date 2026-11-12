@@ -817,6 +817,20 @@ def build_router(app: App) -> Router:
             if active and not addressed:  # вопрос без обращения к боту: ждём, ответят ли люди
                 await app.questions.consider(chat, message.from_user.id, message.message_id, text)
             return
+        if chat.get("private_questions", 0) and re.search(
+                r"\\b(расписан\\w*|пара|пары|занят\\w*|аудитор\\w*|предмет\\w*|кто ведет|кто ведёт|где проходит|сегодня|завтра|послезавтра)\\b",
+                request_text.casefold()):
+            try:
+                await app.bot.send_message(message.from_user.id, scr.text[:MAX_TEXT])
+            except TelegramForbiddenError:
+                link = f"https://t.me/{app.username}?start=group_access"
+                await _reply_group(app, message,
+                    f"Чтобы получить ответ приватно, сначала откройте бота в личных сообщениях: <a href=\\"{link}\\">открыть бота</a>.", chat)
+            except TelegramAPIError:
+                await _reply_group(app, message, "Не удалось отправить ответ в личные сообщения. Попробуйте открыть бота и повторить вопрос.", chat)
+            else:
+                await _reply_group(app, message, "📩 Ответ отправлен вам в личные сообщения.", chat)
+            return
         key = (message.chat.id, scr.text[:40])
         now = time.monotonic()
         if now - app.last_group_answer.get(key, 0) < 20:
