@@ -37,13 +37,13 @@ async def main_menu(ctx: Ctx) -> Screen:
 
     rows: Kb = [
         [Btn("📅 Расписание", "s:d:today")],
-        [Btn("📝 Задания", "h:l:0"), Btn("🔔 Уведомления", "me:ntf")],
-        [Btn("👥 Другая группа", "me:other")],
-        [Btn("🔎 Найти преподавателя", "me:findt")],
-        [Btn("⚙️ Настройки", "me:menu")],
+        [Btn("📝 ДЗ", "h:l:0"), Btn("🔔 Уведомления", "me:ntf")],
+        [Btn("👥 Другая", "me:other")],
+        [Btn("🔎 Преподаватель", "me:findt")],
+        [Btn("⚙️ Ещё", "me:menu")],
     ]
     if show_add_group:
-        rows.append([Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages"),
+        rows.append([Btn("➕ В чат", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages"),
                      Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
                          url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")])
     else:
@@ -51,7 +51,7 @@ async def main_menu(ctx: Ctx) -> Screen:
                          url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")])
 
     if ctx.repo.flag("rating_enabled"):
-        rows[3].append(Btn("⭐Оценить преподавателя", "t:l:m:0"))
+        rows[3].append(Btn("⭐ Оценки", "t:l:m:0"))
     if not ctx.is_admin:
         rows.insert(4, [Btn("👨‍🏫 Я преподаватель", "p:register")])
 
@@ -74,7 +74,7 @@ async def start(ctx: Ctx) -> Out:
                    state="reg:fio", state_data={})
     welcome_rows: Kb = [[Btn("👨‍🏫 Я преподаватель", "p:register")]]
     if await _show_add_group_button(ctx):
-        welcome_rows.append([Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")])
+        welcome_rows.append([Btn("➕ В чат", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")])
     welcome = Screen(ctx.repo.setting("welcome_text") or WELCOME, welcome_rows)
     return Out(screen=welcome, state="reg:group", state_data={})
 
@@ -229,9 +229,9 @@ async def more_menu(ctx: Ctx) -> Screen:
     # Основные параметры собраны в одном коротком меню.
     kb: Kb = [
         [Btn("🔔 Уведомления", "me:ntf")],
-        [Btn("👤 Профиль и группа", "me:prof")],
-        [Btn("📤 Добавить расписание в календарь", "me:ics")],
-        [Btn("❓ Помощь", "me:help"), Btn("📨 Поддержка", "me:fb")],
+        [Btn("👤 Профиль", "me:prof")],
+        [Btn("📆 В календарь", "me:ics")],
+        [Btn("❓ Помощь", "me:help"), Btn("💬 Поддержка", "me:fb")],
     ]
     if ctx.is_admin:
         kb.append([Btn("🛠 Админ-панель", "ad:menu")])
@@ -292,11 +292,11 @@ async def notif_screen(ctx: Ctx) -> Screen:
         [Btn(f"🌙 Вечерняя сводка: {_onoff(ev)}", "me:n:ev:t")],
         [Btn((f"✅ " if u["n_evening_time"] == t else "") + f"🕒 {t}", f"me:n:et:{t.replace(':', '')}") for t in ("19:00", "20:00")],
         [Btn((f"✅ " if u["n_evening_time"] == t else "") + f"🕒 {t}", f"me:n:et:{t.replace(':', '')}") for t in ("21:00", "22:00")],
-        [Btn("⌨️ Свое время сводки", "me:n:custom_evening")],
+        [Btn("🕒 Время сводки", "me:n:custom_evening")],
         [Btn(f"🔄 Изменения в расписании: {_onoff(ch)}", "me:n:ch:t")],
         [Btn((("✅ " if before == m else "") + ("⏰ Перед парой: выкл" if m == 0 else f"⏰ За {m} мин")), f"me:n:bf:{m}") for m in (0, 15)],
         [Btn((("✅ " if before == m else "") + f"⏰ За {m} мин"), f"me:n:bf:{m}") for m in (30, 60)],
-        [Btn("⌨️ Свой интервал (1–180 мин)", "me:n:custom_before")],
+        [Btn("⏱ Интервал", "me:n:custom_before")],
         nav("m:home"),
     ]
     return Screen("\n".join(lines), kb)
