@@ -966,7 +966,16 @@ def build_router(app: App) -> Router:
                 r"\b(расписан\w*|пара|пары|занят\w*|аудитор\w*|предмет\w*|кто ведет|кто ведёт|где проходит|сегодня|завтра|послезавтра)\b",
                 request_text.casefold()):
             try:
-                await app.bot.send_message(message.from_user.id, scr.text[:MAX_TEXT])
+                if scr.rich:
+                    try:
+                        await app.bot.send_rich_message(
+                            chat_id=message.from_user.id,
+                            rich_message=InputRichMessage(html=schedule_rich_html(scr.text)))
+                    except TelegramAPIError as e:
+                        log.debug("Rich DM недоступен, используем обычный текст: %s", e)
+                        await app.bot.send_message(message.from_user.id, scr.text[:MAX_TEXT])
+                else:
+                    await app.bot.send_message(message.from_user.id, scr.text[:MAX_TEXT])
             except TelegramForbiddenError:
                 link = f"https://t.me/{app.username}?start=group_access"
                 await _reply_group(app, message,
@@ -990,11 +999,11 @@ def build_router(app: App) -> Router:
         if cleanup_day:
             delete_at = await _group_cleanup_timestamp(app, chat["group_id"], cleanup_day)
             if delete_at:
-                sent = await _reply_group(app, message, scr.text, chat, auto_delete=False)
+                sent = await _reply_group(app, message, scr.text, chat, auto_delete=False, rich=scr.rich)
                 if sent:
                     await _schedule_group_cleanup(app, message.chat.id, message.message_id, sent.message_id, delete_at)
                     return
-        await _reply_group(app, message, scr.text, chat)
+        await _reply_group(app, message, scr.text, chat, rich=scr.rich)
 
     return r
 
