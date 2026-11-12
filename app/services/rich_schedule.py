@@ -39,9 +39,16 @@ def schedule_rich_html(text: str) -> str:
     }
 
     blocks: list[str] = []
+    loose_lines: list[str] = []
     day_open = False
     day_count = 0
     current_day_lines: list[str] = []
+
+    def flush_loose() -> None:
+        nonlocal loose_lines
+        if loose_lines:
+            blocks.append(_render_day_lines(loose_lines))
+            loose_lines = []
 
     def flush_day() -> None:
         nonlocal day_open, current_day_lines, day_count
@@ -66,6 +73,7 @@ def schedule_rich_html(text: str) -> str:
             continue
 
         if line.startswith("📅 <b>") and "</b>" in line:
+            flush_loose()
             flush_day()
             start = line.find("<b>") + 3
             end = line.find("</b>", start)
@@ -75,13 +83,10 @@ def schedule_rich_html(text: str) -> str:
 
         if day_open:
             current_day_lines.append(line)
-        elif line.startswith(("▶️", "⏭")):
-            blocks.append(f"<blockquote>{line}</blockquote>")
-        elif line.startswith("<i>") and line.endswith("</i>"):
-            blocks.append(f"<footer>{line}</footer>")
         else:
-            blocks.append(f"<p>{line}</p>")
+            loose_lines.append(line)
 
+    flush_loose()
     flush_day()
     if not blocks:
         return ""
@@ -110,7 +115,9 @@ def _render_day_lines(lines: list[str]) -> str:
             rendered.append(_lesson_card(card))
             continue
 
-        if line.startswith("🕐"):
+        if line.startswith(("▶️", "⏭")):
+            rendered.append(f"<blockquote>{line}</blockquote>")
+        elif line.startswith("🕐"):
             rendered.append(f"<p><i>{line}</i></p>")
         elif line.startswith("<i>") and line.endswith("</i>"):
             rendered.append(f"<footer>{line}</footer>")
