@@ -94,9 +94,9 @@ async def day_screen(ctx: Ctx, token: str = "today", other: int | None = None) -
     sfx = _sfx(other)
     prev_d, next_d = tu.iso(d - timedelta(days=1)), tu.iso(d + timedelta(days=1))
     kb: Kb = [
-        [Btn("◀", f"s:d:{prev_d}{sfx}"), Btn("📆 Дата", f"s:c:{d.year}-{d.month:02d}{sfx}"),
-         Btn("▶", f"s:d:{next_d}{sfx}")],
-        [Btn("Сегодня", f"s:d:today{sfx}"), Btn("Завтра", f"s:d:tom{sfx}"), Btn("Неделя", f"s:w:{tu.iso(tu.monday_of(d))}{sfx}")],
+        [Btn("◀ Предыдущий день", f"s:d:{prev_d}{sfx}"), Btn("Следующий день ▶", f"s:d:{next_d}{sfx}")],
+        [Btn("📅 Сегодня", f"s:d:today{sfx}"), Btn("Завтра", f"s:d:tom{sfx}")],
+        [Btn("🗓 Выбрать дату", f"s:c:{d.year}-{d.month:02d}{sfx}"), Btn("Неделя", f"s:w:{tu.iso(tu.monday_of(d))}{sfx}")],
     ]
     if own:
         row: list[Btn] = [Btn("⏭ Следующая", "s:n")]
@@ -138,10 +138,11 @@ async def week_screen(ctx: Ctx, token: str = "cur", other: int | None = None) ->
     sfx = _sfx(other)
     days_row = [Btn(tu.DAYS_SHORT[i], f"s:d:{tu.iso(monday + timedelta(days=i))}{sfx}") for i in range(6)]
     kb: Kb = [
-        [Btn("◀ Неделя", f"s:w:{tu.iso(monday - timedelta(days=7))}{sfx}"),
-         Btn("Неделя ▶", f"s:w:{tu.iso(monday + timedelta(days=7))}{sfx}")],
+        [Btn("◀ Предыдущая", f"s:w:{tu.iso(monday - timedelta(days=7))}{sfx}"),
+         Btn("Следующая ▶", f"s:w:{tu.iso(monday + timedelta(days=7))}{sfx}")],
         days_row,
-        [Btn("Сегодня", f"s:d:today{sfx}"), home_btn()],
+        [Btn("📅 К сегодняшнему дню", f"s:d:today{sfx}"), Btn("🗓 Календарь", f"s:c:{monday.year}-{monday.month:02d}{sfx}")],
+        [home_btn()],
     ]
     return Screen(text, kb)
 

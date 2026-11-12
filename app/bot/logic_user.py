@@ -36,11 +36,11 @@ async def main_menu(ctx: Ctx) -> Screen:
         head += "\n⚠️ Идут технические работы."
 
     rows: Kb = [
-        [Btn("📅 Расписание", "s:d:today")],
-        [Btn("📝 Задания", "h:l:0"), Btn("🔔 Уведомления", "me:ntf")],
-        [Btn("👥 Другая группа", "me:other")],
-        [Btn("🔎 Найти преподавателя", "me:findt")],
-        [Btn("⚙️ Настройки", "me:menu")],
+        [Btn("📅 Расписание на сегодня", "s:d:today")],
+        [Btn("🗓 Расписание на неделю", "s:w:cur")],
+        [Btn("⏭ Следующая пара", "s:n")],
+        [Btn("📝 Задания", "h:l:0"), Btn("🔎 Преподаватели", "me:findt")],
+        [Btn("🔔 Уведомления", "me:ntf"), Btn("⚙️ Настройки", "me:menu")],
     ]
     if show_add_group:
         rows.append([Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages"),
@@ -228,10 +228,10 @@ async def more_menu(ctx: Ctx) -> Screen:
         return await logic_teacher.menu(ctx)
     # Основные параметры собраны в одном коротком меню.
     kb: Kb = [
-        [Btn("🔔 Уведомления", "me:ntf")],
-        [Btn("👤 Профиль и группа", "me:prof")],
-        [Btn("📤 Добавить расписание в календарь", "me:ics")],
-        [Btn("❓ Помощь", "me:help"), Btn("📨 Поддержка", "me:fb")],
+        [Btn("👤 Мой профиль и группа", "me:prof")],
+        [Btn("🔔 Настроить уведомления", "me:ntf")],
+        [Btn("📅 Добавить расписание в календарь", "me:ics")],
+        [Btn("❓ Как пользоваться", "me:help"), Btn("💬 Поддержка", "me:fb")],
     ]
     if ctx.is_admin:
         kb.append([Btn("🛠 Админ-панель", "ad:menu")])
