@@ -8,8 +8,8 @@ from app import timeutil as tu
 from app.config import Settings
 from app.db.repo import Repo
 
-ALL_PERMS = ("users", "requests", "schedule", "homework", "teachers", "broadcast", "stats")
-PERM_LABELS = {"users": "Пользователи", "requests": "Заявки старост", "schedule": "Расписание",
+ALL_PERMS = ("users", "schedule", "homework", "teachers", "broadcast", "stats")
+PERM_LABELS = {"users": "Пользователи", "schedule": "Расписание",
                "homework": "Задания", "teachers": "Рейтинг", "broadcast": "Рассылки", "stats": "Статистика"}
 PAGE = 6
 
@@ -108,11 +108,6 @@ class Ctx:
     @property
     def is_super(self) -> bool:
         return self.role == "super"
-
-    @property
-    def is_head(self) -> bool:
-        # Совместимость со старыми записями БД; роль больше не выдаётся через интерфейс.
-        return self.role == "head"
 
     @property
     def perms(self) -> set[str]:
