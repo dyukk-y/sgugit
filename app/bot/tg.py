@@ -559,6 +559,12 @@ def _parse_inline_query(raw: str, today: date) -> tuple[str, str, date]:
     return group, mode, selected
 
 
+
+def _looks_like_group_query(value: str) -> bool:
+    """Код группы содержит цифры; фамилии не должны запускать поиск групп."""
+    return bool(re.fullmatch(r"[A-Za-zА-Яа-яЁё]{1,8}[- ]?\d{1,4}(?:[.-]\d{1,3})?", value.strip()))
+
+
 def _teacher_result_id(name: str) -> str:
     """Stable ASCII inline-result ID within Telegram's 64-byte limit."""
     digest = hashlib.sha1(name.casefold().encode("utf-8")).hexdigest()[:20]
@@ -613,7 +619,7 @@ def build_router(app: App) -> Router:
             explicit_teacher = teacher_query != raw
             # Коды учебных групп содержат номер (например, ИС-11). Обычную фамилию
             # нельзя отправлять в нечёткий поиск групп: он может перехватить запрос.
-            group_like = bool(re.fullmatch(r"[A-Za-zА-Яа-яЁё]{1,8}[- ]?\d{1,4}(?:[.-]\d{1,3})?", group_query))
+            group_like = _looks_like_group_query(group_query)
             if not raw and query.from_user is not None:
                 user = await app.repo.get_user(query.from_user.id)
                 own_group = await app.repo.get_group(user["group_id"]) if user and user.get("group_id") else None
