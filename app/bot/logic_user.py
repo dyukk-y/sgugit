@@ -313,8 +313,9 @@ async def on_cb_me(ctx: Ctx, parts: list[str]) -> Out:
         return Out(screen=Screen(ls.HELP_TEXT + "\n\n<b>Полезные ссылки</b>", [[Btn("🌐 Сайт СГУГиТ", url="https://sgugit.ru/"), Btn("📅 Расписание вуза", url="https://sgugit.ru/raspisanie/")], [Btn("🏛 Структура и кафедры", url="https://sgugit.ru/university/struct/kafedry/")], nav("me:menu")]))
     if act == "ntf":
         return Out(screen=await notif_screen(ctx))
-    if act == "n" and len(parts) >= 3:
-        field, val = parts[1], parts[2]
+    if act == "n" and len(parts) >= 2:
+        field = parts[1]
+        val = parts[2] if len(parts) >= 3 else ""
         if field == "custom_evening":
             return Out(screen=Screen("Введите время вечерней сводки в формате ЧЧ:ММ, например 20:35.", [nav("me:ntf")]), state="me:n_evening_time", state_data={})
         if field == "custom_before":
