@@ -33,7 +33,7 @@ async def main_menu(ctx: Ctx) -> Screen:
         [Btn("📝 Задания", "h:l:0"), Btn("🔔 Уведомления", "me:ntf")],
         [Btn("👥 Другая группа", "me:other")],
         [Btn("🔎 Найти преподавателя", "me:findt")],
-        [Btn("⚙️ Ещё", "me:menu")],
+        [Btn("⚙️ Настройки", "me:menu")],
         [Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages"),
          Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
              url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")],
@@ -49,13 +49,16 @@ async def main_menu(ctx: Ctx) -> Screen:
 
 async def start(ctx: Ctx) -> Out:
     await ctx.repo.update_user(ctx.uid, private_started=1)
-    if ctx.role == "teacher":
+    if ctx.role == "teacher" and ctx.user.get("_teacher_registered"):
         return Out(screen=await logic_teacher.menu(ctx), clear_state=True)
+    if ctx.role == "teacher":
+        await ctx.repo.update_user(ctx.uid, role="student")
+        ctx.user["role"] = "student"
     ctx.user["private_started"] = 1
-    if ctx.registered and ctx.user.get("fio"):
+    if ctx.user.get("group_id") and ctx.user.get("fio"):
         return Out(screen=await main_menu(ctx), clear_state=True)
-    if ctx.registered:
-        return Out(screen=Screen("Напишите ваше ФИО полностью: <code>Фамилия Имя Отчество</code>",
+    if ctx.user.get("group_id"):
+        return Out(screen=Screen("Введите ФИО: <code>Фамилия Имя Отчество</code>",
                                  [[Btn("👨‍🏫 Я преподаватель", "p:register")]]),
                    state="reg:fio", state_data={})
     welcome = Screen(ctx.repo.setting("welcome_text") or WELCOME, [
@@ -212,9 +215,10 @@ async def more_menu(ctx: Ctx) -> Screen:
         return await logic_teacher.menu(ctx)
     # Здесь только дополнительные действия: пункты главного меню не дублируем.
     kb: Kb = [
-        [Btn("👤 Профиль", "me:prof")],
-        [Btn("📤 В календарь", "me:ics"), Btn("❓ Помощь", "me:help")],
-        [Btn("📨 Написать админу", "me:fb")],
+        [Btn("🔔 Уведомления", "me:ntf")],
+        [Btn("👤 Профиль и группа", "me:prof")],
+        [Btn("📤 Добавить расписание в календарь", "me:ics")],
+        [Btn("❓ Помощь", "me:help"), Btn("📨 Поддержка", "me:fb")],
     ]
     if ctx.is_admin:
         kb.append([Btn("🛠 Админ-панель", "ad:menu")])
