@@ -45,7 +45,8 @@ async def set_commands(bot: Bot) -> None:
               BotCommand(command="week", description="Расписание на неделю", is_ephemeral=True),
               BotCommand(command="next", description="Следующая пара", is_ephemeral=True),
               BotCommand(command="hw", description="Задания группы", is_ephemeral=True),
-              BotCommand(command="settings", description="Настройки чата", is_ephemeral=True)]
+              BotCommand(command="settings", description="Настройки чата", is_ephemeral=True),
+              BotCommand(command="poll", description="Опрос для группы", is_ephemeral=True)]
     try:
         await bot.set_my_commands(private, scope=BotCommandScopeAllPrivateChats())
         await bot.set_my_commands(groups, scope=BotCommandScopeAllGroupChats())
