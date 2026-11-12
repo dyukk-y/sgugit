@@ -63,8 +63,26 @@ class InlineQueryParsingTests(unittest.TestCase):
         self.assertIn("<blockquote>▶️ <b>Сейчас идёт: Математика</b> · до 10:00</blockquote>", rendered)
         self.assertIn("<blockquote>⏰ <b>08:30–10:00</b>  ·  <b>ПАРА 01</b>", rendered)
         self.assertIn("📖 <b>Математика</b>", rendered)
+        self.assertIn("📍 <b>301</b>", rendered)
         self.assertIn("👥 Группа: ИС-11", rendered)
         self.assertIn("🎓 <b>Группа ИС-11</b>", rendered)
+
+    def test_inline_teacher_subject_keeps_first_letters_and_department_is_separate(self):
+        source = ("🧑‍🏫 <b>Иванов И.И.</b>\\n"
+                  "▶️ <b>Сейчас ведёт пару до 10:00</b>\\n"
+                  "<b>01</b> ·  08:30–10:00\\n"
+                  "📘 Математика высшая\\n"
+                  "🎓 лекция  ·  👨‍🏫 Иванов И.И.  ·  📍 301\\n"
+                  "🏛 <b>Кафедра</b>\\n"
+                  "Кафедра информационных технологий\\n"
+                  "🚪 <b>Кабинет кафедры</b>\\n"
+                  "305")
+        rendered = _inline_pretty_schedule(source)
+        self.assertIn("📖 <b>Математика высшая</b>", rendered)
+        self.assertIn("📍 <b>301</b>", rendered)
+        self.assertIn("<blockquote>🏛 <b>Кафедра</b>", rendered)
+        self.assertIn("Кафедра информационных технологий", rendered)
+        self.assertNotIn("👨‍🏫 Иванов И.И.  ·  📍 301  ·  🏛", rendered)
 
     def test_teacher_result_id_is_ascii_and_bounded(self):
         result_id = _teacher_result_id("ОченьДлиннаяФамилия" * 8)
