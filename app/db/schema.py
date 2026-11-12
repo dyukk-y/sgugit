@@ -135,7 +135,8 @@ _V14 = [
     "ALTER TABLE chats ADD COLUMN notifications_on INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE chats ADD COLUMN cleanup_on INTEGER NOT NULL DEFAULT 0",
 ]
-MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12), (13, _V13), (14, _V14)]
+_V15 = ["ALTER TABLE chats ADD COLUMN private_questions INTEGER NOT NULL DEFAULT 0"]
+MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12), (13, _V13), (14, _V14), (15, _V15)]
 
 
 async def migrate(db: Database) -> int:
