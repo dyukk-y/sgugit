@@ -16,7 +16,7 @@ from typing import Any
 from aiogram import BaseMiddleware, Bot, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import (BufferedInputFile, CallbackQuery, ChatMemberUpdated, InlineKeyboardButton,
-                           InlineKeyboardMarkup, Message, ReplyParameters, InlineQuery, InlineQueryResultArticle, InputTextMessageContent, WebAppInfo)
+                           InlineKeyboardMarkup, Message, ReplyParameters, InlineQuery, InlineQueryResultArticle, InputTextMessageContent)
 
 from app.bot import logic_chat, router as logic_router, runtime
 from app.bot.core import Btn, Ctx, Kb, Out, Screen
@@ -64,9 +64,7 @@ def to_markup(kb: Kb | None) -> InlineKeyboardMarkup | None:
     for row in _mobile_rows(kb):
         btns = []
         for b in row:
-            if b.web_app and b.url:
-                btns.append(InlineKeyboardButton(text=b.text, web_app=WebAppInfo(url=b.url)))
-            elif b.url:
+            if b.url:
                 btns.append(InlineKeyboardButton(text=b.text, url=b.url))
             else:
                 data = b.data or "noop"
@@ -523,17 +521,7 @@ def build_router(app: App) -> Router:
         if message.from_user is None or not _claim_private_message(app, message):
             return
         name, args = _cmd_parts(message.text or "")
-        if name == "start" and args.startswith("manage_"):
-            try:
-                chat_id = int(args[len("manage_"):])
-            except ValueError:
-                chat_id = 0
-            out = await run_process(app, message.from_user, command="start")
-            await render(app, message.chat.id, out)
-            await deliver_side_effects(app, message.chat.id, out)
-            await _open_group_panel(app, message, chat_id)
-            await safe_delete(message)
-            return
+
         out = await run_process(app, message.from_user, command=name, args=args)
         if out.screen is None and not out.file and not out.notify and not out.notify_timed and not out.toast:
             # неизвестная или скрытая команда (например, /admin у обычного студента): как обычный текст
@@ -690,10 +678,7 @@ def build_router(app: App) -> Router:
                         "и задания. Можно задавать вопросы обычными словами, отвечая на сообщение бота.\n\n"
                         "Команды /settings, /today, /tomorrow, /week, /next и /hw остаются запасным вариантом.")
             try:
-                welcome_kb = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="✦ Открыть настройки", url=f"https://t.me/{app.username}?start=manage_{event.chat.id}")],
-                ])
-                await app.bot.send_message(event.chat.id, text, reply_markup=welcome_kb)
+                await app.bot.send_message(event.chat.id, text)
             except TelegramAPIError:
                 log.warning("Не удалось отправить приветствие в чат %s", event.chat.id)
 
@@ -938,40 +923,8 @@ async def _send_chat_settings(app: App, message: Message, chat: dict | None) -> 
     if not logic_chat.can_manage(user, chat, app.cfg.superadmin_id, tg_admin):
         await _reply_group(app, message, "Настройки доступны администраторам группы и пользователю, который добавил бота.", chat)
         return
-    if not app.cfg.webapp_url:
-        await _reply_group(app, message,
-                           "Панель управления ещё не опубликована. После подключения HTTPS-домена кнопка появится здесь.",
-                           chat)
-        return
-    link = f"https://t.me/{app.username}?start=manage_{message.chat.id}"
-    markup = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✦ Открыть панель управления", url=link)
-    ]])
-    await message.answer("✦ <b>Центр управления СГУГиТ</b>\nОткройте личный чат с ботом — там запустится панель настроек этой группы.",
-                         reply_markup=markup)
-
-
-async def _open_group_panel(app: App, message: Message, chat_id: int) -> None:
-    if message.from_user is None:
-        return
-    chat = await app.repo.get_chat(chat_id)
-    if not chat or not chat.get("active"):
-        await message.answer("Этот чат не найден в настройках бота.")
-        return
-    user = await app.repo.get_user(message.from_user.id)
-    tg_admin = await _is_tg_admin(app, chat_id, message.from_user.id)
-    if not logic_chat.can_manage(user, chat, app.cfg.superadmin_id, tg_admin):
-        await message.answer("Управлять ботом могут администраторы группы и пользователь, который добавил бота.")
-        return
-    if not app.cfg.webapp_url:
-        await message.answer("Панель управления ещё не опубликована. Администратору нужно добавить HTTPS-домен и указать WEBAPP_URL в настройках хостинга.")
-        return
-    url = f"{app.cfg.webapp_url}?chat_id={chat_id}"
-    markup = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Открыть панель управления", web_app=WebAppInfo(url=url))
-    ]])
-    await message.answer("✦ <b>Центр управления СГУГиТ</b>\nНастройки этого группового чата. Доступ проверяется через Telegram.",
-                         reply_markup=markup)
+    scr = await logic_chat.screen(app.repo, chat)
+    await message.answer(scr.text, reply_markup=to_markup(scr.kb))
 
 
 async def _chat_settings_action(app: App, cb: CallbackQuery) -> None:
