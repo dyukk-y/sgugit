@@ -52,14 +52,19 @@ class InlineQueryParsingTests(unittest.TestCase):
         self.assertEqual(_parse_inline_query("ИС-11 корпус", self.today),
                          ("ИС-11 корпус", "choices", self.today))
 
-    def test_inline_schedule_wraps_lessons_as_readable_cards(self):
-        source = ("<b>Пятница, 13 ноября</b>\nГруппа ИС-11\n\n"
-                  "<b>01</b> · 08:30–10:00\n📘 Математика\n🎓 лекция · 👨‍🏫 Иванов · 📍 301\n\n"
-                  "<b>02</b> · 10:15–11:45\n📘 Физика\n🧪 лабораторная · 📍 202")
+    def test_inline_schedule_uses_modern_cards_for_group_and_teacher_lessons(self):
+        source = ("<b>Пятница, 13 ноября</b>\\nГруппа ИС-11\\n"
+                  "▶️ <b>Сейчас идёт: Математика</b> · до 10:00\\n\\n"
+                  "<b>01</b> ·  08:30–10:00\\n📘 Математика\\n"
+                  "🎓 лекция  ·  👨‍🏫 Иванов  ·  📍 301\\n"
+                  "👥 Группа: ИС-11")
         rendered = _inline_pretty_schedule(source)
-        self.assertIn("<blockquote><b>01</b> · 08:30–10:00\n📘 Математика", rendered)
-        self.assertIn("<blockquote><b>02</b> · 10:15–11:45\n📘 Физика", rendered)
-        self.assertIn("Группа ИС-11", rendered)
+        self.assertTrue(rendered.startswith("📚 <b>РАСПИСАНИЕ</b>"))
+        self.assertIn("<blockquote>▶️ <b>Сейчас идёт: Математика</b> · до 10:00</blockquote>", rendered)
+        self.assertIn("<blockquote>⏰ <b>08:30–10:00</b>  ·  <b>ПАРА 01</b>", rendered)
+        self.assertIn("📖 <b>Математика</b>", rendered)
+        self.assertIn("👥 Группа: ИС-11", rendered)
+        self.assertIn("🎓 <b>Группа ИС-11</b>", rendered)
 
     def test_teacher_result_id_is_ascii_and_bounded(self):
         result_id = _teacher_result_id("ОченьДлиннаяФамилия" * 8)
