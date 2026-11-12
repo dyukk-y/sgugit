@@ -1032,7 +1032,11 @@ async def _reply_group(app: App, message: Message, text: str, chat: dict | None,
                       auto_delete: bool = True, rich: bool = False) -> Message | None:
     try:
         if rich:
-            sent = await message.reply_rich(InputRichMessage(html=schedule_rich_html(text)))
+            try:
+                sent = await message.reply_rich(InputRichMessage(html=schedule_rich_html(text)))
+            except TelegramAPIError as e:
+                log.debug("Rich reply недоступен, используем обычный текст: %s", e)
+                sent = await message.reply(text[:MAX_TEXT])
         else:
             sent = await message.reply(text[:MAX_TEXT])
     except TelegramBadRequest as e:
