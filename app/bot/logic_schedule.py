@@ -101,7 +101,7 @@ async def day_screen(ctx: Ctx, token: str = "today", other: int | None = None) -
     if own:
         row: list[Btn] = [Btn("⏭ Следующая", "s:n")]
         if ctx.verified:
-            row.append(Btn("➕ Задание", f"h:add:{tu.iso(d)}"))
+            row.append(Btn("📝 Добавить задание", f"h:add:{tu.iso(d)}"))
         kb.append(row)
         if hw:
             kb.append([Btn(f"📎 Задания дня ({sum(hw.values())})", f"h:d:{tu.iso(d)}")])
