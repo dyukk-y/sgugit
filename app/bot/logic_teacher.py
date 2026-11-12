@@ -89,7 +89,7 @@ async def day_screen(ctx: Ctx, token: str = "today") -> Screen:
             lines.append("Все найденные занятия на эту дату отмечены как отменённые.")
     prev_day, next_day = tu.iso(day - timedelta(days=1)), tu.iso(day + timedelta(days=1))
     kb: Kb = [
-        [Btn("◀", f"p:day:{prev_day}"), Btn("📆 Календарь", f"p:cal:{day.year}-{day.month:02d}"),
+        [Btn("◀", f"p:day:{prev_day}"), Btn("📆 Дата", f"p:cal:{day.year}-{day.month:02d}"),
          Btn("▶", f"p:day:{next_day}")],
         [Btn("Сегодня", "p:day:today"), Btn("Завтра", "p:day:tom"),
          Btn("Неделя", f"p:week:{tu.iso(tu.monday_of(day))}")],
@@ -150,7 +150,7 @@ async def week_screen(ctx: Ctx, token: str = "cur") -> Screen:
         [Btn("Пн", f"p:day:{tu.iso(monday)}"), Btn("Вт", f"p:day:{tu.iso(monday+timedelta(days=1))}"),
          Btn("Ср", f"p:day:{tu.iso(monday+timedelta(days=2))}"), Btn("Чт", f"p:day:{tu.iso(monday+timedelta(days=3))}"),
          Btn("Пт", f"p:day:{tu.iso(monday+timedelta(days=4))}")],
-        [Btn("Сегодня", "p:day:today"), Btn("Календарь", f"p:cal:{monday.year}-{monday.month:02d}")],
+        [Btn("Сегодня", "p:day:today"), Btn("Дата", f"p:cal:{monday.year}-{monday.month:02d}")],
         nav("p:menu"),
     ]
     return Screen(_bounded_text(lines), kb, rich=True)
