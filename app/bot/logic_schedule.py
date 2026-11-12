@@ -48,6 +48,15 @@ def _sfx(other: int | None) -> str:
     return f":{other}" if other else ""
 
 
+def _schedule_status_line(lessons: list[dict], now) -> str | None:
+    current, upcoming = fm.now_status(lessons, now)
+    if current:
+        return f"▶️ Сейчас идёт: <b>{fm.esc(current['subject'])}</b> · до {current['end_t']}"
+    if upcoming:
+        return f"⏭ Следующая: <b>{fm.esc(upcoming['subject'])}</b> · {upcoming['start_t']}–{upcoming['end_t']}"
+    return None
+
+
 def _freshness(ctx: Ctx) -> str | None:
     try:
         last = int(ctx.repo.setting("sync_last_ok") or 0)
@@ -91,6 +100,12 @@ async def day_screen(ctx: Ctx, token: str = "today", other: int | None = None) -
     lessons = await ctx.repo.lessons_day(gid, tu.iso(d), sub)
     hw = await ctx.repo.hw_counts_for_day(gid, tu.iso(d)) if own else {}
     text = fm.day_text(d, lessons, ctx.parity(d), hw, group["name"] if not own else None, _freshness(ctx))
+    if d == ctx.today:
+        status = _schedule_status_line(lessons, ctx.now)
+        if status:
+            lines = text.splitlines()
+            lines.insert(2 if not own else 1, status)
+            text = "\n".join(lines)
     sfx = _sfx(other)
     prev_d, next_d = tu.iso(d - timedelta(days=1)), tu.iso(d + timedelta(days=1))
     kb: Kb = [
@@ -108,7 +123,7 @@ async def day_screen(ctx: Ctx, token: str = "today", other: int | None = None) -
         kb.append([home_btn()])
     else:
         kb.append([Btn("↩ Моё расписание", "s:d:today"), home_btn()])
-    return Screen(text, kb)
+    return Screen(text, kb, rich=True)
 
 
 async def week_screen(ctx: Ctx, token: str = "cur", other: int | None = None) -> Screen:
@@ -132,6 +147,13 @@ async def week_screen(ctx: Ctx, token: str = "cur", other: int | None = None) ->
     await _ensure_group_schedule(ctx, gid)
     lessons = await ctx.repo.lessons_range(gid, tu.iso(monday), tu.iso(monday + timedelta(days=6)), sub)
     text = fm.week_text(monday, lessons, ctx.parity(monday), group["name"] if not own else None)
+    if monday <= ctx.today <= monday + timedelta(days=6):
+        today_lessons = [lesson for lesson in lessons if lesson["day"] == tu.iso(ctx.today)]
+        status = _schedule_status_line(today_lessons, ctx.now)
+        if status:
+            lines = text.splitlines()
+            lines.insert(2 if not own else 1, status)
+            text = "\n".join(lines)
     fresh = _freshness(ctx)
     if fresh:
         text += f"\n\n<i>{fm.esc(fresh)}</i>"
@@ -143,7 +165,7 @@ async def week_screen(ctx: Ctx, token: str = "cur", other: int | None = None) ->
         days_row,
         [Btn("Сегодня", f"s:d:today{sfx}"), home_btn()],
     ]
-    return Screen(text, kb)
+    return Screen(text, kb, rich=True)
 
 
 async def calendar_screen(ctx: Ctx, ym: str, other: int | None = None) -> Screen:
@@ -187,7 +209,7 @@ async def next_lesson_screen(ctx: Ctx) -> Screen:
     if not gid:
         return Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]])
     text = await next_lesson_text(ctx, gid, ctx.user.get("subgroup"))
-    return Screen(text, [[Btn("📅 Сегодня", "s:d:today"), home_btn()]])
+    return Screen(text, [[Btn("📅 Сегодня", "s:d:today"), home_btn()]], rich=True)
 
 
 async def next_lesson_text(ctx: Ctx, gid: int, subgroup: int | None) -> str:
@@ -278,7 +300,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
         monday = tu.monday_of(base) + timedelta(days=7 if (intent.week_shift == 1 and intent.day is None) else 0)
         lessons = await repo.lessons_range(gid, tu.iso(monday), tu.iso(monday + timedelta(days=6)), subgroup)
         kb = [[Btn("📅 Открыть неделю", f"s:w:{tu.iso(monday)}")]] if allow_kb else None
-        return Screen(fm.week_text(monday, lessons, ctx.parity(monday)), kb)
+        return Screen(fm.week_text(monday, lessons, ctx.parity(monday)), kb, rich=True)
 
     if name == "hw":
         return await _answer_hw(ctx, intent, gid)
@@ -299,7 +321,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
 
     if name == "next":
         return Screen(await next_lesson_text(ctx, gid, subgroup),
-                      [[Btn("📅 Сегодня", "s:d:today")]] if allow_kb else None)
+                      [[Btn("📅 Сегодня", "s:d:today")]] if allow_kb else None, rich=True)
 
     if name == "when_subject":
         subj = intent.subject
@@ -323,7 +345,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
                 return Screen(f"{prefix}{when.capitalize()}: пары №{intent.num} нет.", kb_for(d))
             return Screen(f"{prefix}{when.capitalize()}:\n{fm.lesson_block(hit[0])}", kb_for(d))
         hw = await repo.hw_counts_for_day(gid, tu.iso(d))
-        return Screen((prefix + "\n\n" if prefix else "") + fm.day_text(d, lessons, ctx.parity(d), hw), kb_for(d))
+        return Screen((prefix + "\n\n" if prefix else "") + fm.day_text(d, lessons, ctx.parity(d), hw), kb_for(d), rich=True)
     if not lessons:
         return Screen(f"{prefix}{when.capitalize()} занятий нет 🎉", kb_for(d))
     if name == "count":

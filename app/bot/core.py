@@ -28,6 +28,7 @@ Kb = list[list[Btn]]
 class Screen:
     text: str
     kb: Kb | None = None
+    rich: bool = False
 
 
 @dataclass
