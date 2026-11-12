@@ -37,11 +37,17 @@ async def screen(repo: Repo, chat: dict) -> Screen:
     cid = chat["chat_id"]
     ad = chat["autodelete_min"]
     ev_on, ch_on, pin_on = bool(chat["evening_on"]), bool(chat.get("changes_on", 1)), bool(chat.get("pin_on", 1))
+    all_on = bool(chat.get("notifications_on", 1))
+    cleanup_on = bool(chat.get("cleanup_on", 0))
+    private_on = bool(chat.get("private_questions", 0))
     text = ("<b>Настройки чата</b>\n"
             f"Группа: {fm.esc(g['name']) if g else 'не привязана'}\n\n"
             "Нажмите на пункт, чтобы переключить его. Текущее значение написано на кнопке.\n\n"
             f"🌙 Вечерняя сводка на завтра: {'в ' + chat['evening_time'] if ev_on else 'выкл'}\n"
             f"📌 Закреп сводки: {'до начала первой пары' if ev_on and pin_on else 'выкл'}\n"
+            f"🔔 Все групповые уведомления: {'включены' if all_on else 'выключены'}\\n"
+            f"📩 Ответы на вопросы о расписании: {'в личные сообщения' if private_on else 'в группу'}\\n"
+            f"🧹 Очистка вопросов после последней пары: {'включена' if cleanup_on else 'выключена'}\\n"
             f"🔔 Переносы, отмены и новые пары: {'присылать' if ch_on else 'не присылать'}\n"
             f"💬 Умные ответы: {SMART_LABEL.get(chat['smart_mode'], chat['smart_mode'])}")
     if ev_on and pin_on:
@@ -50,6 +56,9 @@ async def screen(repo: Repo, chat: dict) -> Screen:
         [Btn(f"🌙 Вечерняя сводка: {_onoff(ev_on)}", f"cs:{cid}:ev")],
         [Btn(f"🕘 Время сводки: {chat['evening_time']}", f"cs:{cid}:et")],
         [Btn(f"📌 Закреп до первой пары: {_onoff(pin_on)}", f"cs:{cid}:pn")],
+        [Btn(f"🔔 Все групповые уведомления: {_onoff(all_on)}", f"cs:{cid}:no")],
+        [Btn(f"📩 Приватные ответы о расписании: {_onoff(private_on)}", f"cs:{cid}:pq")],
+        [Btn(f"🧹 Очистка вопросов: {_onoff(cleanup_on)}", f"cs:{cid}:cl")],
         [Btn(f"🔔 Переносы, отмены и новые пары: {_onoff(ch_on)}", f"cs:{cid}:ch")],
         [Btn(f"💬 Умные ответы: {SHORT_SMART.get(chat['smart_mode'], chat['smart_mode'])}", f"cs:{cid}:sm")],
         [Btn(f"⏳ Ждать ответа людей: {chat.get('wait_min', 60)} мин", f"cs:{cid}:wt")],
@@ -87,6 +96,12 @@ async def apply(repo: Repo, chat: dict, user: dict | None, act: str) -> str | No
         await repo.update_chat(cid, evening_time=_next(EVENING_TIMES, chat["evening_time"]))
     elif act == "ch":
         await repo.update_chat(cid, changes_on=0 if chat.get("changes_on", 1) else 1)
+    elif act == "no":
+        await repo.update_chat(cid, notifications_on=0 if chat.get("notifications_on", 1) else 1)
+    elif act == "pq":
+        await repo.update_chat(cid, private_questions=0 if chat.get("private_questions", 0) else 1)
+    elif act == "cl":
+        await repo.update_chat(cid, cleanup_on=0 if chat.get("cleanup_on", 0) else 1)
     elif act == "pn":
         await repo.update_chat(cid, pin_on=0 if chat.get("pin_on", 1) else 1)
     else:
