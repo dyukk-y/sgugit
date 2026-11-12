@@ -23,11 +23,16 @@ def _maintenance(ctx: Ctx) -> Out | None:
 
 
 async def handle_callback(ctx: Ctx, data: str) -> Out:
-    if data == "noop":
-        return Out()
     block = _maintenance(ctx)
     if block:
         return block
+    if not ctx.registered and not ctx.is_admin:
+        # До регистрации доступны только шаги регистрации студента или преподавателя.
+        allowed = data.startswith("r:") or data == "p:register" or data.startswith("p:choose:")
+        if not allowed:
+            return await logic_user.start(ctx)
+    if data == "noop":
+        return Out()
     parts = data.split(":")
     head, rest = parts[0], parts[1:]
     if head == "m":
@@ -76,6 +81,11 @@ async def handle_text(ctx: Ctx, text: str) -> Out:
     if block:
         return block
     state, data = await ctx.repo.get_state(ctx.uid)
+    if not ctx.registered and not ctx.is_admin:
+        registration_state = bool(state and (state.startswith("reg:") or state in ("p:surname", "p:confirm")))
+        if not registration_state:
+            await ctx.repo.clear_state(ctx.uid)
+            return await logic_user.start(ctx)
     if state:
         if state in BUTTON_STATES:
             return Out()
@@ -117,6 +127,8 @@ async def handle_text(ctx: Ctx, text: str) -> Out:
 
 
 async def handle_document(ctx: Ctx, filename: str, blob: bytes, file_id: str | None = None) -> Out:
+    if not ctx.registered and not ctx.is_admin:
+        return await logic_user.start(ctx)
     state, data = await ctx.repo.get_state(ctx.uid)
     if state and state.startswith("ad:"):
         return await logic_admin.on_document(ctx, state, filename, blob)
@@ -138,6 +150,8 @@ async def handle_document(ctx: Ctx, filename: str, blob: bytes, file_id: str | N
 
 
 async def handle_photo(ctx: Ctx, file_id: str, caption: str = "") -> Out:
+    if not ctx.registered and not ctx.is_admin:
+        return await logic_user.start(ctx)
     state, data = await ctx.repo.get_state(ctx.uid)
     if state == "ad:bc_text" and ctx.can("broadcast"):
         data.update(media_file_id=file_id, media_type="photo")
@@ -176,6 +190,8 @@ async def handle_command(ctx: Ctx, name: str, args: str = "") -> Out | None:
         if args.startswith("hw_") and args[3:].isdigit() and ctx.registered:
             out = await logic_hw.view_screen(ctx, int(args[3:]))
             return out
+        return await logic_user.start(ctx)
+    if not ctx.registered and not ctx.is_admin:
         return await logic_user.start(ctx)
     if name in ("menu", "home"):
         return Out(screen=await logic_user.main_menu(ctx), clear_state=True) if ctx.registered else await logic_user.start(ctx)

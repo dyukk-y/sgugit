@@ -22,6 +22,8 @@ async def process(repo: Repo, cfg: Settings, uid: int, username: str | None, nam
     if user.get("bot_blocked"):
         await repo.update_user(uid, bot_blocked=0)
         user["bot_blocked"] = 0
+    # Роль teacher сама по себе не даёт доступ: нужна реально связанная запись справочника.
+    user["_teacher_registered"] = bool(await repo.teacher_account(uid)) if user.get("role") == "teacher" else False
     ctx = Ctx(repo, cfg, user, now=now, bot_username=bot_username)
     ctx.services = services or {}
     out: Out | None

@@ -55,6 +55,33 @@ class Sim:
 def run(c): return asyncio.run(c)
 
 class T(unittest.TestCase):
+    def test_private_registration_gate_blocks_old_routes(self):
+        async def go():
+            s = await Sim().setup()
+            # Ни команда, ни старая кнопка не открывают расписание незарегистрированному.
+            out = await s.do(909, command="today")
+            self.assertIn("группу", texts(out).lower())
+            out = await s.do(909, callback="s:d:today")
+            self.assertIn("группу", texts(out).lower())
+            out = await s.do(909, callback="me:ntf")
+            self.assertIn("группу", texts(out).lower())
+
+            # Одна группа без ФИО — это незавершённая регистрация.
+            group = await s.repo.get_or_create_group("ИС-11")
+            await s.repo.update_user(909, group_id=group["id"])
+            out = await s.do(909, callback="h:l:0")
+            self.assertIn("ФИО", texts(out))
+            self.assertNotIn("Задания группы", texts(out))
+
+            # Даже сохранённое старое состояние добавления задания не позволяет обойти gate.
+            await s.repo.set_state(909, "hw:text", {"subject": "Математика"})
+            out = await s.do(909, text="дз на завтра")
+            self.assertIn("ФИО", texts(out))
+            state, _ = await s.repo.get_state(909)
+            self.assertEqual(state, "reg:fio")
+            await s.db.close()
+        run(go())
+
     def test_registration_and_schedule(self):
         async def go():
             s = await Sim().setup()
