@@ -600,7 +600,7 @@ def build_router(app: App) -> Router:
             today = tu.now_local().date()
             group_query, mode, selected_day = _parse_inline_query(raw, today)
 
-            teacher_query = re.sub(r"^(?:преподаватель|препод)\\s+", "", raw, flags=re.I).strip()
+            teacher_query = re.sub(r"^(?:преподаватель|препод)\s+", "", raw, flags=re.I).strip()
             explicit_teacher = teacher_query != raw
             search_value = teacher_query if explicit_teacher else group_query
 
@@ -686,7 +686,7 @@ def build_router(app: App) -> Router:
                             if status:
                                 parts = body.splitlines()
                                 parts.insert(2, status)
-                                body = "\\n".join(parts)
+                                body = "\n".join(parts)
                     else:
                         lessons = [l for l in week_lessons if l["day"] == tu.iso(day)]
                         body = fm.day_text(day, lessons, group_name=title)
@@ -699,7 +699,7 @@ def build_router(app: App) -> Router:
                             if status:
                                 parts = body.splitlines()
                                 parts.insert(2, status)
-                                body = "\\n".join(parts)
+                                body = "\n".join(parts)
                     body = _inline_pretty_schedule(body)
                     count = len(lessons)
                     built.append(InlineQueryResultArticle(
