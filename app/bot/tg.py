@@ -574,15 +574,12 @@ def _teacher_result_id(name: str) -> str:
 
 
 def _inline_pretty_schedule(text: str) -> str:
-    """Преобразует обычный текст расписания в отдельные визуальные карточки Inline Mode.
-
-    Inline-результаты Telegram не поддерживают Rich Messages/клавиатуры, поэтому
-    используем совместимую HTML-разметку и короткие визуальные блоки.
-    """
+    """Преобразует текст расписания в компактные карточки, не смешивая разные блоки."""
     lines = text.splitlines()
     out: list[str] = ["📚 <b>РАСПИСАНИЕ</b>"]
     i = 0
     lesson_head = re.compile(r"^(?:<s>)?<b>(\d{2})</b> ·\s*(.+?)–(.+?)(?:</s>)?$")
+    section_starts = ("🏛 ", "🚪 ", "🧑‍🏫 ", "▶️ ", "⏭ ", "⏭️ ", "📅 ")
     while i < len(lines):
         line = lines[i].strip()
         match = lesson_head.match(line)
@@ -593,17 +590,19 @@ def _inline_pretty_schedule(text: str) -> str:
             i += 1
             detail: list[str] = []
             while i < len(lines) and lines[i].strip() and len(detail) < 4:
-                if lesson_head.match(lines[i].strip()) or lines[i].lstrip().startswith("📅 "):
+                current = lines[i].strip()
+                if lesson_head.match(current) or current.startswith(section_starts):
                     break
-                detail.append(lines[i].strip())
+                detail.append(current)
                 i += 1
             if detail:
                 subject = detail[0]
                 if subject.startswith("📘 "):
-                    subject = "📖 <b>" + subject[4:] + "</b>"
+                    # "📘 " — два символа Python, а не четыре: прежний срез терял
+                    # первые две буквы названия предмета.
+                    subject = "📖 <b>" + subject[2:] + "</b>"
                 card.append(subject)
-                if len(detail) > 1:
-                    card.append("  ·  ".join(detail[1:]))
+                card.extend(detail[1:])
             if cancelled:
                 card.append("❌ <b>ЗАНЯТИЕ ОТМЕНЕНО</b>")
             out.append("<blockquote>" + "\n".join(card) + "</blockquote>")
@@ -618,9 +617,7 @@ def _inline_pretty_schedule(text: str) -> str:
             out.append(lines[i])
         i += 1
     rendered = "\n".join(out)
-    # Telegram ограничивает длину текста; не режем HTML посередине тега.
     return rendered if len(rendered) <= MAX_TEXT else text[:MAX_TEXT]
-
 
 def build_router(app: App) -> Router:
     r = Router(name="main")
