@@ -3,7 +3,7 @@ import unittest
 from datetime import date
 
 from unittest.mock import patch
-from app.bot.tg import _answer_inline_query, _parse_inline_query
+from app.bot.tg import _answer_inline_query, _inline_pretty_schedule, _parse_inline_query
 
 
 class InlineQueryParsingTests(unittest.TestCase):
@@ -39,6 +39,15 @@ class InlineQueryParsingTests(unittest.TestCase):
     def test_unknown_last_word_is_part_of_group_query(self):
         self.assertEqual(_parse_inline_query("ИС-11 корпус", self.today),
                          ("ИС-11 корпус", "choices", self.today))
+
+    def test_inline_schedule_wraps_lessons_as_readable_cards(self):
+        source = ("<b>Пятница, 13 ноября</b>\\nГруппа ИС-11\\n\\n"
+                  "<b>01</b> · 08:30–10:00\\n📘 Математика\\n🎓 лекция · 👨‍🏫 Иванов · 📍 301\\n\\n"
+                  "<b>02</b> · 10:15–11:45\\n📘 Физика\\n🧪 лабораторная · 📍 202")
+        rendered = _inline_pretty_schedule(source)
+        self.assertIn("<blockquote><b>01</b> · 08:30–10:00\\n📘 Математика", rendered)
+        self.assertIn("<blockquote><b>02</b> · 10:15–11:45\\n📘 Физика", rendered)
+        self.assertIn("Группа ИС-11", rendered)
 
     def test_expired_query_is_ignored_without_raising(self):
         class ExpiredQueryError(Exception):
