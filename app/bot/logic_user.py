@@ -14,10 +14,9 @@ from app.services.fio import validate_fio
 _FIO_TRIES: dict[int, list] = {}   # uid -> [попытки, заблокирован_до]
 _FB_LAST: dict[int, float] = {}
 
-WELCOME = ("<b>Привет! Я бот расписания СГУГиТ</b> 👋\n"
-           "Помогаю студентам с расписанием и заданиями, а преподавателям — с личным расписанием и свободными аудиториями.\n\n"
-           "Если вы студент, напишите свою группу, например: <code>ИС-11</code>. "
-           "Если вы преподаватель, нажмите кнопку «Я преподаватель».")
+WELCOME = ("<b>Бот расписания СГУГиТ</b> 👋\n"
+           "Студент — отправьте группу (например, <code>ИС-11</code>).\n"
+           "Преподаватель — нажмите «Я преподаватель».")
 
 
 async def main_menu(ctx: Ctx) -> Screen:
@@ -55,7 +54,7 @@ async def start(ctx: Ctx) -> Out:
     if ctx.registered and ctx.user.get("fio"):
         return Out(screen=await main_menu(ctx), clear_state=True)
     if ctx.registered:
-        return Out(screen=Screen("Напишите ваше ФИО полностью: <code>Фамилия Имя Отчество</code>",
+        return Out(screen=Screen("Введите ФИО: <code>Фамилия Имя Отчество</code>",
                                  [[Btn("👨‍🏫 Я преподаватель", "p:register")]]),
                    state="reg:fio", state_data={})
     welcome = Screen(ctx.repo.setting("welcome_text") or WELCOME, [
@@ -77,7 +76,7 @@ async def _after_group(ctx: Ctx, gid: int) -> Out:
     ctx._group_loaded = False
     if had_fio:
         return Out(screen=await main_menu(ctx), clear_state=True, toast="Группа изменена")
-    return Out(screen=Screen("Отлично! Теперь напишите ваше ФИО полностью: <code>Фамилия Имя Отчество</code>"),
+    return Out(screen=Screen("Теперь введите ФИО: <code>Фамилия Имя Отчество</code>"),
                state="reg:fio", state_data={})
 
 
@@ -89,12 +88,12 @@ async def on_cb_register(ctx: Ctx, parts: list[str]) -> Out:
             return Out(toast="Группа не найдена", alert=True)
         return await _after_group(ctx, g["id"])
     if act == "redo":
-        return Out(screen=Screen("Напишите ФИО ещё раз: <code>Фамилия Имя Отчество</code>"), state="reg:fio", state_data={})
+        return Out(screen=Screen("Введите ФИО: <code>Фамилия Имя Отчество</code>"), state="reg:fio", state_data={})
     if act == "ok":
         state, data = await ctx.repo.get_state(ctx.uid)
         fio, verdict = data.get("fio"), data.get("verdict")
         if state != "reg:fio_confirm" or not fio:
-            return Out(screen=Screen("Давайте ещё раз. Напишите ФИО: <code>Фамилия Имя Отчество</code>"),
+            return Out(screen=Screen("Введите ФИО: <code>Фамилия Имя Отчество</code>"),
                        state="reg:fio", state_data={})
         status = "pending"  # подтверждает только автопроверка (после паузы и всех проверок) или администратор
         dup = await ctx.repo.fio_duplicate(ctx.user.get("group_id"), fio, ctx.uid)
@@ -119,8 +118,7 @@ async def on_text_register(ctx: Ctx, state: str, data: dict, text: str) -> Out:
         canonical = canonical_group_name(text)
         if canonical is None:
             return Out(screen=Screen(
-                "Введите только название группы в формате <code>МД-22.1</code> или <code>ИС-11</code>.\n\n"
-                "Варианты <code>мд22.1</code>, <code>мд221</code> и <code>мд-221</code> тоже распознаются."),
+                "Введите группу, например <code>ИС-11</code>."),
                 state="reg:group", state_data=data)
         key = norm_group(canonical)
         all_groups = await ctx.repo.all_groups()
