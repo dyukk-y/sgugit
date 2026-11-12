@@ -71,6 +71,12 @@ async def day_screen(ctx: Ctx, token: str = "today") -> Screen:
     active = [l for l in lessons if not l.get("cancelled")]
     title = f"<b>{tu.DAYS_FULL[day.weekday()]}, {tu.fmt_date(day)}</b>"
     lines = [title, f"🧑‍🏫 {fm.esc(account['name'])}", ""]
+    if day == ctx.today:
+        current, upcoming = fm.now_status(active, ctx.now)
+        if current:
+            lines.append(f"▶️ Сейчас идёт: <b>{fm.esc(current['subject'])}</b> · до {fm.esc(current['end_t'])}")
+        elif upcoming:
+            lines.append(f"⏭ Следующая: <b>{fm.esc(upcoming['subject'])}</b> · {fm.esc(upcoming['start_t'])}–{fm.esc(upcoming['end_t'])}")
     if not lessons:
         lines.append("Сегодня пар нет 🎉" if day == ctx.today else "На эту дату пар нет 🎉")
     else:
@@ -89,7 +95,7 @@ async def day_screen(ctx: Ctx, token: str = "today") -> Screen:
          Btn("Неделя", f"p:week:{tu.iso(tu.monday_of(day))}")],
         nav("p:menu"),
     ]
-    return Screen(_bounded_text(lines), kb)
+    return Screen(_bounded_text(lines), kb, rich=True)
 
 
 async def week_screen(ctx: Ctx, token: str = "cur") -> Screen:
@@ -113,6 +119,13 @@ async def week_screen(ctx: Ctx, token: str = "cur") -> Screen:
         by_day.setdefault(lesson["day"], []).append(lesson)
     lines = [f"<b>Расписание преподавателя · {tu.fmt_dm(monday)}–{tu.fmt_dm(sunday)}</b>",
              fm.esc(account["name"])]
+    if monday <= ctx.today <= sunday:
+        today_items = [lesson for lesson in by_day.get(tu.iso(ctx.today), []) if not lesson.get("cancelled")]
+        current, upcoming = fm.now_status(today_items, ctx.now)
+        if current:
+            lines.append(f"▶️ Сейчас идёт: <b>{fm.esc(current['subject'])}</b> · до {fm.esc(current['end_t'])}")
+        elif upcoming:
+            lines.append(f"⏭ Следующая: <b>{fm.esc(upcoming['subject'])}</b> · {fm.esc(upcoming['start_t'])}–{fm.esc(upcoming['end_t'])}")
     any_lessons = False
     for offset in range(7):
         day = monday + timedelta(days=offset)
@@ -140,7 +153,7 @@ async def week_screen(ctx: Ctx, token: str = "cur") -> Screen:
         [Btn("Сегодня", "p:day:today"), Btn("Календарь", f"p:cal:{monday.year}-{monday.month:02d}")],
         nav("p:menu"),
     ]
-    return Screen(_bounded_text(lines), kb)
+    return Screen(_bounded_text(lines), kb, rich=True)
 
 
 async def calendar_screen(ctx: Ctx, ym: str) -> Screen:
