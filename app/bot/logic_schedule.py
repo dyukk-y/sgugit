@@ -299,7 +299,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
 
     if name == "next":
         return Screen(await next_lesson_text(ctx, gid, subgroup),
-                      [[Btn("📅 Сегодня", "s:d:today")]] if allow_kb else None)
+                      [[Btn("📅 Сегодня", "s:d:today")]] if allow_kb else None, rich=True)
 
     if name == "when_subject":
         subj = intent.subject
