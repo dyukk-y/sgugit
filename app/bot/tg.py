@@ -299,6 +299,15 @@ async def deliver_side_effects(app: App, chat_id: int, out: Out) -> None:
 LOCK_WAIT_SEC = 20
 
 
+async def _private_user_registered(app: App, user) -> bool:
+    row = await app.repo.get_user(user.id)
+    if not row:
+        return False
+    if row.get("role") == "teacher":
+        row["_teacher_registered"] = bool(await app.repo.teacher_account(user.id))
+    return Ctx(app.repo, app.cfg, row, bot_username=app.username).registered
+
+
 async def run_process(app: App, user, **kw) -> Out:
     """Обновления одного человека обрабатываются по очереди. Но если прошлое действие зависло (долгая
     синхронизация, сеть), новое не должно молча ждать бесконечно — человек увидит, что бот занят."""
@@ -570,6 +579,10 @@ def build_router(app: App) -> Router:
 
     @r.message(private)
     async def private_other(message: Message) -> None:
+        if message.from_user and not await _private_user_registered(app, message.from_user):
+            out = await run_process(app, message.from_user, command="start")
+            await render(app, message.chat.id, out)
+            await deliver_side_effects(app, message.chat.id, out)
         await safe_delete(message)  # стикеры, фото и прочее: держим чат чистым
 
     # ---------------- кнопки ----------------
@@ -613,6 +626,14 @@ def build_router(app: App) -> Router:
 
     @r.callback_query(F.data.startswith("cs:"))
     async def chat_settings_cb(cb: CallbackQuery) -> None:
+        # Панель групповых настроек открывается из лички: там тоже нельзя обходить регистрацию.
+        if (isinstance(cb.message, Message) and cb.message.chat.type == "private"
+                and not await _private_user_registered(app, cb.from_user)):
+            out = await run_process(app, cb.from_user, command="start")
+            await render(app, cb.message.chat.id, out, source=cb.message)
+            await deliver_side_effects(app, cb.message.chat.id, out)
+            await _safe_answer(cb)
+            return
         try:
             await _chat_settings_action(app, cb)
         finally:
