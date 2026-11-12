@@ -3,12 +3,18 @@ import unittest
 from datetime import date
 
 from unittest.mock import patch
-from app.bot.tg import _answer_inline_query, _inline_pretty_schedule, _parse_inline_query, _teacher_result_id
+from app.bot.tg import (_answer_inline_query, _inline_pretty_schedule, _looks_like_group_query,\n                        _parse_inline_query, _teacher_result_id)
 
 
 class InlineQueryParsingTests(unittest.TestCase):
     def setUp(self):
         self.today = date(2026, 11, 13)  # Friday
+
+    def test_inline_query_classifier_separates_teacher_surnames_from_group_codes(self):
+        for value in ("Иванов", "Петрова", "Сидоров А.А."):
+            self.assertFalse(_looks_like_group_query(value))
+        for value in ("ИС-11", "ИС11", "МД-22.1", "Э 22 1"):
+            self.assertTrue(_looks_like_group_query(value))
 
     def test_group_without_modifier_offers_choices(self):
         self.assertEqual(_parse_inline_query("ИС-11", self.today),
