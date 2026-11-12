@@ -55,6 +55,21 @@ class InlineQueryParsingTests(unittest.TestCase):
         self.assertTrue(result_id.isascii())
         self.assertEqual(result_id, _teacher_result_id("ОченьДлиннаяФамилия" * 8))
 
+    def test_inline_answer_keeps_up_to_telegram_limit(self):
+        class Query:
+            id = "valid"
+            def __init__(self):
+                self.results = None
+                self.kwargs = None
+            async def answer(self, results, **kwargs):
+                self.results = results
+                self.kwargs = kwargs
+        query = Query()
+        results = [object() for _ in range(50)]
+        asyncio.run(_answer_inline_query(query, results))
+        self.assertEqual(query.results, results)
+        self.assertTrue(query.kwargs["is_personal"])
+
     def test_expired_query_is_ignored_without_raising(self):
         class ExpiredQueryError(Exception):
             pass
