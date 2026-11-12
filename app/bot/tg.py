@@ -603,8 +603,9 @@ def _inline_pretty_schedule(text: str) -> str:
                     subject = "📖 <b>" + subject[2:] + "</b>"
                 card.append(subject)
                 for item in detail[1:]:
-                    if item.startswith("📍 ") and "<b>" not in item:
-                        item = "📍 <b>" + item[2:] + "</b>"
+                    # Аудитория может быть не отдельной строкой, а последним полем
+                    # общей строки метаданных (тип · преподаватель · аудитория).
+                    item = re.sub(r"📍 (?!<b>)(.+?)(?=  ·  |$)", r"📍 <b>\1</b>", item)
                     card.append(item)
             if cancelled:
                 card.append("❌ <b>ЗАНЯТИЕ ОТМЕНЕНО</b>")
