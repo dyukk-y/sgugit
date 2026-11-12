@@ -60,7 +60,7 @@ async def start(ctx: Ctx) -> Out:
                    state="reg:fio", state_data={})
     welcome = Screen(ctx.repo.setting("welcome_text") or WELCOME, [
         [Btn("👨‍🏫 Я преподаватель", "p:register")],
-        [Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup=true")],
+        [Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")],
     ])
     return Out(screen=welcome, state="reg:group", state_data={})
 
@@ -265,7 +265,7 @@ async def notif_screen(ctx: Ctx) -> Screen:
     lines.append(f"Все уведомления: {'включены' if enabled else 'ВЫКЛЮЧЕНЫ'}")
     lines.append(f"🌙 Вечерняя сводка: {'в ' + u['n_evening_time'] if ev else 'выкл'}")
     lines.append(f"⏰ Перед парой: {'за ' + str(before) + ' мин' if before else 'выкл'}")
-    lines.append(f"🔄 Переносы, отмены и новые пары: {'присылать' if ch else 'не присылать'}")
+    lines.append(f"🔄 Изменения в расписании: {'присылать' if ch else 'не присылать'}")
     if not enabled:
         lines.append("\nСейчас ничего не приходит. Отдельные настройки сохранены и заработают после включения.")
     elif not ctx.repo.flag("notify_changes") and ch:
@@ -276,7 +276,7 @@ async def notif_screen(ctx: Ctx) -> Screen:
         [Btn((f"✅ " if u["n_evening_time"] == t else "") + f"🕒 {t}", f"me:n:et:{t.replace(':', '')}") for t in ("19:00", "20:00")],
         [Btn((f"✅ " if u["n_evening_time"] == t else "") + f"🕒 {t}", f"me:n:et:{t.replace(':', '')}") for t in ("21:00", "22:00")],
         [Btn("⌨️ Свое время сводки", "me:n:custom_evening")],
-        [Btn(f"🔄 Переносы, отмены и новые пары: {_onoff(ch)}", "me:n:ch:t")],
+        [Btn(f"🔄 Изменения в расписании: {_onoff(ch)}", "me:n:ch:t")],
         [Btn((("✅ " if before == m else "") + ("⏰ Перед парой: выкл" if m == 0 else f"⏰ За {m} мин")), f"me:n:bf:{m}") for m in (0, 15)],
         [Btn((("✅ " if before == m else "") + f"⏰ За {m} мин"), f"me:n:bf:{m}") for m in (30, 60)],
         [Btn("⌨️ Свой интервал (1–180 мин)", "me:n:custom_before")],
