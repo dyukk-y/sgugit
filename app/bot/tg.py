@@ -572,26 +572,51 @@ def _teacher_result_id(name: str) -> str:
 
 
 def _inline_pretty_schedule(text: str) -> str:
-    """Делает компактные карточки пар для HTML-сообщения inline mode."""
+    """Преобразует обычный текст расписания в отдельные визуальные карточки Inline Mode.
+
+    Inline-результаты Telegram не поддерживают Rich Messages/клавиатуры, поэтому
+    используем совместимую HTML-разметку и короткие визуальные блоки.
+    """
     lines = text.splitlines()
-    out: list[str] = []
+    out: list[str] = ["📚 <b>РАСПИСАНИЕ</b>"]
     i = 0
+    lesson_head = re.compile(r"^(?:<s>)?<b>(\\d{2})</b> ·\\s*(.+?)–(.+?)(?:</s>)?$")
     while i < len(lines):
-        line = lines[i]
-        if re.match(r"^(?:<s>)?<b>\d{2}</b> ·", line):
-            card = [line]
+        line = lines[i].strip()
+        match = lesson_head.match(line)
+        if match:
+            number, start_time, end_time = match.groups()
+            cancelled = line.startswith("<s>")
+            card = [f"⏰ <b>{fm.esc(start_time)}–{fm.esc(end_time)}</b>  ·  <b>ПАРА {number}</b>"]
             i += 1
-            while i < len(lines) and len(card) < 6 and lines[i].strip():
-                if re.match(r"^(?:<s>)?<b>\d{2}</b> ·", lines[i]) or lines[i].startswith("📅 "):
+            detail: list[str] = []
+            while i < len(lines) and lines[i].strip() and len(detail) < 3:
+                if lesson_head.match(lines[i].strip()) or lines[i].lstrip().startswith("📅 "):
                     break
-                card.append(lines[i])
+                detail.append(lines[i].strip())
                 i += 1
-            out.append("<blockquote>" + "\n".join(card) + "</blockquote>")
+            if detail:
+                subject = detail[0]
+                if subject.startswith("📘 "):
+                    subject = "📖 <b>" + subject[4:] + "</b>"
+                card.append(subject)
+                if len(detail) > 1:
+                    card.append("  ·  ".join(detail[1:]))
+            if cancelled:
+                card.append("❌ <b>ЗАНЯТИЕ ОТМЕНЕНО</b>")
+            out.append("<blockquote>" + "\\n".join(card) + "</blockquote>")
             continue
-        out.append(line)
+        if line.startswith(("▶️ ", "⏭ ")):
+            out.append("<blockquote>" + line + "</blockquote>")
+        elif line.startswith("Группа "):
+            out.append("🎓 <b>" + line + "</b>")
+        elif line.startswith("📅 <b>"):
+            out.append("\\n" + line)
+        else:
+            out.append(lines[i])
         i += 1
-    rendered = "\n".join(out)
-    # Не обрезаем HTML посередине тега: при длинной неделе оставляем исходный компактный текст.
+    rendered = "\\n".join(out)
+    # Telegram ограничивает длину текста; не режем HTML посередине тега.
     return rendered if len(rendered) <= MAX_TEXT else text[:MAX_TEXT]
 
 
