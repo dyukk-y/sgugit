@@ -426,6 +426,8 @@ async def on_cb_me(ctx: Ctx, parts: list[str]) -> Out:
                                      "Чтобы начать заново, нажмите /start."), clear_state=True)
         return Out(screen=Screen("Удалить ФИО, группу и настройки? Это нельзя отменить.",
                                  [[Btn("Да, удалить", "me:del:y"), Btn("Отмена", "me:mydata")]]))
+    if act == "head":
+        return Out(toast="Функция старосты отключена")
     return Out(toast="Неизвестное действие")
 
 
