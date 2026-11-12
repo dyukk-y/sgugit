@@ -20,9 +20,17 @@ WELCOME = ("<b>Привет! Я бот расписания СГУГиТ</b> �
            "Если вы преподаватель, нажмите кнопку «Я преподаватель».")
 
 
+async def _show_add_group_button(ctx: Ctx) -> bool:
+    """Скрывает приглашение добавить бота после того, как пользователь уже добавил его в группу."""
+    added = await ctx.repo.db.fetchone(
+        "SELECT 1 FROM chats WHERE added_by = ? AND active = 1 LIMIT 1", ctx.uid)
+    return added is None
+
+
 async def main_menu(ctx: Ctx) -> Screen:
     if ctx.role == "teacher":
         return await logic_teacher.menu(ctx)
+    show_add_group = await _show_add_group_button(ctx)
     group = await ctx.group()
     head = (ctx.repo.setting("interface_main_text") or "<b>Привет! Я бот СГУГиТ 👋</b>\n📅 Расписание на день и неделю\n🎓 Типы занятий и время пар\n📝 Задания группы · 👨‍🏫 Поиск преподавателей\n🔔 Напоминания — настройте под себя\n\n<b>Главное меню</b>") + (f"\n👥 Группа: {fm.esc(group['name'])}" if group else "")
     if ctx.repo.flag("maintenance"):
@@ -34,10 +42,14 @@ async def main_menu(ctx: Ctx) -> Screen:
         [Btn("👥 Другая группа", "me:other")],
         [Btn("🔎 Найти преподавателя", "me:findt")],
         [Btn("⚙️ Ещё", "me:menu")],
-        [Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages"),
-         Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
-             url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")],
     ]
+    if show_add_group:
+        rows.append([Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages"),
+                     Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
+                         url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")])
+    else:
+        rows.append([Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
+                         url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")])
 
     if ctx.repo.flag("rating_enabled"):
         rows[3].append(Btn("⭐Оценить преподавателя", "t:l:m:0"))
@@ -58,10 +70,10 @@ async def start(ctx: Ctx) -> Out:
         return Out(screen=Screen("Напишите ваше ФИО полностью: <code>Фамилия Имя Отчество</code>",
                                  [[Btn("👨‍🏫 Я преподаватель", "p:register")]]),
                    state="reg:fio", state_data={})
-    welcome = Screen(ctx.repo.setting("welcome_text") or WELCOME, [
-        [Btn("👨‍🏫 Я преподаватель", "p:register")],
-        [Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")],
-    ])
+    welcome_rows: Kb = [[Btn("👨‍🏫 Я преподаватель", "p:register")]]
+    if await _show_add_group_button(ctx):
+        welcome_rows.append([Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")])
+    welcome = Screen(ctx.repo.setting("welcome_text") or WELCOME, welcome_rows)
     return Out(screen=welcome, state="reg:group", state_data={})
 
 
