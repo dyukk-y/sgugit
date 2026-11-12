@@ -40,7 +40,7 @@ def _lesson_compact_lines(l: dict) -> list[str]:
     if l.get("teacher"):
         details.append(f"👨‍🏫 {esc(l['teacher'])}")
     if l.get("room"):
-        details.append(f"📍 {esc(l['room'])}")
+        details.append(f"📍 <b>{esc(l['room'])}</b>")
     if l.get("subgroup"):
         details.append(f"👥 подгруппа {esc(str(l['subgroup']))}")
     if l.get("cancelled"):
@@ -163,7 +163,7 @@ def changes_text(group_name: str, changes: list[dict]) -> str:
     lines = [f"🔔 <b>Изменения расписания</b> · {esc(group_name)}"]
 
     def fmt(k: tuple) -> str:
-        room = f", ауд. {esc(k[6])}" if k[6] else ""
+        room = f", ауд. <b>{esc(k[6])}</b>" if k[6] else ""
         return f"{num_emoji(k[1])} {esc(k[2])}–{esc(k[3])} {esc(k[4])}{room}"
 
     for ch in changes[:7]:
