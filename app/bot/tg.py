@@ -480,6 +480,53 @@ def _cmd_parts(text: str) -> tuple[str, str]:
     return name, args.strip()
 
 
+
+_INLINE_MODIFIERS = {
+    "сегодня": "today", "завтра": "tomorrow", "послезавтра": "aftertomorrow",
+    "неделя": "week", "наделю": "week", "week": "week",
+}
+_INLINE_WEEKDAYS = {
+    "пн": 0, "понедельник": 0, "вт": 1, "вторник": 1, "ср": 2, "среда": 2,
+    "чт": 3, "четверг": 3, "пт": 4, "пятница": 4, "сб": 5, "суббота": 5,
+    "вс": 6, "воскресенье": 6,
+}
+
+
+def _parse_inline_query(raw: str, today: date) -> tuple[str, str, date]:
+    """Разбирает «группа [сегодня|завтра|неделя|дата|день недели]»."""
+    parts = raw.strip().split()
+    if not parts:
+        return "", "choices", today
+    token = parts[-1].casefold().replace("ё", "е")
+    mode = _INLINE_MODIFIERS.get(token)
+    selected = today
+    if mode is None and token in _INLINE_WEEKDAYS:
+        selected = today + timedelta(days=(_INLINE_WEEKDAYS[token] - today.weekday()) % 7)
+        mode = "day"
+    if mode is None:
+        from datetime import datetime
+        for fmt in ("%d.%m.%Y", "%d.%m"):
+            try:
+                parsed = datetime.strptime(token, fmt).date()
+                selected = parsed if fmt == "%d.%m.%Y" else parsed.replace(year=today.year)
+                mode = "day"
+                break
+            except ValueError:
+                continue
+    if mode is None:
+        return raw.strip(), "choices", today
+    group = " ".join(parts[:-1]).strip()
+    if not group:
+        return raw.strip(), "choices", today
+    if mode == "today":
+        selected, mode = today, "day"
+    elif mode == "tomorrow":
+        selected, mode = today + timedelta(days=1), "day"
+    elif mode == "aftertomorrow":
+        selected, mode = today + timedelta(days=2), "day"
+    return group, mode, selected
+
+
 def build_router(app: App) -> Router:
     r = Router(name="main")
     async def _is_bot_admin(uid: int) -> bool:
@@ -518,7 +565,7 @@ def build_router(app: App) -> Router:
                 result = InlineQueryResultArticle(
                     id="inline-help", title=title, description=hint[:180],
                     input_message_content=InputTextMessageContent(
-                        message_text="📅 <b>Расписание СГУГиТ</b>\\n\\n" + hint,
+                        message_text="📅 <b>Расписание СГУГиТ</b>\n\n" + hint,
                         parse_mode="HTML", disable_web_page_preview=True))
                 await query.answer([result], cache_time=10, is_personal=True)
                 return
