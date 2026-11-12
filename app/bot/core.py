@@ -110,6 +110,15 @@ class Ctx:
         return self.role == "super"
 
     @property
+    def is_head(self) -> bool:
+        """Совместимость со старыми обработчиками роли старосты.
+
+        Роль старосты и её полномочия удалены. Старый вызов не должен
+        ронять обработчик обновления или случайно выдавать привилегии.
+        """
+        return False
+
+    @property
     def perms(self) -> set[str]:
         if self.is_super:
             return set(ALL_PERMS)

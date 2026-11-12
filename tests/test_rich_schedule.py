@@ -15,7 +15,8 @@ class RichScheduleTests(unittest.TestCase):
             "🎓 лекция · 👨‍🏫 Иванов · 📍 301"
         )
         result = schedule_rich_html(source)
-        self.assertIn("<h1>Понедельник, 16 ноября</h1>", result)
+        self.assertIn("<p><b>Понедельник, 16 ноября</b></p>", result)
+        self.assertNotIn("<h1>", result)
         self.assertIn("<blockquote>▶️ Сейчас идёт:", result)
         self.assertIn("<details open><summary><b>01</b>", result)
         self.assertIn("📍 301", result)
@@ -30,7 +31,8 @@ class RichScheduleTests(unittest.TestCase):
             "📅 <b>Вторник, 17.11</b> — занятий нет 🎉"
         )
         result = schedule_rich_html(source)
-        self.assertIn("<h1>Неделя 16.11–22.11</h1>", result)
+        self.assertIn("<p><b>Неделя 16.11–22.11</b></p>", result)
+        self.assertNotIn("<h1>", result)
         self.assertIn("<details open><summary>Понедельник, 16.11</summary>", result)
         self.assertIn("<details><summary>Вторник, 17.11 — занятий нет 🎉</summary>", result)
         self.assertIn("<details open><summary><b>01</b>", result)
