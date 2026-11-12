@@ -33,6 +33,9 @@ from app.services.sync import SyncService
 
 log = logging.getLogger("app")
 
+# Keep every update type handled by build_router enabled in both polling and webhook modes.
+ALLOWED_UPDATES = ["message", "callback_query", "my_chat_member", "inline_query"]
+
 
 async def set_commands(bot: Bot) -> None:
     private = [BotCommand(command="menu", description="Главное меню"), BotCommand(command="today", description="Расписание на сегодня"),
@@ -127,7 +130,7 @@ async def main() -> None:
         if cfg.webhook_url:
             await bot.set_webhook(cfg.webhook_url + cfg.webhook_path,
                                   secret_token=cfg.webhook_secret or None,
-                                  allowed_updates=["message", "callback_query", "my_chat_member"])
+                                  allowed_updates=ALLOWED_UPDATES)
             web_app = web.Application()
             SimpleRequestHandler(dispatcher=dp, bot=bot, secret_token=cfg.webhook_secret or None).register(web_app, path=cfg.webhook_path)
             setup_application(web_app, dp, bot=bot)
@@ -141,7 +144,7 @@ async def main() -> None:
             finally:
                 await runner.cleanup()
         else:
-            await dp.start_polling(bot, allowed_updates=["message", "callback_query", "my_chat_member"])
+            await dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES)
     finally:
         for t in tasks:
             t.cancel()
