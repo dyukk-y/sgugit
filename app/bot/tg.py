@@ -609,34 +609,46 @@ def build_router(app: App) -> Router:
             today = tu.now_local().date()
             group_query, mode, selected_day = _parse_inline_query(raw, today)
 
-            teacher_query = re.sub(r"^(?:преподаватель|препод)\s+", "", raw, flags=re.I).strip()
+            teacher_query = re.sub(r"^(?:преподаватель|препод)\\s+", "", raw, flags=re.I).strip()
             explicit_teacher = teacher_query != raw
-            search_value = teacher_query if explicit_teacher else group_query
-
-            if not search_value and query.from_user is not None and not explicit_teacher:
+            # Коды учебных групп содержат номер (например, ИС-11). Обычную фамилию
+            # нельзя отправлять в нечёткий поиск групп: он может перехватить запрос.
+            group_like = bool(re.fullmatch(r"[A-Za-zА-Яа-яЁё]{1,8}[- ]?\\d{1,4}(?:[.-]\\d{1,3})?", group_query))
+            if not raw and query.from_user is not None:
                 user = await app.repo.get_user(query.from_user.id)
                 own_group = await app.repo.get_group(user["group_id"]) if user and user.get("group_id") else None
                 groups = [own_group] if own_group else []
             else:
-                groups = await app.repo.search_groups(search_value, 10) if search_value and not explicit_teacher else []
+                groups = []
 
-            if not groups and (explicit_teacher or bool(raw)):
+            # «преподаватель Иванов» — явный поиск преподавателя.
+            # Обычную фамилию без кода группы также сначала проверяем в справочнике и расписании.
+            if raw and (explicit_teacher or not group_like):
                 from app.bot import logic_find
                 from app.bot.core import Ctx
+                teacher_input = teacher_query if explicit_teacher else raw
+                teacher_input, teacher_mode, teacher_day = _parse_inline_query(teacher_input, today)
                 inline_ctx = Ctx(app.repo, app.cfg, {"id": query.from_user.id, "role": "student"})
-                teacher_screen = await logic_find.teacher_answer(inline_ctx, teacher_query if explicit_teacher else raw)
+                teacher_screen = await logic_find.teacher_answer(
+                    inline_ctx, teacher_input, teacher_day if teacher_mode == "day" else None)
                 teacher_text = teacher_screen.text[:MAX_TEXT]
-                if "не нашёл ни в расписании" not in teacher_text:
-                    clean_name = teacher_query if explicit_teacher else raw
+                not_found = ("не нашёл ни в расписании" in teacher_text
+                             or "не нашёл ни в расписании, ни в справочнике" in teacher_text)
+                if not not_found:
+                    clean_name = teacher_input or teacher_query or raw
                     result = InlineQueryResultArticle(
                         id=_teacher_result_id(clean_name),
                         title=f"👨‍🏫 {clean_name[:55]}",
-                        description="Расписание, текущая или ближайшая пара и информация о подразделении",
+                        description="Преподаватель · ближайшая пара · аудитория и подразделение",
                         input_message_content=InputTextMessageContent(
                             message_text=_inline_pretty_schedule(teacher_text),
                             parse_mode="HTML", disable_web_page_preview=True))
                     await _answer_inline_query(query, [result])
                     return
+
+            # Нечёткий поиск групп выполняем только для строк, похожих на код группы.
+            if not groups and group_like and not explicit_teacher:
+                groups = await app.repo.search_groups(group_query, 10)
 
             if not groups:
                 if not raw:
