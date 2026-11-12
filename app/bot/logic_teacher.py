@@ -43,8 +43,6 @@ async def menu(ctx: Ctx) -> Screen:
         [Btn("🔄 Сменить преподавателя", "p:change")],
         [Btn("🎓 Студенческий режим", "p:student")],
     ]
-    if ctx.cfg.webapp_url:
-        rows.insert(5, [Btn("⚙️ Управление группой", url=ctx.cfg.webapp_url, web_app=True)])
     today = await ctx.repo.teacher_lessons(*_teacher_name(account), tu.iso(ctx.today), tu.iso(ctx.today))
     active = [l for l in today if not l.get("cancelled")]
     status = "Сегодня пар нет." if not active else f"Сегодня запланировано пар: <b>{len(active)}</b>."
