@@ -9,8 +9,9 @@ def schedule_rich_html(text: str) -> str:
         line = raw.strip()
         if not line:
             continue
-        if index == 0 and line.startswith("<b>") and line.endswith("</b>"):
-            blocks.append(f"<h1>{line[3:-4]}</h1>")
+        if index == 0 and line.startswith("<b>") and "</b>" in line:
+            end = line.find("</b>")
+            blocks.append(f"<h1>{line[3:end]}</h1>{line[end + 4:]}")
         elif line.startswith("📅 <b>") and "</b>" in line:
             start = line.find("<b>") + 3
             end = line.find("</b>", start)
