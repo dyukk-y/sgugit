@@ -676,9 +676,31 @@ def build_router(app: App) -> Router:
                         monday = tu.monday_of(day)
                         lessons = [l for l in week_lessons if tu.iso(monday) <= l["day"] <= tu.iso(monday + timedelta(days=6))]
                         body = fm.week_text(monday, lessons, group_name=title)
+                        if monday <= today <= monday + timedelta(days=6):
+                            today_lessons = [l for l in lessons if l["day"] == tu.iso(today)]
+                            current, upcoming = fm.now_status(today_lessons, tu.now_local())
+                            status = (f"▶️ <b>Сейчас идёт: {fm.esc(current['subject'])}</b> · до {fm.esc(current['end_t'])}"
+                                      if current else
+                                      f"⏭ <b>Следующая: {fm.esc(upcoming['subject'])}</b> · {fm.esc(upcoming['start_t'])}–{fm.esc(upcoming['end_t'])}"
+                                      if upcoming else "")
+                            if status:
+                                parts = body.splitlines()
+                                parts.insert(2, status)
+                                body = "\\n".join(parts)
                     else:
                         lessons = [l for l in week_lessons if l["day"] == tu.iso(day)]
                         body = fm.day_text(day, lessons, group_name=title)
+                        if day == today:
+                            current, upcoming = fm.now_status(lessons, tu.now_local())
+                            status = (f"▶️ <b>Сейчас идёт: {fm.esc(current['subject'])}</b> · до {fm.esc(current['end_t'])}"
+                                      if current else
+                                      f"⏭ <b>Следующая: {fm.esc(upcoming['subject'])}</b> · {fm.esc(upcoming['start_t'])}–{fm.esc(upcoming['end_t'])}"
+                                      if upcoming else "")
+                            if status:
+                                parts = body.splitlines()
+                                parts.insert(2, status)
+                                body = "\\n".join(parts)
+                    body = _inline_pretty_schedule(body)
                     count = len(lessons)
                     built.append(InlineQueryResultArticle(
                         id=f"g{gid}-{view}-{tu.iso(day)}", title=f"{title} · {label}",
