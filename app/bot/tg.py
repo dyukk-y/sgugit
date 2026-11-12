@@ -558,6 +558,28 @@ def _parse_inline_query(raw: str, today: date) -> tuple[str, str, date]:
     return group, mode, selected
 
 
+def _inline_pretty_schedule(text: str) -> str:
+    """Делает компактные карточки пар для HTML-сообщения inline mode."""
+    lines = text.splitlines()
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if re.match(r"^(?:<s>)?<b>\\d{2}</b> ·", line):
+            card = [line]
+            i += 1
+            while i < len(lines) and len(card) < 6 and lines[i].strip():
+                if re.match(r"^(?:<s>)?<b>\\d{2}</b> ·", lines[i]) or lines[i].startswith("📅 "):
+                    break
+                card.append(lines[i])
+                i += 1
+            out.append("<blockquote>" + "\\n".join(card) + "</blockquote>")
+            continue
+        out.append(line)
+        i += 1
+    return "\\n".join(out)[:MAX_TEXT]
+
+
 def build_router(app: App) -> Router:
     r = Router(name="main")
     async def _is_bot_admin(uid: int) -> bool:
@@ -578,21 +600,43 @@ def build_router(app: App) -> Router:
             today = tu.now_local().date()
             group_query, mode, selected_day = _parse_inline_query(raw, today)
 
-            if not group_query and query.from_user is not None:
+            teacher_query = re.sub(r"^(?:преподаватель|препод)\\s+", "", raw, flags=re.I).strip()
+            explicit_teacher = teacher_query != raw
+            search_value = teacher_query if explicit_teacher else group_query
+
+            if not search_value and query.from_user is not None and not explicit_teacher:
                 user = await app.repo.get_user(query.from_user.id)
                 own_group = await app.repo.get_group(user["group_id"]) if user and user.get("group_id") else None
                 groups = [own_group] if own_group else []
             else:
-                groups = await app.repo.search_groups(group_query, 3) if group_query else []
+                groups = await app.repo.search_groups(search_value, 3) if search_value and not explicit_teacher else []
+
+            if not groups and (explicit_teacher or bool(raw)):
+                from app.bot import logic_find
+                from app.bot.core import Ctx
+                inline_ctx = Ctx(app.repo, app.cfg, {"id": query.from_user.id, "role": "student"})
+                teacher_screen = await logic_find.teacher_answer(inline_ctx, teacher_query if explicit_teacher else raw)
+                teacher_text = teacher_screen.text[:MAX_TEXT]
+                if "не нашёл ни в расписании" not in teacher_text:
+                    clean_name = teacher_query if explicit_teacher else raw
+                    result = InlineQueryResultArticle(
+                        id="teacher-" + re.sub(r"[^a-zA-Zа-яА-Я0-9_-]", "-", clean_name)[:48],
+                        title=f"👨‍🏫 {clean_name[:55]}",
+                        description="Расписание, текущая или ближайшая пара и информация о подразделении",
+                        input_message_content=InputTextMessageContent(
+                            message_text=_inline_pretty_schedule(teacher_text),
+                            parse_mode="HTML", disable_web_page_preview=True))
+                    await _answer_inline_query(query, [result])
+                    return
 
             if not groups:
                 if not raw:
-                    hint = ("Выберите формат расписания своей группы или введите название другой группы. "
-                            "Примеры: ИС-11, ИС-11 завтра, ИС-11 неделя, ИС-11 25.11.")
+                    hint = ("Выберите формат расписания своей группы или введите фамилию преподавателя. "
+                            "Примеры: ИС-11, ИС-11 завтра, ИС-11 неделя, преподаватель Иванов.")
                     title = "📅 Расписание вашей группы" if query.from_user else "📅 Расписание группы"
                 else:
-                    hint = f"Не нашёл группу «{fm.esc(group_query or raw)}». Проверьте название, например ИС-11."
-                    title = "Группа не найдена"
+                    hint = f"Не нашёл группу или преподавателя «{fm.esc(group_query or raw)}». Проверьте запрос."
+                    title = "Ничего не найдено"
                 result = InlineQueryResultArticle(
                     id="inline-help", title=title, description=hint[:180],
                     input_message_content=InputTextMessageContent(
