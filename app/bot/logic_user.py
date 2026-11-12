@@ -209,11 +209,11 @@ async def on_text_register(ctx: Ctx, state: str, data: dict, text: str) -> Out:
     return Out(screen=await main_menu(ctx), clear_state=True)
 
 
-# ---------------- меню «Ещё» ----------------
+# ---------------- настройки ----------------
 async def more_menu(ctx: Ctx) -> Screen:
     if ctx.role == "teacher":
         return await logic_teacher.menu(ctx)
-    # Здесь только дополнительные действия: пункты главного меню не дублируем.
+    # Основные параметры собраны в одном коротком меню.
     kb: Kb = [
         [Btn("🔔 Уведомления", "me:ntf")],
         [Btn("👤 Профиль и группа", "me:prof")],
@@ -223,7 +223,7 @@ async def more_menu(ctx: Ctx) -> Screen:
     if ctx.is_admin:
         kb.append([Btn("🛠 Админ-панель", "ad:menu")])
     kb.append([home_btn()])
-    return Screen("<b>Ещё ⚙️</b>\nДополнительные возможности: профиль, календарь, помощь и связь с администрацией. Выберите нужный пункт ниже.", kb)
+    return Screen("<b>⚙️ Настройки</b>\nУведомления, профиль, группа и помощь — всё в одном месте.", kb)
 
 
 def _status_text(ctx: Ctx) -> str:
