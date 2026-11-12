@@ -818,14 +818,14 @@ def build_router(app: App) -> Router:
                 await app.questions.consider(chat, message.from_user.id, message.message_id, text)
             return
         if chat.get("private_questions", 0) and re.search(
-                r"\\b(расписан\\w*|пара|пары|занят\\w*|аудитор\\w*|предмет\\w*|кто ведет|кто ведёт|где проходит|сегодня|завтра|послезавтра)\\b",
+                r"\b(расписан\w*|пара|пары|занят\w*|аудитор\w*|предмет\w*|кто ведет|кто ведёт|где проходит|сегодня|завтра|послезавтра)\b",
                 request_text.casefold()):
             try:
                 await app.bot.send_message(message.from_user.id, scr.text[:MAX_TEXT])
             except TelegramForbiddenError:
                 link = f"https://t.me/{app.username}?start=group_access"
                 await _reply_group(app, message,
-                    f"Чтобы получить ответ приватно, сначала откройте бота в личных сообщениях: <a href=\\"{link}\\">открыть бота</a>.", chat)
+                    f"Чтобы получить ответ приватно, сначала откройте бота в личных сообщениях: <a href=\"{link}\">открыть бота</a>.", chat)
             except TelegramAPIError:
                 await _reply_group(app, message, "Не удалось отправить ответ в личные сообщения. Попробуйте открыть бота и повторить вопрос.", chat)
             else:
@@ -839,7 +839,7 @@ def build_router(app: App) -> Router:
         if len(app.last_group_answer) > 5000:
             app.last_group_answer.clear()
         cleanup_day = None
-        if chat.get("cleanup_on", 0) and re.search(r"\\bзавтра\\b", request_text.casefold()) and (
+        if chat.get("cleanup_on", 0) and re.search(r"\bзавтра\b", request_text.casefold()) and (
                 "расписание" in scr.text.casefold() or "📅" in scr.text):
             cleanup_day = tu.today() + timedelta(days=1)
         if cleanup_day:
