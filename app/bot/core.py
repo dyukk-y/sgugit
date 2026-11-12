@@ -19,7 +19,6 @@ class Btn:
     text: str
     data: str | None = None
     url: str | None = None
-    web_app: bool = False
 
 
 Kb = list[list[Btn]]
