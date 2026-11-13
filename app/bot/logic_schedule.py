@@ -321,6 +321,33 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
         kb = [[Btn("📅 Открыть неделю", f"s:w:{tu.iso(monday)}")]] if allow_kb else None
         return Screen(fm.week_text(monday, lessons, ctx.parity(monday)), kb, rich=True)
 
+    if name == "changes":
+        if intent.day is not None:
+            rows = await repo.db.fetchall(
+                "SELECT day, lesson_num, action, subject, start_t, end_t, author_label "
+                "FROM group_schedule_changes WHERE group_id = ? AND status = 'applied' AND day = ? "
+                "ORDER BY created_at DESC LIMIT 15", gid, tu.iso(intent.day))
+            title = f"Изменения расписания · {tu.fmt_date(intent.day)}"
+        else:
+            rows = await repo.db.fetchall(
+                "SELECT day, lesson_num, action, subject, start_t, end_t, author_label "
+                "FROM group_schedule_changes WHERE group_id = ? AND status = 'applied' "
+                "AND day >= ? AND day <= ? ORDER BY day, created_at DESC LIMIT 15",
+                gid, tu.iso(ctx.today - timedelta(days=14)), tu.iso(ctx.today + timedelta(days=30)))
+            title = "Изменения расписания · последние 2 недели и ближайший месяц"
+        if not rows:
+            return Screen("Подтверждённых изменений расписания за этот период не нашёл.")
+        lines = [f"<b>{title}</b>"]
+        for change in rows:
+            day = tu.fmt_date(tu.parse_iso(change["day"]))
+            action = {"cancel": "отменена", "add": "добавлена", "move": "перенесена"}.get(change["action"], "изменена")
+            slot = f" · пара №{change['lesson_num']}"
+            if change.get("start_t") and change.get("end_t"):
+                slot += f" ({change['start_t']}–{change['end_t']})"
+            author = f" · сообщил(а) {fm.esc(change['author_label'])}" if change.get("author_label") else ""
+            lines.append(f"• <b>{day}</b>: «{fm.esc(change['subject'])}» {action}{slot}{author}")
+        return Screen("\n".join(lines))
+
     if name == "hw":
         return await _answer_hw(ctx, intent, gid)
 
