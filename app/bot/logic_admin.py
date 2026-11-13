@@ -92,20 +92,21 @@ async def _tools_screen(ctx: Ctx) -> Screen:
 
 async def _groups_screen(ctx: Ctx, page: int = 0, query: str = "") -> Screen:
     repo = ctx.repo
-    where = "WHERE active = 1" if not query else "WHERE active = 1 AND LOWER(COALESCE(title, '')) LIKE ?"
-    params = (f"%{query.casefold()}%",) if query else ()
-    total = int(await repo.db.scalar(f"SELECT COUNT(*) FROM chats {where}", *params) or 0)
     all_total = int(await repo.db.scalar("SELECT COUNT(*) FROM chats") or 0)
+    active_total = int(await repo.db.scalar("SELECT COUNT(*) FROM chats WHERE active = 1") or 0)
     bound = int(await repo.db.scalar("SELECT COUNT(*) FROM chats WHERE active = 1 AND group_id IS NOT NULL") or 0)
     recent = int(await repo.db.scalar(
         "SELECT COUNT(*) FROM analytics_events WHERE event IN ('group_command','group_question') AND created_at >= ?",
         tu.now_ts() - 7 * 86400) or 0)
-    rows = await repo.db.fetchall(
-        f"SELECT * FROM chats {where} ORDER BY active DESC, LOWER(COALESCE(title, '')) LIMIT ? OFFSET ?",
-        *params, PAGE, page * PAGE)
+    all_active = await repo.db.fetchall(
+        "SELECT * FROM chats WHERE active = 1 ORDER BY title")
+    matched = [item for item in all_active
+               if not query or query.casefold() in (item.get("title") or "").casefold()]
+    total = len(matched)
+    rows = matched[page * PAGE:(page + 1) * PAGE]
     lines = [
         "<b>🏘 Группы бота</b>",
-        f"Всего: <b>{all_total}</b> · активных: <b>{total}</b>",
+        f"Всего: <b>{all_total}</b> · активных: <b>{active_total}</b>",
         f"Привязано к учебным группам: <b>{bound}</b>",
         f"Обращений к боту за 7 дней: <b>{recent}</b>",
     ]
@@ -145,7 +146,7 @@ async def _group_card(ctx: Ctx, chat_id: int) -> Out:
         try:
             info = await bot.get_chat(chat_id)
             title = info.title or title
-            chat_type = getattr(info.type, "value", info.type) or chat_type
+            chat_type = {"group": "группа", "supergroup": "супергруппа"}.get(getattr(info.type, "value", info.type), "группа")
             photo_id = info.photo.small_file_id if info.photo else None
             members = await bot.get_chat_member_count(chat_id)
             if title != row.get("title"):
