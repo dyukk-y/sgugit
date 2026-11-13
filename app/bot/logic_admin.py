@@ -51,44 +51,158 @@ def _user_label(u: dict) -> str:
 
 async def menu_screen(ctx: Ctx) -> Screen:
     rows: Kb = []
-
-    def add(pair: list[Btn]) -> None:
-        if pair:
-            rows.append(pair)
-
     pend_fio = await ctx.repo.count("users", "fio_status = 'pending'") if ctx.can("users") else 0
     pend_hw = await ctx.repo.count("homework", "status = 'pending'") if ctx.can("homework") else 0
-    add([Btn("📊 Статистика", "ad:stats")] if ctx.can("stats") else [])
-    add([Btn("👥 Пользователи", "ad:u")] if ctx.can("users") else [])
-    if ctx.is_admin:
-        unread = int(await ctx.repo.db.scalar(
-            "SELECT COUNT(*) FROM support_messages WHERE sender_role = 'user' AND seen = 0") or 0)
-        add([Btn(f"💬 Диалоги с пользователями ({unread})", "ad:msg:0")])
-    r2 = []
-    if ctx.can("users"):
-        r2.append(Btn(f"🛡 ФИО ({pend_fio})", "ad:fq:0"))
-    add(r2)
-    r3 = []
-    if ctx.can("schedule"):
-        r3.append(Btn("🗓 Расписание", "ad:sch"))
-    if ctx.can("homework"):
-        r3.append(Btn(f"📝 Задания ({pend_hw})", "ad:hw:0"))
-    add(r3)
-    r4 = []
-    if ctx.can("teachers"):
-        r4.append(Btn("⭐ Рейтинг", "ad:rt"))
-    if ctx.can("broadcast"):
-        r4.append(Btn("📣 Рассылка", "ad:bc"))
-    add(r4)
-    if ctx.can("users"):
-        add([Btn("✍️ Словари", "ad:dict")])
-    if ctx.is_super:
-        add([Btn("📝 Тексты интерфейса", "ad:uitext")])
-        add([Btn("⚙️ Настройки", "ad:set"), Btn("🧾 Аудит", "ad:aud")])
-        add([Btn("💾 Бэкап", "ad:bk"), Btn("📤 Экспорт", "ad:ex")])
-        add([Btn("🔐 Админы", "ad:adm")])
+    unread = int(await ctx.repo.db.scalar(
+        "SELECT COUNT(*) FROM support_messages WHERE sender_role = 'user' AND seen = 0") or 0) if ctx.is_admin else 0
+
+    def pair(left: Btn | None, right: Btn | None = None) -> None:
+        row = [x for x in (left, right) if x is not None]
+        if row:
+            rows.append(row)
+
+    pair(Btn("📊 Статистика", "ad:stats") if ctx.can("stats") else None,
+         Btn("🏘 Группы бота", "ad:groups"))
+    pair(Btn("👥 Пользователи", "ad:u") if ctx.can("users") else None,
+         Btn(f"💬 Диалоги · {unread}", "ad:msg:0"))
+    pair(Btn(f"🛡 ФИО · {pend_fio}", "ad:fq:0") if ctx.can("users") else None,
+         Btn("🗓 Расписание", "ad:sch") if ctx.can("schedule") else None)
+    pair(Btn(f"📝 Задания · {pend_hw}", "ad:hw:0") if ctx.can("homework") else None,
+         Btn("⭐ Рейтинг", "ad:rt") if ctx.can("teachers") else None)
+    pair(Btn("📣 Рассылка", "ad:bc") if ctx.can("broadcast") else None,
+         Btn("🧰 Инструменты", "ad:tools") if ctx.is_super or ctx.can("users") else None)
     rows.append([home_btn()])
-    return Screen("<b>Админ-панель</b>", rows)
+    return Screen("<b>⚙️ Панель управления</b>\nВыберите раздел", rows)
+
+
+async def _tools_screen(ctx: Ctx) -> Screen:
+    rows: Kb = []
+    if ctx.can("users"):
+        rows.append([Btn("✍️ Словари", "ad:dict")])
+    if ctx.is_super:
+        rows.extend([
+            [Btn("📝 Тексты интерфейса", "ad:uitext")],
+            [Btn("⚙️ Настройки", "ad:set"), Btn("🧾 Журнал действий", "ad:aud")],
+            [Btn("💾 Бэкап", "ad:bk"), Btn("📤 Экспорт", "ad:ex")],
+            [Btn("🔐 Администраторы", "ad:adm")],
+        ])
+    rows.append(nav("ad:menu"))
+    return Screen("<b>🧰 Инструменты</b>\nДополнительное управление ботом", rows)
+
+
+async def _groups_screen(ctx: Ctx, page: int = 0, query: str = "") -> Screen:
+    repo = ctx.repo
+    where = "WHERE active = 1" if not query else "WHERE active = 1 AND LOWER(COALESCE(title, '')) LIKE ?"
+    params = (f"%{query.casefold()}%",) if query else ()
+    total = int(await repo.db.scalar(f"SELECT COUNT(*) FROM chats {where}", *params) or 0)
+    all_total = int(await repo.db.scalar("SELECT COUNT(*) FROM chats") or 0)
+    bound = int(await repo.db.scalar("SELECT COUNT(*) FROM chats WHERE active = 1 AND group_id IS NOT NULL") or 0)
+    recent = int(await repo.db.scalar(
+        "SELECT COUNT(*) FROM analytics_events WHERE event IN ('group_command','group_question') AND created_at >= ?",
+        tu.now_ts() - 7 * 86400) or 0)
+    rows = await repo.db.fetchall(
+        f"SELECT * FROM chats {where} ORDER BY active DESC, LOWER(COALESCE(title, '')) LIMIT ? OFFSET ?",
+        *params, PAGE, page * PAGE)
+    lines = [
+        "<b>🏘 Группы бота</b>",
+        f"Всего: <b>{all_total}</b> · активных: <b>{total}</b>",
+        f"Привязано к учебным группам: <b>{bound}</b>",
+        f"Обращений к боту за 7 дней: <b>{recent}</b>",
+    ]
+    kb: Kb = []
+    for chat in rows:
+        title = (chat.get("title") or "Без названия").strip()
+        label = f"{'🟢' if chat.get('active') else '⚪'} {title[:30]}"
+        kb.append([Btn(label, f"ad:group:{chat['chat_id']}")])
+    if not rows:
+        lines.append("\nПо этому названию ничего не найдено." if query else "\nПока нет сохранённых групп.")
+    navrow = pager("ad:groups", page, total, PAGE)
+    if navrow:
+        kb.append(navrow)
+    kb.append([Btn("🔎 Найти группу", "ad:groupfind"), Btn("🕘 События", "ad:glog:all:0")])
+    kb.append(nav("ad:menu"))
+    return Screen("\n".join(lines), kb)
+
+
+async def _group_card(ctx: Ctx, chat_id: int) -> Out:
+    repo = ctx.repo
+    row = await repo.get_chat(chat_id)
+    if not row:
+        return Out(screen=Screen("Группа не найдена.", [nav("ad:groups")]))
+    bot = getattr(ctx, "services", {}).get("bot")
+    title = row.get("title") or "Без названия"
+    members = None
+    photo_id = None
+    chat_type = "group"
+    if bot:
+        try:
+            info = await bot.get_chat(chat_id)
+            title = info.title or title
+            chat_type = getattr(info.type, "value", info.type) or chat_type
+            photo_id = info.photo.small_file_id if info.photo else None
+            members = await bot.get_chat_member_count(chat_id)
+            if title != row.get("title"):
+                await repo.update_chat(chat_id, title=title)
+        except Exception:
+            pass
+    group = await repo.get_group(row.get("group_id")) if row.get("group_id") else None
+    since = tu.now_ts() - 7 * 86400
+    usage = int(await repo.db.scalar(
+        "SELECT COUNT(*) FROM analytics_events WHERE event IN ('group_command','group_question') AND detail LIKE ? AND created_at >= ?",
+        f"%chat_id={chat_id};%", since) or 0)
+    total_usage = int(await repo.db.scalar(
+        "SELECT COUNT(*) FROM analytics_events WHERE event IN ('group_command','group_question') AND detail LIKE ?",
+        f"%chat_id={chat_id};%") or 0)
+    last = await repo.db.fetchone(
+        "SELECT created_at FROM analytics_events WHERE detail LIKE ? ORDER BY id DESC LIMIT 1",
+        f"%chat_id={chat_id};%")
+    last_s = datetime.fromtimestamp(int(last["created_at"]), tu.tz()).strftime("%d.%m.%Y %H:%M") if last else "нет данных"
+    lines = [
+        f"<b>🏘 {fm.esc(title)}</b>",
+        f"Тип: {fm.esc(str(chat_type))} · статус: {'🟢 активен' if row.get('active') else '⚪ отключён'}",
+        f"Участников: <b>{members if members is not None else 'не удалось получить'}</b>",
+        f"ID: <code>{chat_id}</code>",
+        f"Учебная группа: <b>{fm.esc(group['name']) if group else 'не привязана'}</b>",
+        "",
+        "<b>📈 Использование</b>",
+        f"Запросов за 7 дней: <b>{usage}</b> · всего учтено: <b>{total_usage}</b>",
+        f"Последняя активность: {last_s}",
+    ]
+    kb = [[Btn("📊 История событий", f"ad:glog:{chat_id}:0")],
+          [Btn("◀ К списку групп", "ad:groups")], nav("ad:menu")]
+    out = Out(screen=Screen("\n".join(lines), kb))
+    if photo_id:
+        out.media = (photo_id, "photo", f"🏘 {title}")
+    return out
+
+
+async def _groups_log(ctx: Ctx, chat_id: int | None = None, page: int = 0) -> Screen:
+    if chat_id is None:
+        where, params = "WHERE event IN ('group_command','group_question')", ()
+        heading = "🕘 <b>События групп</b>"
+    else:
+        where, params = "WHERE event IN ('group_command','group_question') AND detail LIKE ?", (f"%chat_id={chat_id};%",)
+        heading = f"🕘 <b>История группы · {chat_id}</b>"
+    total = int(await ctx.repo.db.scalar(f"SELECT COUNT(*) FROM analytics_events {where}", *params) or 0)
+    events = await ctx.repo.db.fetchall(
+        f"SELECT event, detail, created_at FROM analytics_events {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+        *params, 10, page * 10)
+    lines = [heading]
+    for item in events:
+        when = datetime.fromtimestamp(int(item["created_at"]), tu.tz()).strftime("%d.%m %H:%M")
+        detail = str(item.get("detail") or "")
+        title = detail.split("title=", 1)[1].split(";", 1)[0] if "title=" in detail else "группа"
+        action = "команда" if item["event"] == "group_command" else "вопрос"
+        lines.append(f"• {when} · {fm.esc(title[:35])} · {action}")
+    if not events:
+        lines.append("\nПока нет записанных событий. Новая статистика начнёт собираться после обновления.")
+    kb: Kb = []
+    pages = pager(f"ad:glog:{chat_id if chat_id is not None else 'all'}", page, total, 10)
+    if pages:
+        kb.append(pages)
+    kb.append([Btn("◀ К списку групп", "ad:groups")])
+    kb.append(nav("ad:menu"))
+    return Screen("\n".join(lines), kb)
 
 
 # ---------------- карточка пользователя ----------------
@@ -154,6 +268,20 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
 
     if act == "menu":
         return Out(screen=await menu_screen(ctx), clear_state=True)
+    if act == "tools":
+        return Out(screen=await _tools_screen(ctx))
+    if act == "groups":
+        page = int(arg) if arg.isdigit() else 0
+        return Out(screen=await _groups_screen(ctx, page))
+    if act == "groupfind":
+        return Out(screen=Screen("Отправьте название группы или его часть.", [nav("ad:groups")]),
+                   state="ad:group_search", state_data={})
+    if act == "group" and arg.lstrip("-").isdigit():
+        return await _group_card(ctx, int(arg))
+    if act == "glog":
+        target = None if arg in ("", "all") else (int(arg) if arg.lstrip("-").isdigit() else None)
+        page = int(arg2) if arg2.isdigit() else 0
+        return Out(screen=await _groups_log(ctx, target, page))
     if act in {"rq", "rqd", "hm", "uh", "uc"}:
         return Out(toast="Эта функция больше не поддерживается", alert=True)
     if act == "uitext":
@@ -749,6 +877,12 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
     if not ctx.is_admin:
         return _deny()
     repo = ctx.repo
+    if state == "ad:group_search":
+        query = text.strip()[:80]
+        if len(query) < 2:
+            return Out(screen=Screen("Введите хотя бы 2 символа для поиска.", [nav("ad:groups")]),
+                       state=state, state_data=data)
+        return Out(screen=await _groups_screen(ctx, 0, query), clear_state=True)
     if state == "ad:uitext" and ctx.is_super:
         key = str(data.get("key") or "")
         allowed = {"interface_main_text", "sponsor_button_title", "sponsor_button_url", "unknown_text", "welcome_text"}
