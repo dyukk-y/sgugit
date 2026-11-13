@@ -197,7 +197,7 @@ async def _groups_log(ctx: Ctx, chat_id: int | None = None, page: int = 0) -> Sc
         heading = f"🕘 <b>История группы · {chat_id}</b>"
     total = int(await ctx.repo.db.scalar(f"SELECT COUNT(*) FROM analytics_events {where}", *params) or 0)
     events = await ctx.repo.db.fetchall(
-        f"SELECT event, detail, created_at FROM analytics_events {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+        f"SELECT user_id, event, detail, created_at FROM analytics_events {where} ORDER BY id DESC LIMIT ? OFFSET ?",
         *params, 10, page * 10)
     lines = [heading]
     for item in events:
@@ -211,7 +211,11 @@ async def _groups_log(ctx: Ctx, chat_id: int | None = None, page: int = 0) -> Sc
             "group_removed": "бот удалён",
             "group_renamed": "название изменено",
         }.get(item["event"], "событие")
-        lines.append(f"• {when} · {fm.esc(title[:35])} · {action}")
+        actor_id = item.get("user_id")
+        actor = await ctx.repo.get_user(int(actor_id)) if actor_id else None
+        actor_label = (actor.get("tg_name") or actor.get("username") or str(actor_id)) if actor else (str(actor_id) if actor_id else "")
+        actor_suffix = f" · инициатор: {fm.esc(str(actor_label)[:24])}" if actor_label and item["event"] in ("group_added", "group_removed", "group_renamed") else ""
+        lines.append(f"• {when} · {fm.esc(title[:35])} · {action}{actor_suffix}")
     if not events:
         lines.append("\nПока нет записанных событий. Новая статистика начнёт собираться после обновления.")
     kb: Kb = []
