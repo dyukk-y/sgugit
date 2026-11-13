@@ -659,6 +659,21 @@ def build_router(app: App) -> Router:
     private = F.chat.type == "private"
     group = F.chat.type.in_({"group", "supergroup"})
 
+    async def _track_group_event(message: Message, event: str, action: str) -> None:
+        chat = await app.repo.get_chat(message.chat.id)
+        if not chat:
+            return
+        title = message.chat.title or chat.get("title") or "Без названия"
+        if title != chat.get("title"):
+            await app.repo.update_chat(message.chat.id, title=title)
+        detail = f"chat_id={message.chat.id};title={title[:80]};action={action[:40]}"
+        try:
+            await app.repo.db.execute(
+                "INSERT INTO analytics_events (user_id, event, detail, created_at) VALUES (?, ?, ?, ?)",
+                message.from_user.id if message.from_user else None, event, detail, tu.now_ts())
+        except Exception:
+            log.debug("Не удалось записать активность группы %s", message.chat.id, exc_info=True)
+
     if hasattr(r, "inline_query"):
         # ---------------- Inline mode: быстрый выбор вида расписания прямо в любом чате ----------------
         @r.inline_query()
@@ -801,6 +816,7 @@ def build_router(app: App) -> Router:
         if message.from_user is None or not _claim_private_message(app, message):
             return
         name, args = _cmd_parts(message.text or "")
+        await _track_group_event(message, "group_command", name)
 
         out = await run_process(app, message.from_user, command=name, args=args)
         if out.screen is None and not out.file and not out.notify and not out.notify_timed and not out.toast:
@@ -1137,6 +1153,8 @@ def build_router(app: App) -> Router:
             return
         request_text = text
         scr = await logic_router.group_text(ctx, chat["group_id"], text, chat["smart_mode"], addressed)
+        if scr is not None:
+            await _track_group_event(message, "group_question", "question")
         if scr is None:
             if active and not addressed:  # вопрос без обращения к боту: ждём, ответят ли люди
                 await app.questions.consider(chat, message.from_user.id, message.message_id, text)
