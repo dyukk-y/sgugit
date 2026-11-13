@@ -190,10 +190,10 @@ async def _group_card(ctx: Ctx, chat_id: int) -> Out:
 
 async def _groups_log(ctx: Ctx, chat_id: int | None = None, page: int = 0) -> Screen:
     if chat_id is None:
-        where, params = "WHERE event IN ('group_command','group_question','group_added','group_removed','group_renamed')", ()
+        where, params = "WHERE event IN ('group_command','group_question','group_added','group_removed','group_renamed','group_photo_changed')", ()
         heading = "🕘 <b>События групп</b>"
     else:
-        where, params = "WHERE event IN ('group_command','group_question','group_added','group_removed','group_renamed') AND detail LIKE ?", (f"%chat_id={chat_id};%",)
+        where, params = "WHERE event IN ('group_command','group_question','group_added','group_removed','group_renamed','group_photo_changed') AND detail LIKE ?", (f"%chat_id={chat_id};%",)
         heading = f"🕘 <b>История группы · {chat_id}</b>"
     total = int(await ctx.repo.db.scalar(f"SELECT COUNT(*) FROM analytics_events {where}", *params) or 0)
     events = await ctx.repo.db.fetchall(
@@ -210,11 +210,12 @@ async def _groups_log(ctx: Ctx, chat_id: int | None = None, page: int = 0) -> Sc
             "group_added": "бот добавлен",
             "group_removed": "бот удалён",
             "group_renamed": "название изменено",
+            "group_photo_changed": "аватарка изменена",
         }.get(item["event"], "событие")
         actor_id = item.get("user_id")
         actor = await ctx.repo.get_user(int(actor_id)) if actor_id else None
         actor_label = (actor.get("tg_name") or actor.get("username") or str(actor_id)) if actor else (str(actor_id) if actor_id else "")
-        actor_suffix = f" · инициатор: {fm.esc(str(actor_label)[:24])}" if actor_label and item["event"] in ("group_added", "group_removed", "group_renamed") else ""
+        actor_suffix = f" · инициатор: {fm.esc(str(actor_label)[:24])}" if actor_label and item["event"] in ("group_added", "group_removed", "group_renamed", "group_photo_changed") else ""
         lines.append(f"• {when} · {fm.esc(title[:35])} · {action}{actor_suffix}")
     if not events:
         lines.append("\nПока нет записанных событий. Новая статистика начнёт собираться после обновления.")
