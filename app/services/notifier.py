@@ -132,7 +132,7 @@ class Notifier:
             # фоновой задачи. Фиксируем событие отдельно для каждого получателя.
             payload = json.dumps(changes, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             fingerprint = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
-            event_key = f"sch:{gid}:{fingerprint}"
+            event_key = f"sch:{gid}:{result.event_id}:{fingerprint}"
             text = fm.changes_text(group["name"], changes)
             kb = [[Btn("📅 Расписание", "s:d:today")]]
             users = await self.repo.db.fetchall(
