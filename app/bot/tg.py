@@ -164,6 +164,14 @@ class Sender:
         text = screen.text[:MAX_TEXT]
         markup = to_markup(screen.kb) if chat_id > 0 else None
         try:
+            if screen.rich:
+                try:
+                    await self.bot.send_rich_message(
+                        chat_id=chat_id, rich_message=InputRichMessage(html=schedule_rich_html(text)),
+                        reply_markup=markup)
+                    return
+                except TelegramAPIError as e:
+                    log.debug("Rich notification недоступно, используем обычный текст: %s", e)
             await self.bot.send_message(chat_id, text, reply_markup=markup)
         except TelegramBadRequest as e:
             if _is(e, "can't parse entities"):
@@ -176,12 +184,19 @@ class Sender:
         True — сообщение доставлено (даже если закрепить не вышло из-за прав), False — отправить не удалось."""
         text = screen.text[:MAX_TEXT]
         try:
-            try:
+            if screen.rich:
+                try:
+                    msg = await self.bot.send_rich_message(
+                        chat_id=chat_id, rich_message=InputRichMessage(html=schedule_rich_html(text)))
+                except TelegramAPIError as e:
+                    log.debug("Rich pinned notification недоступно, используем обычный текст: %s", e)
+                    msg = await self.bot.send_message(chat_id, text)
+            else:
                 msg = await self.bot.send_message(chat_id, text)
-            except TelegramBadRequest as e:
-                if not _is(e, "can't parse entities"):
-                    raise
-                msg = await self.bot.send_message(chat_id, strip_tags(text)[:MAX_TEXT], parse_mode=None)
+        except TelegramBadRequest as e:
+            if not _is(e, "can't parse entities"):
+                raise
+            msg = await self.bot.send_message(chat_id, strip_tags(text)[:MAX_TEXT], parse_mode=None)
         except TelegramRetryAfter as e:
             await asyncio.sleep(float(e.retry_after) + 1)
             return False
