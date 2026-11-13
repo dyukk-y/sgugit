@@ -294,7 +294,9 @@ def detect_intent(text: str, today: date, catalog: list[tuple[str, str]] | None 
     if _has(t, "что изменилось", "какие изменения", "что поменялось", "что поменяли", "изменения в расписании",
              "изменения расписания", "что перенесли", "что отменили", "какие отмены", "что добавили",
              "что по изменениям", "были изменения", "есть изменения", "что нового в расписании",
-             "поменялось расписание", "изменили расписание", "изменения на завтра"):
+             "поменялось расписание", "изменили расписание", "изменения на завтра", "что с расписанием",
+             "обновилось ли расписание", "есть ли переносы", "были ли отмены", "что поменялось с парами",
+             "какие пары изменили", "что нового по расписанию"):
         return mk("changes")
     if any(x.startswith(("экзамен", "зачет", "сесси", "консультац")) for x in toks):
         return mk("exam")
@@ -305,6 +307,10 @@ def detect_intent(text: str, today: date, catalog: list[tuple[str, str]] | None 
     if any(x.startswith("недел") for x in toks) and (has_par or "расписан" in t or "что" in toks or "какие" in toks
                                                         or week_shift is not None):
         return mk("week")
+    if "кто" in toks and (subject or has_par or any(x.startswith(("вед", "чита", "препод", "лектор")) for x in toks)):
+        return mk("teacher")
+    if any(x.startswith(("аудитор", "кабинет")) or x in ("каб", "куда", "где") for x in toks) and (has_par or subject or num):
+        return mk("room")
     starts = _before(toks, ("когда", "сколько", "скольки"), ("начин", "начал", "начнем", "начнутся", "начнется"))
     if (_has(t, "первая пара", "первой пар", "первую пар", "к скольки", "с какой пары", "начало пар",
              "когда первая", "первая завтра") or starts
