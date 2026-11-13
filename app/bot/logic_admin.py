@@ -110,9 +110,16 @@ async def _groups_screen(ctx: Ctx, page: int = 0, query: str = "") -> Screen:
         f"Обращений к боту за 7 дней: <b>{recent}</b>",
     ]
     kb: Kb = []
+    bot = getattr(ctx, "services", {}).get("bot")
     for chat in rows:
         title = (chat.get("title") or "Без названия").strip()
-        label = f"{'🟢' if chat.get('active') else '⚪'} {title[:30]}"
+        members = "—"
+        if bot:
+            try:
+                members = str(await bot.get_chat_member_count(chat["chat_id"]))
+            except Exception:
+                pass
+        label = f"🟢 {title[:22]} · {members}👤"
         kb.append([Btn(label, f"ad:group:{chat['chat_id']}")])
     if not rows:
         lines.append("\nПо этому названию ничего не найдено." if query else "\nПока нет сохранённых групп.")
