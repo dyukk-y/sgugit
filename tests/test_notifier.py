@@ -43,6 +43,10 @@ class T(unittest.TestCase):
             res = await r.apply_lessons([L(fut, 1, "Химия", "09:00", "10:35")], manual=False)
             cnt = await n.notify_changes(res); self.assertEqual(cnt, 3); self.assertTrue(any("Изменения" in t for _, t in sent))
             self.assertNotIn(3, [c for c, _ in sent]); self.assertIn(-5, [c for c, _ in sent])
+            sent.clear()
+            duplicate_cnt = await n.notify_changes(res)
+            self.assertEqual(duplicate_cnt, 0)
+            self.assertEqual(sent, [])  # повторная обработка того же изменения не дублирует рассылку
             await db.close()
         asyncio.run(go())
 if __name__ == "__main__":
