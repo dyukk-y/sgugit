@@ -83,6 +83,10 @@ class T(unittest.TestCase):
         self.assertEqual(find_subject("матешу", CAT), "Математика")
         self.assertIsNone(find_subject("привет как дела", CAT))
 
+    def test_teacher_and_room_first_lesson_questions(self):
+        self.check("кто ведёт первую пару завтра?", "teacher", day=date(2026, 10, 15), num=1)
+        self.check("где первая пара завтра?", "room", day=date(2026, 10, 15), num=1)
+
     def test_schedule_changes_questions(self):
         for text in ["что изменилось в расписании?", "какие изменения на завтра?", "что перенесли?",
                      "были изменения в расписании", "что нового в расписании?"]:
@@ -100,6 +104,7 @@ class T(unittest.TestCase):
         self.assertEqual(p.subject, "Физика")
         self.assertIsNone(parse_observed_hw("завтра будет математика", CAT, TODAY))
         self.assertIsNone(parse_observed_hw("домашнее задание по математике", CAT, TODAY))
+        self.assertIsNone(parse_observed_hw("домашнее задание по математике будет?", CAT, TODAY))
 
     def test_hw_phrase(self):
         p = parse_hw_phrase("дз математика №15-20 к пятнице", CAT, TODAY)
