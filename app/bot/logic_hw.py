@@ -184,7 +184,10 @@ async def capture_group_assignment(ctx: Ctx, gid: int, text: str, author_id: int
 
     catalog = await ctx.repo.subject_catalog()
     phrase = parse_observed_hw(text, catalog, ctx.today)
-    if not phrase:
+    if not phrase or not _looks_like_assignment(phrase.text):
+        return None
+    daily_limit = ctx.repo.int_setting("hw_daily_limit") or 10
+    if await ctx.repo.hw_today_count(author_id) >= daily_limit:
         return None
     group_subjects = await ctx.repo.upcoming_subjects(
         gid, tu.iso(ctx.today), tu.iso(ctx.today + timedelta(days=90)))
