@@ -98,17 +98,21 @@ async def _groups_screen(ctx: Ctx, page: int = 0, query: str = "") -> Screen:
     recent = int(await repo.db.scalar(
         "SELECT COUNT(*) FROM analytics_events WHERE event IN ('group_command','group_question') AND created_at >= ?",
         tu.now_ts() - 7 * 86400) or 0)
-    all_active = await repo.db.fetchall(
+    chat_rows = await repo.db.fetchall(
         "SELECT * FROM chats ORDER BY active DESC, title")
-    matched = [item for item in all_active
+    matched = [item for item in chat_rows
                if not query or query.casefold() in (item.get("title") or "").casefold()]
     total = len(matched)
     rows = matched[page * PAGE:(page + 1) * PAGE]
     lines = [
         "<b>🏘 Группы бота</b>",
-        f"Всего: <b>{all_total}</b> · активных: <b>{active_total}</b> · отключённых: <b>{all_total - active_total}</b>",
-        f"Привязано к учебным группам: <b>{bound}</b>",
-        f"Обращений к боту за 7 дней: <b>{recent}</b>",
+        "<b>📊 Обзор</b>",
+        f"🗂 Всего: <b>{all_total}</b> · 🟢 активных: <b>{active_total}</b> · ⚪ отключённых: <b>{all_total - active_total}</b>",
+        f"🔗 Привязано к учебным группам: <b>{bound}</b>",
+        "<b>📈 Активность</b>",
+        f"💬 Обращений к боту за 7 дней: <b>{recent}</b>",
+        "",
+        "Откройте группу, чтобы посмотреть аватарку, участников и историю",
     ]
     kb: Kb = []
     bot = getattr(ctx, "services", {}).get("bot")
