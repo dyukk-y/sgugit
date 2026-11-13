@@ -116,7 +116,7 @@ class Notifier:
                 last_end = max(ends)
                 cleanup_at = int(tu.local_to_utc(tomorrow, tu.min_to_hhmm(last_end)).timestamp())
                 if cleanup_at > int(now.timestamp()):
-                    text += f"\\n\\n📌 Закреплено до окончания последней пары ({tu.min_to_hhmm(last_end)}), затем сообщение удалится."
+                    text += f"\n\n📌 Закреплено до окончания последней пары ({tu.min_to_hhmm(last_end)}), затем сообщение удалится."
                     if await self.pin(c["chat_id"], Screen(text, rich=True), cleanup_at):
                         continue
             await self.send(c["chat_id"], Screen(text, rich=True))
