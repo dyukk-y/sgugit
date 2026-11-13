@@ -816,7 +816,6 @@ def build_router(app: App) -> Router:
         if message.from_user is None or not _claim_private_message(app, message):
             return
         name, args = _cmd_parts(message.text or "")
-        await _track_group_event(message, "group_command", name)
 
         out = await run_process(app, message.from_user, command=name, args=args)
         if out.screen is None and not out.file and not out.notify and not out.notify_timed and not out.toast:
@@ -1027,6 +1026,7 @@ def build_router(app: App) -> Router:
         if message.from_user is None or message.from_user.is_bot:
             return
         name, args = _cmd_parts(message.text or "")
+        await _track_group_event(message, "group_command", name)
         # команда адресована другому боту?
         head = (message.text or "").split(" ")[0]
         if "@" in head and head.split("@")[1].lower() != app.username.lower():
