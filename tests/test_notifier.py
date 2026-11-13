@@ -23,11 +23,15 @@ class T(unittest.TestCase):
             await r.update_user(3, bot_blocked=1)
             await r.upsert_chat(-5, "чат", g, 1); await r.update_chat(-5, evening_on=1)
             sent = []
-            async def send(cid, screen): sent.append((cid, screen.text))
+            rich_flags = []
+            async def send(cid, screen):
+                sent.append((cid, screen.text))
+                rich_flags.append(screen.rich)
             n = Notifier(r, send)
             await n.tick(at(19, 59)); self.assertEqual(sent, [])
             await n.tick(at(20, 0))
             self.assertEqual(sorted(c for c, _ in sent), [-5, 1]); self.assertIn("Химия", sent[0][1]); self.assertIn("завтра", sent[0][1].lower())
+            self.assertEqual(rich_flags, [True, True])  # обе вечерние сводки используют Rich Messages
             sent.clear(); await n.tick(at(20, 1)); self.assertEqual(sent, [])  # без дублей
             await n.tick(at(23, 30)); self.assertEqual(sent, [])               # не догоняем слишком поздно
             # напоминания: у пользователя 2 за 30 минут
