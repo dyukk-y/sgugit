@@ -1026,11 +1026,11 @@ def build_router(app: App) -> Router:
         if message.from_user is None or message.from_user.is_bot:
             return
         name, args = _cmd_parts(message.text or "")
-        await _track_group_event(message, "group_command", name)
         # команда адресована другому боту?
         head = (message.text or "").split(" ")[0]
         if "@" in head and head.split("@")[1].lower() != app.username.lower():
             return
+        await _track_group_event(message, "group_command", name)
         chat = await app.repo.get_chat(message.chat.id)
         if name not in {"start", "help"} and app.repo.flag("group_require_start"):
             user_row = await app.repo.get_user(message.from_user.id)
