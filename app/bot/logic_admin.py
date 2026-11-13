@@ -99,14 +99,14 @@ async def _groups_screen(ctx: Ctx, page: int = 0, query: str = "") -> Screen:
         "SELECT COUNT(*) FROM analytics_events WHERE event IN ('group_command','group_question') AND created_at >= ?",
         tu.now_ts() - 7 * 86400) or 0)
     all_active = await repo.db.fetchall(
-        "SELECT * FROM chats WHERE active = 1 ORDER BY title")
+        "SELECT * FROM chats ORDER BY active DESC, title")
     matched = [item for item in all_active
                if not query or query.casefold() in (item.get("title") or "").casefold()]
     total = len(matched)
     rows = matched[page * PAGE:(page + 1) * PAGE]
     lines = [
         "<b>🏘 Группы бота</b>",
-        f"Всего: <b>{all_total}</b> · активных: <b>{active_total}</b>",
+        f"Всего: <b>{all_total}</b> · активных: <b>{active_total}</b> · отключённых: <b>{all_total - active_total}</b>",
         f"Привязано к учебным группам: <b>{bound}</b>",
         f"Обращений к боту за 7 дней: <b>{recent}</b>",
     ]
@@ -115,12 +115,12 @@ async def _groups_screen(ctx: Ctx, page: int = 0, query: str = "") -> Screen:
     for chat in rows:
         title = (chat.get("title") or "Без названия").strip()
         members = "—"
-        if bot:
+        if bot and chat.get("active"):
             try:
                 members = str(await bot.get_chat_member_count(chat["chat_id"]))
             except Exception:
                 pass
-        label = f"🟢 {title[:22]} · {members}👤"
+        label = f"{'🟢' if chat.get('active') else '⚪'} {title[:22]} · {members}👤"
         kb.append([Btn(label, f"ad:group:{chat['chat_id']}")])
     if not rows:
         lines.append("\nПо этому названию ничего не найдено." if query else "\nПока нет сохранённых групп.")
@@ -142,7 +142,7 @@ async def _group_card(ctx: Ctx, chat_id: int) -> Out:
     members = None
     photo_id = None
     chat_type = "group"
-    if bot:
+    if bot and row.get("active"):
         try:
             info = await bot.get_chat(chat_id)
             title = info.title or title
