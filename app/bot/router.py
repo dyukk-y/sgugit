@@ -248,7 +248,7 @@ async def group_command(ctx: Ctx, gid: int, name: str) -> Screen | None:
 
 
 KEYWORD_INTENTS = {"day", "first", "last", "next", "count", "room", "teacher", "week", "hw", "when_subject", "exam",
-                   "subject_day", "find_teacher"}
+                   "subject_day", "find_teacher", "changes"}
 
 
 async def group_text(ctx: Ctx, gid: int, text: str, mode: str, addressed: bool) -> Screen | None:
