@@ -223,6 +223,45 @@ def _before(toks: list[str], first: tuple[str, ...], second: tuple[str, ...]) ->
 _PAR_RE = re.compile(r"\bпар(а|ы|е|у|ой|ам|ах)?\b")
 
 
+
+_OBSERVED_HW_MARKER = re.compile(
+    r"\b(?:дз|д/з|домашк\w*|домашнее\s+задание|задали|задание|на\s+дом|к\s+следующ\w+\s+пар\w+)\b",
+    re.I,
+)
+
+
+def parse_observed_hw(text: str, catalog: list[tuple[str, str]], today: date) -> HwPhrase | None:
+    """Распознаёт задание из сообщения группы только при явном маркере домашней работы."""
+    raw = " ".join((text or "").split())
+    if len(raw) < 8 or len(raw) > 1000 or not _OBSERVED_HW_MARKER.search(raw):
+        return None
+    parsed = parse_hw_phrase(raw, catalog, today)
+    if parsed:
+        return parsed
+    subject = find_subject(raw, catalog)
+    if not subject:
+        return None
+    marker = _OBSERVED_HW_MARKER.search(raw)
+    assert marker is not None
+    body = raw[marker.end():].strip(" :,-–—")
+    due: date | None = None
+    due_match = _DUE_RE.search(raw.lower().replace("ё", "е"))
+    if due_match:
+        due, _ = parse_when(due_match.group(0), today)
+        body = re.sub(re.escape(due_match.group(0)), " ", body, flags=re.I)
+    for alias, canonical in catalog:
+        if canonical != subject:
+            continue
+        alias_text = alias.strip()
+        if len(alias_text) >= 2:
+            body = re.sub(r"(?<!\w)" + re.escape(alias_text) + r"(?!\w)", " ", body, flags=re.I)
+    body = re.sub(r"\b(?:по|предмету|домашнее|задание|задали|дз|д/з|на|до|к)\b", " ", body, flags=re.I)
+    body = " ".join(body.split()).strip(" :,-–—.;")
+    if len(body) < 3 or not re.search(r"[A-Za-zА-Яа-яЁё0-9]", body):
+        return None
+    return HwPhrase(subject=subject, text=body[:1000], due=due)
+
+
 def detect_intent(text: str, today: date, catalog: list[tuple[str, str]] | None = None,
                   known_surnames: set[str] | None = None) -> Intent | None:
     t = norm(text)
@@ -252,6 +291,9 @@ def detect_intent(text: str, today: date, catalog: list[tuple[str, str]] | None 
         return mk("greet")
     if _has(t, "какая неделя", "какая сейчас неделя", "чет неделя", "четная", "нечетная", "четность") and "недел" in t:
         return mk("parity")
+    if _has(t, "что изменилось", "какие изменения", "что поменялось", "что поменяли", "изменения в расписании",
+             "изменения расписания", "что перенесли", "что отменили", "какие отмены", "что добавили"):
+        return mk("changes")
     if any(x.startswith(("экзамен", "зачет", "сесси", "консультац")) for x in toks):
         return mk("exam")
     if any(x.startswith(("дз", "домашк", "домашн", "задан", "задал", "задач")) or x == "д/з" for x in toks):
