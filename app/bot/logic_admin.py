@@ -190,10 +190,10 @@ async def _group_card(ctx: Ctx, chat_id: int) -> Out:
 
 async def _groups_log(ctx: Ctx, chat_id: int | None = None, page: int = 0) -> Screen:
     if chat_id is None:
-        where, params = "WHERE event IN ('group_command','group_question')", ()
+        where, params = "WHERE event IN ('group_command','group_question','group_added','group_removed','group_renamed')", ()
         heading = "🕘 <b>События групп</b>"
     else:
-        where, params = "WHERE event IN ('group_command','group_question') AND detail LIKE ?", (f"%chat_id={chat_id};%",)
+        where, params = "WHERE event IN ('group_command','group_question','group_added','group_removed','group_renamed') AND detail LIKE ?", (f"%chat_id={chat_id};%",)
         heading = f"🕘 <b>История группы · {chat_id}</b>"
     total = int(await ctx.repo.db.scalar(f"SELECT COUNT(*) FROM analytics_events {where}", *params) or 0)
     events = await ctx.repo.db.fetchall(
@@ -204,7 +204,13 @@ async def _groups_log(ctx: Ctx, chat_id: int | None = None, page: int = 0) -> Sc
         when = datetime.fromtimestamp(int(item["created_at"]), tu.tz()).strftime("%d.%m %H:%M")
         detail = str(item.get("detail") or "")
         title = detail.split("title=", 1)[1].split(";", 1)[0] if "title=" in detail else "группа"
-        action = "команда" if item["event"] == "group_command" else "вопрос"
+        action = {
+            "group_command": "команда",
+            "group_question": "вопрос",
+            "group_added": "бот добавлен",
+            "group_removed": "бот удалён",
+            "group_renamed": "название изменено",
+        }.get(item["event"], "событие")
         lines.append(f"• {when} · {fm.esc(title[:35])} · {action}")
     if not events:
         lines.append("\nПока нет записанных событий. Новая статистика начнёт собираться после обновления.")
