@@ -89,6 +89,8 @@ class ApplyResult:
     total: int = 0
     changes: dict[int, list[dict]] = field(default_factory=dict)
     skipped: list[str] = field(default_factory=list)
+    # Stable for retries of this result, unique for a newly applied schedule update.
+    event_id: str = field(default_factory=lambda: str(time.time_ns()))
 
 
 class Repo:
