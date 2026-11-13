@@ -30,6 +30,7 @@ class SyncService:
         self._lock = asyncio.Lock()
         self._last_report: SyncReport | None = None
         self._last_finished_monotonic = 0.0
+        self._pending_notifications: ApplyResult | None = None
 
     async def run_once(self) -> SyncReport:
         # Синхронизация может стартовать и фоновым заданием, и по запросу пользователя.
@@ -69,9 +70,22 @@ class SyncService:
         if result.skipped and self.on_alert:
             await self.on_alert("⚠️ Расписание для групп " + ", ".join(result.skipped) +
                                 " не обновлено: источник вернул подозрительно мало занятий.")
-        if result.changes and self.on_changes:
-            await self.on_changes(result)
+        if result.changes:
+            self._pending_notifications = result
+        await self._notify_pending_changes()
         return SyncReport(True, f"Обновлено занятий: {result.total}", result)
+
+    async def _notify_pending_changes(self) -> None:
+        if self.on_changes is None or self._pending_notifications is None:
+            return
+        try:
+            await self.on_changes(self._pending_notifications)
+        except Exception:
+            # Ошибка доставки не отменяет успешную синхронизацию. Сохраняем событие
+            # в памяти процесса и повторяем отправку при следующем цикле синхронизации.
+            log.exception("Не удалось отправить уведомления об изменениях; повторим позже")
+        else:
+            self._pending_notifications = None
 
     async def _fail(self, message: str) -> SyncReport:
         log.warning("Синхронизация не удалась: %s", message)
@@ -86,8 +100,9 @@ class SyncService:
     async def apply_import(self, recs: list[LessonRec]) -> ApplyResult:
         """Ручной импорт файла: записи помечаются как ручные и не затираются синхронизацией."""
         result = await self.repo.apply_lessons(recs, manual=True, guard=False)
-        if result.changes and self.on_changes:
-            await self.on_changes(result)
+        if result.changes:
+            self._pending_notifications = result
+        await self._notify_pending_changes()
         return result
 
     async def rollback(self, snapshot_id: int) -> bool:
