@@ -350,7 +350,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
             lines.append(f"• <b>{day_label}</b>: «{fm.esc(change['subject'])}» {action}{slot}{author}")
 
         # Сравниваем два последних снимка сайта, чтобы видеть изменения обычной синхронизации тоже.
-        snapshots = await repo.list_snapshots()
+        snapshots = [s for s in await repo.list_snapshots() if s.get("source") == "site"]
         if len(snapshots) >= 2:
             latest = await repo.load_snapshot(snapshots[0]["id"])
             previous = await repo.load_snapshot(snapshots[1]["id"])
