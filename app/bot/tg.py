@@ -25,6 +25,7 @@ from app.config import Settings
 from app.db.repo import Repo
 from app.services import format as fm
 from app.services.group_schedule_changes import parse_group_change
+from app.bot.logic_hw import capture_group_assignment
 from app.services.rich_schedule import schedule_rich_html
 
 log = logging.getLogger(__name__)
@@ -1146,8 +1147,26 @@ def build_router(app: App) -> Router:
         if message.from_user is None or message.from_user.is_bot or not message.text:
             return
         chat = await app.repo.get_chat(message.chat.id)
-        if not chat or not chat.get("group_id") or chat["smart_mode"] == "off":
+        if not chat or not chat.get("group_id"):
             return
+
+        # Домашние задания распознаются независимо от режима умных ответов.
+        # Запись создаётся только при явном маркере задания и совпадении предмета с расписанием группы.
+        captured = await capture_group_assignment(
+            Ctx(app.repo, app.cfg, {"id": message.from_user.id, "group_id": None,
+                                    "subgroup": None, "role": "student"}),
+            chat["group_id"], message.text, message.from_user.id)
+        if captured and not captured.get("duplicate"):
+            due = (f" · срок {tu.fmt_date(tu.parse_iso(captured['due_day']))}"
+                   if captured.get("due_day") else "")
+            lesson = (f" · к паре {tu.fmt_date(tu.parse_iso(captured['lesson_day']))}"
+                      if captured.get("lesson_day") else "")
+            await _reply_group(app, message,
+                f"📝 Записал задание по предмету <b>{fm.esc(captured['subject'])}</b>{due}{lesson}. "
+                "Оно появится в разделе «Задания» и рядом с соответствующей парой.", chat)
+        if chat["smart_mode"] == "off":
+            return
+
         mention = f"@{app.username.lower()}"
         text = message.text
         addressed = mention in text.lower()
