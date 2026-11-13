@@ -233,7 +233,7 @@ _OBSERVED_HW_MARKER = re.compile(
 def parse_observed_hw(text: str, catalog: list[tuple[str, str]], today: date) -> HwPhrase | None:
     """Распознаёт задание из сообщения группы только при явном маркере домашней работы."""
     raw = " ".join((text or "").split())
-    if len(raw) < 8 or len(raw) > 1000 or not _OBSERVED_HW_MARKER.search(raw):
+    if len(raw) < 8 or len(raw) > 1000 or "?" in raw or not _OBSERVED_HW_MARKER.search(raw):
         return None
     parsed = parse_hw_phrase(raw, catalog, today)
     if parsed:
