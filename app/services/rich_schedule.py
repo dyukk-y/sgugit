@@ -55,10 +55,9 @@ def schedule_rich_html(text: str) -> str:
         if not day_open:
             return
         rendered = _render_day_lines(current_day_lines)
-        # День с текущей/следующей парой раскрываем автоматически, остальные
-        # остаются компактными и открываются по нажатию.
-        is_relevant = any(subject in "\n".join(current_day_lines) for subject in status_subjects)
-        opened = " open" if is_relevant or day_count == 0 else ""
+        # В недельном расписании показываем все дни раскрытыми,
+        # чтобы карточки занятий сразу были видны без дополнительных нажатий.
+        opened = " open"
         blocks.append(f"<details{opened}><summary>{current_day_title}</summary>{rendered}</details>")
         day_open = False
         current_day_lines = []
