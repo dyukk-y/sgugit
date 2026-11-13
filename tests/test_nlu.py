@@ -83,6 +83,24 @@ class T(unittest.TestCase):
         self.assertEqual(find_subject("матешу", CAT), "Математика")
         self.assertIsNone(find_subject("привет как дела", CAT))
 
+    def test_schedule_changes_questions(self):
+        for text in ["что изменилось в расписании?", "какие изменения на завтра?", "что перенесли?",
+                     "были изменения в расписании", "что нового в расписании?"]:
+            self.check(text, "changes")
+
+    def test_observed_homework(self):
+        from app.services.nlu import parse_observed_hw
+        p = parse_observed_hw("Задали по математике: решить №15-20 к пятнице", CAT, TODAY)
+        self.assertIsNotNone(p)
+        self.assertEqual(p.subject, "Математика")
+        self.assertEqual(p.due, date(2026, 10, 16))
+        self.assertIn("15-20", p.text)
+        p = parse_observed_hw("ДЗ физика: лабораторная работа №3", CAT, TODAY)
+        self.assertIsNotNone(p)
+        self.assertEqual(p.subject, "Физика")
+        self.assertIsNone(parse_observed_hw("завтра будет математика", CAT, TODAY))
+        self.assertIsNone(parse_observed_hw("домашнее задание по математике", CAT, TODAY))
+
     def test_hw_phrase(self):
         p = parse_hw_phrase("дз математика №15-20 к пятнице", CAT, TODAY)
         self.assertIsNotNone(p); self.assertEqual(p.subject, "Математика"); self.assertEqual(p.due, date(2026, 10, 16))
