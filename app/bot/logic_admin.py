@@ -169,6 +169,10 @@ async def _group_card(ctx: Ctx, chat_id: int) -> Out:
         "SELECT created_at FROM analytics_events WHERE detail LIKE ? ORDER BY id DESC LIMIT 1",
         f"%chat_id={chat_id};%")
     last_s = datetime.fromtimestamp(int(last["created_at"]), tu.tz()).strftime("%d.%m.%Y %H:%M") if last else "нет данных"
+    on_off = lambda value: "вкл" if value else "выкл"
+    smart_mode = {"active": "активный", "mention": "по упоминанию", "off": "выключен"}.get(row.get("smart_mode"), str(row.get("smart_mode") or "—"))
+    cleanup = f"{int(row.get('autodelete_min') or 0)} мин." if row.get("cleanup_on") else "выкл"
+    evening = f"вкл · {row.get('evening_time') or '20:00'}" if row.get("evening_on") else "выкл"
     lines = [
         f"<b>🏘 {fm.esc(title)}</b>",
         f"Тип: {fm.esc(str(chat_type))} · статус: {'🟢 активен' if row.get('active') else '⚪ отключён'}",
@@ -179,6 +183,12 @@ async def _group_card(ctx: Ctx, chat_id: int) -> Out:
         "<b>📈 Использование</b>",
         f"Запросов за 7 дней: <b>{usage}</b> · всего учтено: <b>{total_usage}</b>",
         f"Последняя активность: {last_s}",
+        "",
+        "<b>⚙️ Настройки чата</b>",
+        f"Уведомления: {on_off(row.get('notifications_on'))} · изменения расписания: {on_off(row.get('changes_on'))}",
+        f"Вечерняя сводка: {evening} · автоудаление: {cleanup}",
+        f"Закрепление: {on_off(row.get('pin_on'))} · приватные ответы: {on_off(row.get('private_questions'))}",
+        f"Режим вопросов: {fm.esc(smart_mode)} · ожидание ответа: {int(row.get('wait_min') or 0)} мин.",
     ]
     kb = [[Btn("📊 История событий", f"ad:glog:{chat_id}:0")],
           [Btn("◀ К списку групп", "ad:groups")], nav("ad:menu")]
