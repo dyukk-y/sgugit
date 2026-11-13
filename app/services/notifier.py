@@ -148,7 +148,7 @@ class Notifier:
                     await self.send(uid, Screen(text, kb))
                     await self.repo.db.execute(
                         "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
-                        key, now_ts(), volatile=True)
+                        key, tu.now_ts(), volatile=True)
                     sent += 1
                 for chat in await self.repo.chats_for_group(gid):
                     if not chat.get("notifications_on", 1) or not chat.get("changes_on", 1):
@@ -160,6 +160,6 @@ class Notifier:
                     await self.send(chat_id, Screen(text))
                     await self.repo.db.execute(
                         "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
-                        key, now_ts(), volatile=True)
+                        key, tu.now_ts(), volatile=True)
                     sent += 1
         return sent
