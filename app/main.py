@@ -106,7 +106,7 @@ async def main() -> None:
 
     sync = SyncService(repo, fetch_schedule, on_changes=notifier.notify_changes, on_alert=alert)
     directory = DirectorySync(repo, lambda: crawl_directory(cfg.directory_url), on_alert=alert)
-    app.services.update({"sync": sync, "directory": directory, "spawn": app.spawn, "alert": alert})
+    app.services.update({"sync": sync, "directory": directory, "spawn": app.spawn, "alert": alert, "bot": bot})
 
     dp = Dispatcher()
     dp.include_router(tg.build_router(app))
