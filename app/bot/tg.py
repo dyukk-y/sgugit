@@ -665,7 +665,15 @@ def build_router(app: App) -> Router:
             return
         title = message.chat.title or chat.get("title") or "Без названия"
         if title != chat.get("title"):
+            previous = str(chat.get("title") or "Без названия")[:80]
             await app.repo.update_chat(message.chat.id, title=title)
+            try:
+                await app.repo.db.execute(
+                    "INSERT INTO analytics_events (user_id, event, detail, created_at) VALUES (?, 'group_renamed', ?, ?)",
+                    message.from_user.id if message.from_user else None,
+                    f"chat_id={message.chat.id};title={title[:80]};previous={previous}", tu.now_ts())
+            except Exception:
+                log.debug("Не удалось записать переименование группы %s", message.chat.id, exc_info=True)
         detail = f"chat_id={message.chat.id};title={title[:80]};action={action[:40]}"
         try:
             await app.repo.db.execute(
@@ -966,11 +974,25 @@ def build_router(app: App) -> Router:
             chat = await app.repo.get_chat(event.chat.id)
             if chat:
                 await app.repo.update_chat(event.chat.id, active=0)
+                detail = f"chat_id={event.chat.id};title={(event.chat.title or chat.get('title') or 'Без названия')[:80]};by={event.from_user.id if event.from_user else 'unknown'}"
+                try:
+                    await app.repo.db.execute(
+                        "INSERT INTO analytics_events (user_id, event, detail, created_at) VALUES (?, 'group_removed', ?, ?)",
+                        event.from_user.id if event.from_user else None, detail, tu.now_ts())
+                except Exception:
+                    log.debug("Не удалось записать удаление бота из группы %s", event.chat.id, exc_info=True)
             return
         if old in ("left", "kicked") and new in ("member", "administrator"):
             adder = await app.repo.get_user(event.from_user.id) if event.from_user else None
             gid = adder.get("group_id") if adder else None
             chat = await app.repo.upsert_chat(event.chat.id, event.chat.title, gid, event.from_user.id if event.from_user else None)
+            detail = f"chat_id={event.chat.id};title={(event.chat.title or 'Без названия')[:80]};by={event.from_user.id if event.from_user else 'unknown'}"
+            try:
+                await app.repo.db.execute(
+                    "INSERT INTO analytics_events (user_id, event, detail, created_at) VALUES (?, 'group_added', ?, ?)",
+                    event.from_user.id if event.from_user else None, detail, tu.now_ts())
+            except Exception:
+                log.debug("Не удалось записать добавление бота в группу %s", event.chat.id, exc_info=True)
             group = await app.repo.get_group(chat.get("group_id"))
             if group:
                 text = (f"👋 <b>Бот расписания СГУГиТ подключён!</b>\n"
