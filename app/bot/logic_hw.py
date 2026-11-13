@@ -177,6 +177,35 @@ def _preview(ctx: Ctx, data: dict) -> Screen:
     return Screen(text, kb)
 
 
+
+async def capture_group_assignment(ctx: Ctx, gid: int, text: str, author_id: int) -> dict | None:
+    """Автоматически сохраняет явно обозначенное задание из привязанного группового чата."""
+    from app.services.nlu import parse_observed_hw
+
+    catalog = await ctx.repo.subject_catalog()
+    phrase = parse_observed_hw(text, catalog, ctx.today)
+    if not phrase:
+        return None
+    group_subjects = await ctx.repo.upcoming_subjects(
+        gid, tu.iso(ctx.today), tu.iso(ctx.today + timedelta(days=90)))
+    subject = next((s for s in group_subjects if s.casefold() == phrase.subject.casefold()), None)
+    if not subject:
+        return None
+    lessons = await ctx.repo.next_lessons(gid, tu.iso(ctx.today), 60)
+    matching = [l for l in lessons if l["subject"].casefold() == subject.casefold()
+                and not l.get("cancelled") and l["day"] >= tu.iso(ctx.today)]
+    lesson_day = matching[0]["day"] if matching else None
+    due_day = tu.iso(phrase.due) if phrase.due else lesson_day
+    duplicate = await ctx.repo.db.fetchone(
+        "SELECT id FROM homework WHERE group_id = ? AND subject = ? AND text = ? "
+        "AND status <> 'deleted' AND created_at >= ? ORDER BY id DESC LIMIT 1",
+        gid, subject, phrase.text, tu.now_ts() - 86400)
+    if duplicate:
+        return {"duplicate": True, "subject": subject, "lesson_day": lesson_day, "due_day": due_day}
+    hid = await ctx.repo.add_hw(gid, subject, lesson_day, phrase.text, due_day, author_id, "approved")
+    return {"duplicate": False, "id": hid, "subject": subject, "lesson_day": lesson_day, "due_day": due_day}
+
+
 async def quick_add(ctx: Ctx, phrase: HwPhrase) -> Out:
     gid = ctx.user.get("group_id")
     if not gid or not ctx.verified:
