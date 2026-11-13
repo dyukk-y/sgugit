@@ -327,29 +327,64 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
 
     if name == "changes":
         if intent.day is not None:
-            rows = await repo.db.fetchall(
-                "SELECT day, lesson_num, action, subject, start_t, end_t, author_label "
-                "FROM group_schedule_changes WHERE group_id = ? AND status = 'applied' AND day = ? "
-                "ORDER BY created_at DESC LIMIT 15", gid, tu.iso(intent.day))
+            d1 = d2 = tu.iso(intent.day)
             title = f"Изменения расписания · {tu.fmt_date(intent.day)}"
         else:
-            rows = await repo.db.fetchall(
-                "SELECT day, lesson_num, action, subject, start_t, end_t, author_label "
-                "FROM group_schedule_changes WHERE group_id = ? AND status = 'applied' "
-                "AND day >= ? AND day <= ? ORDER BY day, created_at DESC LIMIT 15",
-                gid, tu.iso(ctx.today - timedelta(days=14)), tu.iso(ctx.today + timedelta(days=30)))
+            d1, d2 = tu.iso(ctx.today - timedelta(days=14)), tu.iso(ctx.today + timedelta(days=30))
             title = "Изменения расписания · последние 2 недели и ближайший месяц"
-        if not rows:
-            return Screen("Подтверждённых изменений расписания за этот период не нашёл.")
+
         lines = [f"<b>{title}</b>"]
-        for change in rows:
-            day = tu.fmt_date(tu.parse_iso(change["day"]))
+        # История принятых изменений, предложенных в групповом чате.
+        proposals = await repo.db.fetchall(
+            "SELECT day, lesson_num, action, subject, start_t, end_t, author_label "
+            "FROM group_schedule_changes WHERE group_id = ? AND status = 'applied' "
+            "AND day >= ? AND day <= ? ORDER BY day, created_at DESC LIMIT 15",
+            gid, d1, d2)
+        for change in proposals:
+            day_label = tu.fmt_date(tu.parse_iso(change["day"]))
             action = {"cancel": "отменена", "add": "добавлена", "move": "перенесена"}.get(change["action"], "изменена")
             slot = f" · пара №{change['lesson_num']}"
             if change.get("start_t") and change.get("end_t"):
                 slot += f" ({change['start_t']}–{change['end_t']})"
             author = f" · сообщил(а) {fm.esc(change['author_label'])}" if change.get("author_label") else ""
-            lines.append(f"• <b>{day}</b>: «{fm.esc(change['subject'])}» {action}{slot}{author}")
+            lines.append(f"• <b>{day_label}</b>: «{fm.esc(change['subject'])}» {action}{slot}{author}")
+
+        # Сравниваем два последних снимка сайта, чтобы видеть изменения обычной синхронизации тоже.
+        snapshots = await repo.list_snapshots()
+        if len(snapshots) >= 2:
+            latest = await repo.load_snapshot(snapshots[0]["id"])
+            previous = await repo.load_snapshot(snapshots[1]["id"])
+            group_key = str(group["name"]).casefold()
+            def by_slot(records):
+                return {(item.day, int(item.num), item.subgroup): item for item in (records or [])
+                        if item.group.casefold() == group_key and d1 <= item.day <= d2}
+            old_slots, new_slots = by_slot(previous), by_slot(latest)
+            snapshot_changes = []
+            for slot in sorted(set(old_slots) | set(new_slots)):
+                old_item, new_item = old_slots.get(slot), new_slots.get(slot)
+                day_value, number, subgroup_value = slot
+                day_label = tu.fmt_date(tu.parse_iso(day_value))
+                if old_item is None and new_item is not None:
+                    snapshot_changes.append(
+                        f"• <b>{day_label}</b>: добавлена пара №{number} «{fm.esc(new_item.subject)}» "
+                        f"({new_item.start}–{new_item.end})")
+                elif new_item is None and old_item is not None:
+                    snapshot_changes.append(
+                        f"• <b>{day_label}</b>: пара №{number} «{fm.esc(old_item.subject)}» исчезла из расписания сайта")
+                elif old_item is not None and new_item is not None:
+                    old_values = (old_item.start, old_item.end, old_item.subject, old_item.teacher, old_item.room, old_item.kind)
+                    new_values = (new_item.start, new_item.end, new_item.subject, new_item.teacher, new_item.room, new_item.kind)
+                    if old_values != new_values:
+                        snapshot_changes.append(
+                            f"• <b>{day_label}</b>: пара №{number} изменена — "
+                            f"«{fm.esc(old_item.subject)}» {old_item.start}–{old_item.end} → "
+                            f"«{fm.esc(new_item.subject)}» {new_item.start}–{new_item.end}")
+            if snapshot_changes:
+                lines.append("\n<b>Изменения при последней синхронизации с сайтом</b>")
+                lines.extend(snapshot_changes[:10])
+
+        if len(lines) == 1:
+            return Screen("Подтверждённых изменений за этот период не нашёл.")
         return Screen("\n".join(lines))
 
     if name == "hw":
