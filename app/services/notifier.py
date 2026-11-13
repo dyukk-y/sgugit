@@ -1,6 +1,8 @@
 """Уведомления: вечерняя сводка, напоминания перед парой, изменения расписания, сводки в чатах."""
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Awaitable, Callable
@@ -126,16 +128,27 @@ class Notifier:
             group = await self.repo.get_group(gid)
             if not group:
                 continue
+            # Один и тот же ApplyResult может быть повторно обработан после сбоя/повтора
+            # фоновой задачи. Фиксируем событие отдельно для каждого получателя.
+            payload = json.dumps(changes, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            fingerprint = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
+            event_key = f"sch:{gid}:{fingerprint}"
             text = fm.changes_text(group["name"], changes)
             kb = [[Btn("📅 Расписание", "s:d:today")]]
             users = await self.repo.db.fetchall(
                 "SELECT id FROM users WHERE group_id = ? AND n_enabled = 1 AND n_changes = 1 AND banned = 0 AND bot_blocked = 0", gid)
             for u in users:
-                await self.send(u["id"], Screen(text, kb))
+                uid = int(u["id"])
+                if not await self.repo.first_time(f"{event_key}:u:{uid}"):
+                    continue
+                await self.send(uid, Screen(text, kb))
                 sent += 1
-            for c in await self.repo.chats_for_group(gid):
-                if not c.get("notifications_on", 1) or not c.get("changes_on", 1):
+            for chat in await self.repo.chats_for_group(gid):
+                if not chat.get("notifications_on", 1) or not chat.get("changes_on", 1):
                     continue  # общий выключатель и отдельная настройка изменений
-                await self.send(c["chat_id"], Screen(text))
+                chat_id = int(chat["chat_id"])
+                if not await self.repo.first_time(f"{event_key}:c:{chat_id}"):
+                    continue
+                await self.send(chat_id, Screen(text))
                 sent += 1
         return sent
