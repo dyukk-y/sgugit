@@ -1043,6 +1043,36 @@ def build_router(app: App) -> Router:
             except TelegramAPIError:
                 log.warning("Не удалось отправить приветствие в чат %s", event.chat.id)
 
+    @r.message(group, F.new_chat_title)
+    async def group_title_changed(message: Message) -> None:
+        chat = await app.repo.get_chat(message.chat.id)
+        if not chat:
+            return
+        title = message.new_chat_title or message.chat.title or "Без названия"
+        previous = str(chat.get("title") or "Без названия")[:80]
+        await app.repo.update_chat(message.chat.id, title=title)
+        try:
+            await app.repo.db.execute(
+                "INSERT INTO analytics_events (user_id, event, detail, created_at) VALUES (?, 'group_renamed', ?, ?)",
+                message.from_user.id if message.from_user else None,
+                f"chat_id={message.chat.id};title={title[:80]};previous={previous}", tu.now_ts())
+        except Exception:
+            log.debug("Не удалось записать переименование группы %s", message.chat.id, exc_info=True)
+
+    @r.message(group, F.new_chat_photo)
+    async def group_photo_changed(message: Message) -> None:
+        chat = await app.repo.get_chat(message.chat.id)
+        if not chat:
+            return
+        title = message.chat.title or chat.get("title") or "Без названия"
+        try:
+            await app.repo.db.execute(
+                "INSERT INTO analytics_events (user_id, event, detail, created_at) VALUES (?, 'group_photo_changed', ?, ?)",
+                message.from_user.id if message.from_user else None,
+                f"chat_id={message.chat.id};title={title[:80]}", tu.now_ts())
+        except Exception:
+            log.debug("Не удалось записать изменение аватарки группы %s", message.chat.id, exc_info=True)
+
     @r.message(group, F.text.startswith("/"))
     async def group_command(message: Message) -> None:
         if message.from_user is None or message.from_user.is_bot:
