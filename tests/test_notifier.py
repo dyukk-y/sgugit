@@ -47,6 +47,25 @@ class T(unittest.TestCase):
             duplicate_cnt = await n.notify_changes(res)
             self.assertEqual(duplicate_cnt, 0)
             self.assertEqual(sent, [])  # повторная обработка того же изменения не дублирует рассылку
+
+            # Если Telegram временно недоступен, ключ доставки не должен фиксироваться заранее.
+            failed_once = False
+            retry_sent = []
+            async def flaky_send(cid, screen):
+                nonlocal failed_once
+                if not failed_once:
+                    failed_once = True
+                    raise RuntimeError("temporary Telegram failure")
+                retry_sent.append((cid, screen.text))
+
+            retry_notifier = Notifier(r, flaky_send)
+            await r.apply_lessons([L(fut, 1, "Химия", "09:30", "11:05")], manual=False)
+            retry_result = await r.apply_lessons([L(fut, 1, "Химия", "10:00", "11:35")], manual=False)
+            with self.assertRaises(RuntimeError):
+                await retry_notifier.notify_changes(retry_result)
+            retry_count = await retry_notifier.notify_changes(retry_result)
+            self.assertEqual(retry_count, 3)
+            self.assertEqual(len(retry_sent), 3)
             await db.close()
         asyncio.run(go())
 if __name__ == "__main__":
