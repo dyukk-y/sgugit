@@ -10,7 +10,6 @@ import re
 
 
 _LESSON_HEAD = re.compile(r"^(?:<s>)?<b>\d{2}</b>")
-_STATUS_SUBJECT = re.compile(r"(?:Сейчас идёт|Следующая):?\s*<b>(.*?)</b>")
 
 
 def _lesson_card(lines: list[str]) -> str:
@@ -30,18 +29,9 @@ def schedule_rich_html(text: str) -> str:
     if not lines:
         return ""
 
-    status_subjects = {
-        match.group(1)
-        for line in lines
-        if line.startswith(("▶️", "⏭"))
-        for match in [_STATUS_SUBJECT.search(line)]
-        if match
-    }
-
     blocks: list[str] = []
     loose_lines: list[str] = []
     day_open = False
-    day_count = 0
     current_day_lines: list[str] = []
 
     def flush_loose() -> None:
@@ -51,7 +41,7 @@ def schedule_rich_html(text: str) -> str:
             loose_lines = []
 
     def flush_day() -> None:
-        nonlocal day_open, current_day_lines, day_count
+        nonlocal day_open, current_day_lines
         if not day_open:
             return
         rendered = _render_day_lines(current_day_lines)
@@ -61,7 +51,6 @@ def schedule_rich_html(text: str) -> str:
         blocks.append(f"<details{opened}><summary>{current_day_title}</summary>{rendered}</details>")
         day_open = False
         current_day_lines = []
-        day_count += 1
 
     current_day_title = ""
 
