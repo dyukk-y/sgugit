@@ -64,7 +64,7 @@ class Notifier:
             hw = await self.repo.hw_counts_for_day(u["group_id"], tu.iso(tomorrow))
             text = "🌙 <b>Расписание на завтра</b>\n\n" + fm.day_text(tomorrow, lessons, _parity(self.repo, tomorrow), hw)
             kb = [[Btn("📅 Открыть расписание", "s:d:tom")]]
-            await self.send(u["id"], Screen(text, kb))
+            await self.send(u["id"], Screen(text, kb, rich=True))
 
     # ---------- перед парой ----------
     async def _before_lesson(self, now: datetime) -> None:
@@ -117,9 +117,9 @@ class Notifier:
                 cleanup_at = int(tu.local_to_utc(tomorrow, tu.min_to_hhmm(last_end)).timestamp())
                 if cleanup_at > int(now.timestamp()):
                     text += f"\\n\\n📌 Закреплено до окончания последней пары ({tu.min_to_hhmm(last_end)}), затем сообщение удалится."
-                    if await self.pin(c["chat_id"], Screen(text), cleanup_at):
+                    if await self.pin(c["chat_id"], Screen(text, rich=True), cleanup_at):
                         continue
-            await self.send(c["chat_id"], Screen(text))
+            await self.send(c["chat_id"], Screen(text, rich=True))
 
     # ---------- изменения расписания ----------
     async def notify_changes(self, result: ApplyResult) -> int:
