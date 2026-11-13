@@ -1,6 +1,7 @@
 """Уведомления: вечерняя сводка, напоминания перед парой, изменения расписания, сводки в чатах."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -31,6 +32,7 @@ def _parity(repo: Repo, d) -> str | None:
 class Notifier:
     def __init__(self, repo: Repo, send: SendFn, pin: PinFn | None = None):
         self.repo, self.send, self.pin = repo, send, pin
+        self._changes_lock = asyncio.Lock()
 
     async def tick(self, now: datetime | None = None) -> None:
         now = now or tu.now_local()
@@ -124,31 +126,40 @@ class Notifier:
         sent = 0
         if not self.repo.flag("notify_changes"):  # главный выключатель в «Настройки» админ-панели
             return 0
-        for gid, changes in result.changes.items():
-            group = await self.repo.get_group(gid)
-            if not group:
-                continue
-            # Один и тот же ApplyResult может быть повторно обработан после сбоя/повтора
-            # фоновой задачи. Фиксируем событие отдельно для каждого получателя.
-            payload = json.dumps(changes, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-            fingerprint = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
-            event_key = f"sch:{gid}:{result.event_id}:{fingerprint}"
-            text = fm.changes_text(group["name"], changes)
-            kb = [[Btn("📅 Расписание", "s:d:today")]]
-            users = await self.repo.db.fetchall(
-                "SELECT id FROM users WHERE group_id = ? AND n_enabled = 1 AND n_changes = 1 AND banned = 0 AND bot_blocked = 0", gid)
-            for u in users:
-                uid = int(u["id"])
-                if not await self.repo.first_time(f"{event_key}:u:{uid}"):
+        async with self._changes_lock:
+            for gid, changes in result.changes.items():
+                group = await self.repo.get_group(gid)
+                if not group:
                     continue
-                await self.send(uid, Screen(text, kb))
-                sent += 1
-            for chat in await self.repo.chats_for_group(gid):
-                if not chat.get("notifications_on", 1) or not chat.get("changes_on", 1):
-                    continue  # общий выключатель и отдельная настройка изменений
-                chat_id = int(chat["chat_id"])
-                if not await self.repo.first_time(f"{event_key}:c:{chat_id}"):
-                    continue
-                await self.send(chat_id, Screen(text))
-                sent += 1
+                # Ключ сохраняется только после успешной отправки. Если Telegram временно
+                # недоступен, следующий проход сможет повторить доставку.
+                payload = json.dumps(changes, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                fingerprint = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
+                event_key = f"sch:{gid}:{result.event_id}:{fingerprint}"
+                text = fm.changes_text(group["name"], changes)
+                kb = [[Btn("📅 Расписание", "s:d:today")]]
+                users = await self.repo.db.fetchall(
+                    "SELECT id FROM users WHERE group_id = ? AND n_enabled = 1 AND n_changes = 1 AND banned = 0 AND bot_blocked = 0", gid)
+                for u in users:
+                    uid = int(u["id"])
+                    key = f"{event_key}:u:{uid}"
+                    if await self.repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key):
+                        continue
+                    await self.send(uid, Screen(text, kb))
+                    await self.repo.db.execute(
+                        "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
+                        key, now_ts(), volatile=True)
+                    sent += 1
+                for chat in await self.repo.chats_for_group(gid):
+                    if not chat.get("notifications_on", 1) or not chat.get("changes_on", 1):
+                        continue
+                    chat_id = int(chat["chat_id"])
+                    key = f"{event_key}:c:{chat_id}"
+                    if await self.repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key):
+                        continue
+                    await self.send(chat_id, Screen(text))
+                    await self.repo.db.execute(
+                        "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
+                        key, now_ts(), volatile=True)
+                    sent += 1
         return sent
