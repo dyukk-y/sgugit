@@ -168,7 +168,7 @@ async def _group_card(ctx: Ctx, chat_id: int) -> Out:
     lines = [
         f"<b>🏘 {fm.esc(title)}</b>",
         f"Тип: {fm.esc(str(chat_type))} · статус: {'🟢 активен' if row.get('active') else '⚪ отключён'}",
-        f"Участников: <b>{members if members is not None else 'не удалось получить'}</b>",
+        f"Участников: <b>{members if members is not None else ('бот удалён из чата' if not row.get('active') else 'нет данных')}</b>",
         f"ID: <code>{chat_id}</code>",
         f"Учебная группа: <b>{fm.esc(group['name']) if group else 'не привязана'}</b>",
         "",
@@ -180,7 +180,7 @@ async def _group_card(ctx: Ctx, chat_id: int) -> Out:
           [Btn("◀ К списку групп", "ad:groups")], nav("ad:menu")]
     out = Out(screen=Screen("\n".join(lines), kb))
     if photo_id:
-        out.media = (photo_id, "photo", f"🏘 {title}")
+        out.media = (photo_id, "photo", f"🏘 {fm.esc(title)}")
     return out
 
 
