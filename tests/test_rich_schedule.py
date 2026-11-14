@@ -34,7 +34,7 @@ class RichScheduleTests(unittest.TestCase):
         self.assertIn("<p><b>Неделя 16.11–22.11</b></p>", result)
         self.assertNotIn("<h1>", result)
         self.assertIn("<details open><summary>Понедельник, 16.11</summary>", result)
-        self.assertIn("<details><summary>Вторник, 17.11 — занятий нет 🎉</summary>", result)
+        self.assertIn("<details open><summary>Вторник, 17.11 — занятий нет 🎉</summary>", result)
         self.assertIn("<details open><summary><b>01</b>", result)
 
     def test_cancelled_and_manual_notes_are_kept(self):
