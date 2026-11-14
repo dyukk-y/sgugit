@@ -21,6 +21,7 @@ def _auto_context(base: FioContext, official_surnames: set[str]) -> FioContext:
         known_surnames=frozenset(trusted),
         staff_pairs=base.staff_pairs,
         require_known_surname=True,
+        official_only=True,
     )
 
 
