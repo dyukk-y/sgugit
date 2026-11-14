@@ -72,5 +72,76 @@ class T(unittest.TestCase):
             self.assertEqual(len(retry_sent), 3)
             await db.close()
         asyncio.run(go())
+class TeacherNotifications(unittest.TestCase):
+    def test_teacher_evening_and_before_lesson_notifications(self):
+        async def go():
+            db = Database("sqlite:///:memory:")
+            await db.connect()
+            await migrate(db)
+            repo = Repo(db)
+            await repo.load_settings()
+            await repo.apply_lessons([
+                L("2026-10-14", 1, "Математика", "08:30", "10:05"),
+                L("2026-10-15", 1, "Физика", "09:00", "10:35"),
+            ], manual=False)
+            teacher_id = (await repo.search_teachers("Иванов", limit=10))[0]["id"]
+            await repo.ensure_user(77)
+            await repo.set_teacher_account(77, teacher_id)
+            await repo.update_user(77, n_enabled=1, n_evening=1, n_evening_time="20:00", n_before=30, n_changes=1)
+            sent = []
+            async def send(uid, screen):
+                sent.append((uid, screen))
+            notifier = Notifier(repo, send)
+
+            await notifier.tick(at(8, 0))
+            self.assertEqual(len(sent), 1)
+            self.assertEqual(sent[0][0], 77)
+            self.assertIn("До вашей пары", sent[0][1].text)
+            self.assertIn("Математика", sent[0][1].text)
+            self.assertTrue(sent[0][1].rich)
+            self.assertEqual(sent[0][1].kb[0][0].data, "p:day:2026-10-14")
+
+            sent.clear()
+            await notifier.tick(at(20, 0))
+            self.assertEqual(len(sent), 1)
+            self.assertEqual(sent[0][0], 77)
+            self.assertIn("Ваше расписание на завтра", sent[0][1].text)
+            self.assertIn("Физика", sent[0][1].text)
+            self.assertTrue(sent[0][1].rich)
+            self.assertEqual(sent[0][1].kb[0][0].data, "p:day:tom")
+
+            sent.clear()
+            await notifier.tick(at(20, 1))
+            self.assertEqual(sent, [])
+            await db.close()
+        asyncio.run(go())
+
+    def test_teacher_receives_relevant_schedule_change_alert(self):
+        async def go():
+            db = Database("sqlite:///:memory:")
+            await db.connect()
+            await migrate(db)
+            repo = Repo(db)
+            await repo.load_settings()
+            day = tu.iso(tu.today() + timedelta(days=3))
+            await repo.apply_lessons([L(day, 1, "Математика", "08:30", "10:05")], manual=False)
+            teacher_id = (await repo.search_teachers("Иванов", limit=10))[0]["id"]
+            await repo.ensure_user(78)
+            await repo.set_teacher_account(78, teacher_id)
+            await repo.update_user(78, n_enabled=1, n_changes=1)
+            await repo.apply_lessons([L(day, 1, "Математика", "09:00", "10:35")], manual=False)
+            result = await repo.apply_lessons([L(day, 1, "Математика", "09:30", "11:05")], manual=False)
+            sent = []
+            async def send(uid, screen):
+                sent.append((uid, screen))
+            count = await Notifier(repo, send).notify_changes(result)
+            self.assertEqual(count, 1)
+            self.assertEqual(sent[0][0], 78)
+            self.assertIn("ваших занятий", sent[0][1].text)
+            self.assertTrue(sent[0][1].rich)
+            await db.close()
+        asyncio.run(go())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -275,12 +275,15 @@ async def notif_screen(ctx: Ctx) -> Screen:
     enabled = bool(u.get("n_enabled", 1))
     ev, ch = bool(u["n_evening"]), bool(u["n_changes"])
     before = int(u["n_before"] or 0)
-    lines = ["<b>🔔 Уведомления</b>",
-             "Нажмите на пункт, чтобы включить или выключить его. Состояние написано на кнопке.", ""]
+    heading = "🔔 Уведомления преподавателя" if ctx.role == "teacher" else "🔔 Уведомления"
+    hint = ("Уведомления относятся ко всем занятиям, которые найдены в вашем преподавательском расписании. "
+            "Нажмите на пункт, чтобы изменить настройку." if ctx.role == "teacher"
+            else "Нажмите на пункт, чтобы включить или выключить его. Состояние написано на кнопке.")
+    lines = [f"<b>{heading}</b>", hint, ""]
     lines.append(f"Все уведомления: {'включены' if enabled else 'ВЫКЛЮЧЕНЫ'}")
-    lines.append(f"🌙 Вечерняя сводка: {'в ' + u['n_evening_time'] if ev else 'выкл'}")
-    lines.append(f"⏰ Перед парой: {'за ' + str(before) + ' мин' if before else 'выкл'}")
-    lines.append(f"🔄 Изменения в расписании: {'присылать' if ch else 'не присылать'}")
+    lines.append(f"🌙 Расписание на завтра: {'в ' + u['n_evening_time'] if ev else 'выкл'}")
+    lines.append(f"⏰ Напоминание перед занятием: {'за ' + str(before) + ' мин' if before else 'выкл'}")
+    lines.append(f"🔄 Изменения расписания: {'присылать' if ch else 'не присылать'}")
     if not enabled:
         lines.append("\nСейчас ничего не приходит. Отдельные настройки сохранены и заработают после включения.")
     elif not ctx.repo.flag("notify_changes") and ch:

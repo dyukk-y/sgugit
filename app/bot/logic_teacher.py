@@ -34,19 +34,35 @@ async def menu(ctx: Ctx) -> Screen:
     if not account:
         return Screen("Профиль преподавателя не найден. Пройдите регистрацию по фамилии.",
                       [[Btn("👨‍🏫 Найти себя в справочнике", "p:register")], [Btn("🏠 Студенческий режим", "p:student")]])
+    today = await ctx.repo.teacher_lessons(*_teacher_name(account), tu.iso(ctx.today), tu.iso(ctx.today))
+    active = [l for l in today if not l.get("cancelled")]
+    current, upcoming = fm.now_status(active, ctx.now)
+    if current:
+        status = (f"▶️ Сейчас идёт: <b>{fm.esc(current['subject'])}</b> "
+                  f"· до {fm.esc(current['end_t'])}")
+    elif upcoming:
+        status = (f"⏭ Следующая пара: <b>{fm.esc(upcoming['subject'])}</b> "
+                  f"· {fm.esc(upcoming['start_t'])}–{fm.esc(upcoming['end_t'])}")
+    elif active:
+        status = "На сегодня занятия закончились."
+    else:
+        status = "Сегодня занятий нет. Можно посмотреть расписание на завтра или неделю."
     rows: Kb = [
-        [Btn("📅 Моё расписание", "p:day:today")],
-        [Btn("⏭ Ближайшая пара", "p:next")],
+        [Btn("📅 Расписание на сегодня", "p:day:today")],
+        [Btn("🌅 Расписание на завтра", "p:day:tom"), Btn("📆 На неделю", "p:week:cur")],
+        [Btn("⏭ Ближайшая пара", "p:next"), Btn("🗓 Календарь", f"p:cal:{ctx.today.year}-{ctx.today.month:02d}")],
+        [Btn("🔔 Уведомления", "p:notify"), Btn("📥 В календарь телефона", "p:ics")],
         [Btn("🏫 Свободные аудитории", "p:rooms")],
-        [Btn("🔎 Найти преподавателя", "p:find")],
+        [Btn("🔎 Найти коллегу", "p:find")],
         [Btn("💬 Поддержка", "me:fb"), Btn("❓ Помощь", "p:help")],
         [Btn("🔄 Сменить преподавателя", "p:change")],
         [Btn("🎓 Студенческий режим", "p:student")],
     ]
-    today = await ctx.repo.teacher_lessons(*_teacher_name(account), tu.iso(ctx.today), tu.iso(ctx.today))
-    active = [l for l in today if not l.get("cancelled")]
-    status = "Сегодня пар нет." if not active else f"Сегодня запланировано пар: <b>{len(active)}</b>."
-    return Screen(f"🧑‍🏫 <b>Кабинет преподавателя</b>\n{fm.esc(account['name'])}\n\n{status}\nВыберите нужный раздел.", rows)
+    count = len(active)
+    intro = (f"🧑‍🏫 <b>Кабинет преподавателя</b>\n{fm.esc(account['name'])}\n\n"
+             f"{status}\n\nСегодня занятий: <b>{count}</b>. "
+             "Все разделы открываются кнопками ниже.")
+    return Screen(intro, rows)
 
 
 def _day_token(token: str, today: date) -> date:
@@ -314,17 +330,36 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         return Out(screen=await next_screen(ctx), clear_state=True)
     if act == "rooms":
         return Out(screen=await free_rooms_screen(ctx), clear_state=True)
+    if act == "notify":
+        from app.bot import logic_user
+        return Out(screen=await logic_user.notif_screen(ctx), clear_state=True)
+    if act == "ics":
+        account = await ctx.repo.teacher_account(ctx.uid)
+        if not account:
+            return Out(screen=await menu(ctx))
+        surname, initials = _teacher_name(account)
+        until = ctx.today + timedelta(days=60)
+        rows = await ctx.repo.teacher_lessons(surname, initials, tu.iso(ctx.today), tu.iso(until))
+        rows = [lesson for lesson in rows if not lesson.get("cancelled")]
+        if not rows:
+            return Out(toast="В ближайшие 60 дней занятий нет", alert=True)
+        return Out(file=("teacher_schedule.ics", fm.make_ics(rows, account["name"]),
+                         "Расписание преподавателя на 60 дней. Откройте файл, чтобы добавить занятия в календарь телефона."),
+                   toast="Файл календаря отправлен")
     if act == "find":
         return Out(screen=Screen("Напишите фамилию преподавателя (можно с инициалами). Покажу, какая пара идёт сейчас или когда будет ближайшая.",
                                  [nav("p:menu")]), state="p:find", state_data={})
     if act == "help":
-        help_text = ("<b>Помощь · кабинет преподавателя</b>\n"
-                     "• <b>Моё расписание</b> — пары на сегодня, завтра, неделю и выбранную дату. В карточке есть время, предмет, тип, аудитория и учебная группа.\n"
-                     "• <b>Ближайшая пара</b> — показывает занятие, которое идёт сейчас, или следующее по расписанию.\n"
-                     "• <b>Свободные аудитории</b> — аудитории, которые сейчас не заняты по расписанию. Этаж определяется по трёхзначному номеру, если он указан.\n"
-                     "• <b>Найти преподавателя</b> — покажет текущую или ближайшую пару коллеги.\n"
-                     "• <b>Поддержка</b> — личное обращение к администрации бота.\n\n"
-                     "<i>Расписание и свободные аудитории рассчитываются по данным, загруженным ботом. Фактические изменения вне системы могут не отображаться.</i>")
+        help_text = ("<b>Как пользоваться кабинетом преподавателя</b>\n\n"
+                     "📅 <b>Расписание на сегодня</b> — все ваши занятия на текущий день. Нажмите «Завтра» или «На неделю», чтобы перейти к другому периоду. Стрелки листают дни, кнопка «Дата» открывает календарь.\n\n"
+                     "⏭ <b>Ближайшая пара</b> — показывает занятие, которое идёт сейчас, или следующее занятие.\n\n"
+                     "🔔 <b>Уведомления</b> — можно включить сводку накануне, напоминания перед занятиями и сообщения об изменениях расписания. Время и интервал настраиваются отдельно.\n\n"
+                     "📥 <b>В календарь телефона</b> — отправляет файл расписания на ближайшие 60 дней. Откройте его на телефоне и добавьте события в календарь.\n\n"
+                     "🏫 <b>Свободные аудитории</b> — показывает аудитории, которые по загруженному расписанию сейчас свободны.\n"
+                     "🔎 <b>Найти коллегу</b> — найдёт текущую или ближайшую пару другого преподавателя.\n"
+                     "💬 <b>Поддержка</b> — личное обращение к администрации бота.\n\n"
+                     "Если потерялись, нажмите «Кабинет преподавателя» или «Меню» — вы всегда вернётесь на главный экран.\n\n"
+                     "<i>Информация строится по расписанию, загруженному ботом. Внеплановые изменения могут появиться не сразу.</i>")
         return Out(screen=Screen(help_text, [[Btn("🌐 Сайт СГУГиТ", url="https://sgugit.ru/")], nav("p:menu")]), clear_state=True)
     return Out(toast="Неизвестное действие")
 
