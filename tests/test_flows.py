@@ -230,11 +230,12 @@ class T(unittest.TestCase):
     def test_detailed_schedule_answers_use_rich_cards(self):
         async def go():
             s = await Sim().setup(); await s.register(100)
-            for question in ("какая завтра первая пара?", "где завтра вторая пара", "кто ведёт физику", "когда физика"):
+            for question in ("какая завтра первая пара?", "где завтра вторая пара", "кто ведёт физику", "когда физика", "какая следующая пара?"):
                 out = await s.do(100, text=question)
                 self.assertIsNotNone(out.screen, question)
                 self.assertTrue(out.screen.rich, question)
                 self.assertIn("Математика" if "первая" in question else
+                              "История" if "следующая" in question else
                               "Физика" if "физика" in question else "215", out.screen.text)
             await s.db.close()
         run(go())
