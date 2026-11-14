@@ -220,18 +220,18 @@ async def next_lesson_text(ctx: Ctx, gid: int, subgroup: int | None) -> str:
     if cur:
         e = tu.hhmm_to_min(cur["end_t"]) or 0
         left = e - (ctx.now.hour * 60 + ctx.now.minute)
-        lines.append(f"▶️ <b>Сейчас идёт</b> (ещё {tu.fmt_duration(max(left, 1))})\n{fm.short_lesson(cur)}")
+        lines.append(f"▶️ <b>Сейчас идёт</b> (ещё {tu.fmt_duration(max(left, 1))})\n" + "\n".join(fm._lesson_compact_lines(cur)))
     if nxt:
         s = tu.hhmm_to_min(nxt["start_t"]) or 0
         left = s - (ctx.now.hour * 60 + ctx.now.minute)
-        lines.append(f"⏭ <b>Дальше</b> (через {tu.fmt_duration(max(left, 1))})\n{fm.short_lesson(nxt)}")
+        lines.append(f"⏭ <b>Дальше</b> (через {tu.fmt_duration(max(left, 1))})\n" + "\n".join(fm._lesson_compact_lines(nxt)))
     if not nxt:
         future = await ctx.repo.next_lessons(gid, tu.iso(ctx.today + timedelta(days=1)), 21, subgroup)
         future = [l for l in future if not l.get("cancelled")]
         if future:
             l = future[0]
             d = tu.parse_iso(l["day"])
-            lines.append(f"⏭ <b>Следующая пара — {fm.when_word(d, ctx.today)}</b> ({tu.fmt_date(d)})\n{fm.short_lesson(l)}")
+            lines.append(f"⏭ <b>Следующая пара — {fm.when_word(d, ctx.today)}</b> ({tu.fmt_date(d)})\n" + "\n".join(fm._lesson_compact_lines(l)))
     if not lines:
         return "Ближайших занятий в расписании не нашёл."
     return "\n\n".join(lines)
@@ -524,5 +524,5 @@ async def _answer_subject_day(ctx: Ctx, intent: Intent, gid: int, subgroup: int 
     if nxt:
         nd = tu.parse_iso(nxt[0]["day"])
         text += (f"\n📅 <b>{tu.DAYS_FULL[nd.weekday()]}, {tu.fmt_date(nd)}</b>"
-                 f"\n{fm.short_lesson(nxt[0])}")
+                 f"\n" + "\n".join(fm._lesson_compact_lines(nxt[0])))
     return Screen(text, kb_for(nxt and tu.parse_iso(nxt[0]["day"]) or d), rich=bool(nxt))
