@@ -21,7 +21,7 @@ class RichScheduleTests(unittest.TestCase):
         self.assertIn("<details open><summary><b>01</b>", result)
         self.assertIn("📍 301", result)
 
-    def test_week_days_are_independent_collapsible_sections(self):
+    def test_week_days_are_all_expanded_and_independent(self):
         source = (
             "<b>Неделя 16.11–22.11</b>\n"
             "📅 <b>Понедельник, 16.11</b>\n"
@@ -34,7 +34,7 @@ class RichScheduleTests(unittest.TestCase):
         self.assertIn("<p><b>Неделя 16.11–22.11</b></p>", result)
         self.assertNotIn("<h1>", result)
         self.assertIn("<details open><summary>Понедельник, 16.11</summary>", result)
-        self.assertIn("<details><summary>Вторник, 17.11 — занятий нет 🎉</summary>", result)
+        self.assertIn("<details open><summary>Вторник, 17.11 — занятий нет 🎉</summary>", result)
         self.assertIn("<details open><summary><b>01</b>", result)
 
     def test_cancelled_and_manual_notes_are_kept(self):
