@@ -254,7 +254,7 @@ def parse_observed_hw(text: str, catalog: list[tuple[str, str]], today: date) ->
             continue
         alias_text = alias.strip()
         if len(alias_text) >= 2:
-            body = re.sub(r"(?<!\w)" + re.escape(alias_text) + r"(?!\w)", " ", body, flags=re.I)
+            body = re.sub(r"(?<!\w)" + re.escape(alias_text) + r"[а-яё]*(?!\w)", " ", body, flags=re.I)
     body = re.sub(r"\b(?:по|предмету|домашнее|задание|задали|дз|д/з|на|до|к)\b", " ", body, flags=re.I)
     body = " ".join(body.split()).strip(" :,-–—.;")
     if len(body) < 3 or not re.search(r"[A-Za-zА-Яа-яЁё0-9]", body):
