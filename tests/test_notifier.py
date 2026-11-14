@@ -72,6 +72,64 @@ class T(unittest.TestCase):
             self.assertEqual(len(retry_sent), 3)
             await db.close()
         asyncio.run(go())
+class StudentReminderReliability(unittest.TestCase):
+    def test_cancelled_lesson_does_not_trigger_reminder(self):
+        async def go():
+            db = Database("sqlite:///:memory:")
+            await db.connect()
+            await migrate(db)
+            repo = Repo(db)
+            await repo.load_settings()
+            group = await repo.get_or_create_group("ИС-11")
+            await repo.ensure_user(90)
+            await repo.update_user(90, group_id=group["id"], n_enabled=1, n_before=30)
+            async def cancelled_lessons(gid, day):
+                return [{
+                    "id": 900, "day": day, "num": 1, "start_t": "08:30", "end_t": "10:05",
+                    "subgroup": None, "cancelled": True, "subject": "Математика",
+                }]
+            repo.lessons_day = cancelled_lessons
+            sent = []
+            async def send(uid, screen):
+                sent.append((uid, screen))
+            await Notifier(repo, send)._before_lesson(at(8, 0))
+            self.assertEqual(sent, [])
+            await db.close()
+        asyncio.run(go())
+
+    def test_failed_delivery_is_not_marked_and_is_retried(self):
+        async def go():
+            db = Database("sqlite:///:memory:")
+            await db.connect()
+            await migrate(db)
+            repo = Repo(db)
+            await repo.load_settings()
+            await repo.apply_lessons([L("2026-10-14", 1, "Математика", "08:30", "10:05")], manual=False)
+            group = (await repo.search_groups("ис11"))[0]["id"]
+            await repo.ensure_user(91)
+            await repo.update_user(91, group_id=group, n_enabled=1, n_before=30)
+            attempts = 0
+            sent = []
+            async def send(uid, screen):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    return False
+                sent.append((uid, screen))
+                return True
+            notifier = Notifier(repo, send)
+            await notifier._before_lesson(at(8, 5))
+            key = "bl:91:1"
+            self.assertIsNone(await repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key))
+            await notifier._before_lesson(at(8, 5))
+            self.assertEqual(attempts, 2)
+            self.assertEqual(len(sent), 1)
+            self.assertIsNotNone(await repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key))
+            self.assertTrue(sent[0][1].rich)
+            await db.close()
+        asyncio.run(go())
+
+
 class TeacherNotifications(unittest.TestCase):
     def test_teacher_evening_and_before_lesson_notifications(self):
         async def go():
