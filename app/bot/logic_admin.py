@@ -282,6 +282,36 @@ async def user_card(ctx: Ctx, uid: int) -> Out:
     return Out(screen=Screen("\n".join(x for x in lines if x), kb))
 
 
+async def _fio_verified_screen(ctx: Ctx, method: str, page: int = 0) -> Screen:
+    """История подтверждённых ФИО с явным источником решения."""
+    method = "auto" if method == "auto" else "manual"
+    action = "fio_auto_verified" if method == "auto" else "fio_ok"
+    total = int(await ctx.repo.db.scalar("SELECT COUNT(*) FROM audit WHERE action = ?", action) or 0)
+    rows = await ctx.repo.db.fetchall(
+        "SELECT a.ts, u.id AS uid, u.fio, u.group_id "
+        "FROM audit a JOIN users u ON u.id = CASE "
+        "WHEN a.action = 'fio_auto_verified' THEN a.actor ELSE CAST(a.details AS BIGINT) END "
+        "WHERE a.action = ? ORDER BY a.id DESC LIMIT ? OFFSET ?",
+        action, PAGE, page * PAGE)
+    title = "🤖 Автоматическая проверка" if method == "auto" else "👤 Ручная проверка"
+    lines = [f"<b>{title}</b>", f"Подтверждено: <b>{total}</b>", ""]
+    kb: Kb = []
+    for row in rows:
+        group = await ctx.repo.get_group(row.get("group_id"))
+        stamp = datetime.fromtimestamp(int(row["ts"]), tu.tz()).strftime("%d.%m.%Y %H:%M")
+        fio = row.get("fio") or "ФИО не указано"
+        lines.append(f"• <b>{fm.esc(fio)}</b> · {fm.esc(group['name'] if group else '—')} · {stamp}")
+        kb.append([Btn(f"{fio[:24]} · {row['uid']}", f"ad:u:{row['uid']}")])
+    if not rows:
+        lines.append("Записей пока нет.")
+    navrow = pager(f"ad:fvh:{method}", page, total, PAGE)
+    if navrow:
+        kb.append(navrow)
+    kb.append([Btn("🤖 Автоматически", "ad:fvh:auto:0"), Btn("👤 Вручную", "ad:fvh:manual:0")])
+    kb.append(nav("ad:fq:0"))
+    return Screen("\n".join(lines), kb)
+
+
 async def _resolve_user(ctx: Ctx, text: str) -> dict | None:
     u = await ctx.repo.find_user(text)
     if u:
@@ -466,6 +496,14 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         else:
             lines.append("Оценок нет.")
         return Out(screen=Screen("\n".join(lines), [nav(f"ad:u:{arg}")]))
+    if act == "fvh":
+        if not _need(ctx, "users"):
+            return _deny()
+        method = arg if arg in ("auto", "manual") else "auto"
+        page = int(arg2) if arg2.isdigit() else 0
+        if len(parts) > 3 and parts[3].isdigit():
+            page = int(parts[3])
+        return Out(screen=await _fio_verified_screen(ctx, method, page))
     if act == "fq":
         if not _need(ctx, "users"):
             return _deny()
@@ -478,8 +516,13 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             kb.append([Btn(f"{(u.get('fio') or '')[:24]} · {g['name'] if g else '—'}", f"ad:u:{u['id']}")])
         if total > PAGE:
             kb.append(pager("ad:fq", page, total, PAGE))
+        auto_total = int(await repo.db.scalar("SELECT COUNT(*) FROM audit WHERE action = 'fio_auto_verified'") or 0)
+        manual_total = int(await repo.db.scalar("SELECT COUNT(*) FROM audit WHERE action = 'fio_ok'") or 0)
+        kb.append([Btn(f"🤖 Авто · {auto_total}", "ad:fvh:auto:0"),
+                   Btn(f"👤 Вручную · {manual_total}", "ad:fvh:manual:0")])
         kb.append(nav("ad:menu"))
-        return Out(screen=Screen(f"<b>ФИО на проверке: {total}</b>" + ("" if rows else "\nОчередь пуста."), kb))
+        return Out(screen=Screen(f"<b>ФИО на проверке: {total}</b>" + ("" if rows else "\nОчередь пуста.") +
+                                 "\nНиже — история уже подтверждённых ФИО по способу проверки.", kb))
 
     # ---- расписание ----
     if act == "sch":
