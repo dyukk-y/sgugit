@@ -33,8 +33,8 @@ def datas(out):
 async def _seed_manual_roster(repo, group_id: int, surname: str) -> list[int]:
     """Создаёт в тестовой БД два независимых ручных подтверждения фамилии."""
     female = surname.casefold().endswith(("ова", "ева", "ина", "ская", "цкая", "ая"))
-    names = ([f"{surname} Анна Сергеевна", f"{surname} Мария Андреевна"] if female else
-             [f"{surname} Алексей Сергеевич", f"{surname} Дмитрий Андреевич"])
+    names = ([f"{surname} Елена Петровна", f"{surname} Мария Николаевна"] if female else
+             [f"{surname} Алексей Сергеевич", f"{surname} Дмитрий Петрович"])
     ids = [-910001, -910002]
     for uid, fio in zip(ids, names):
         await repo.ensure_user(uid)
