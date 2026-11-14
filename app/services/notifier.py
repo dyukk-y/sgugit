@@ -174,7 +174,7 @@ class Notifier:
                 if not await self.repo.first_time(f"bl:{u['id']}:{l['id']}"):
                     continue
                 text = f"⏰ <b>Через {tu.fmt_duration(until)}</b>\n{fm.short_lesson(l)}"
-                await self.send(u["id"], Screen(text))
+                await self.send(u["id"], Screen(text, rich=True))
 
     # ---------- сводки в групповых чатах ----------
     async def _chat_evening(self, now: datetime) -> None:

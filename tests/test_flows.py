@@ -30,6 +30,25 @@ def texts(out): return out.screen.text if out.screen else ""
 def datas(out):
     return [b.data for row in (out.screen.kb or []) for b in row] if out.screen else []
 
+async def _seed_manual_roster(repo, group_id: int, surname: str) -> list[int]:
+    """Создаёт в тестовой БД два независимых ручных подтверждения фамилии."""
+    female = surname.casefold().endswith(("ова", "ева", "ина", "ская", "цкая", "ая"))
+    names = ([f"{surname} Елена Петровна", f"{surname} Мария Николаевна"] if female else
+             [f"{surname} Алексей Сергеевич", f"{surname} Дмитрий Петрович"])
+    ids = [-910001, -910002]
+    for uid, fio in zip(ids, names):
+        await repo.ensure_user(uid)
+        await repo.update_user(uid, group_id=group_id, fio=fio, fio_status="verified")
+        await repo.audit(1, "fio_ok", str(uid))
+    return ids
+
+
+async def _remove_manual_roster(repo, ids: list[int]) -> None:
+    for uid in ids:
+        await repo.db.execute("DELETE FROM audit WHERE action = 'fio_ok' AND details = ?", str(uid))
+        await repo.db.execute("DELETE FROM users WHERE id = ?", uid)
+
+
 class Sim:
     async def setup(self):
         self.db = Database("sqlite:///:memory:"); await self.db.connect(); await migrate(self.db)
@@ -42,14 +61,20 @@ class Sim:
         return self
     async def do(self, uid, **kw):
         return await runtime.process(self.repo, CFG, uid, f"user{uid}", f"User{uid}", services=self.svc, now=NOW, **kw)
-    async def register(self, uid, fio="Смирнова Анна Сергеевна", group="ИС-11"):
+    async def register(self, uid, fio="Смирнова Анна Сергеевна", group="ИС-11", roster_evidence=True):
         await self.do(uid, command="start")
         out = await self.do(uid, text=group)
         gdata = [d for d in datas(out) if d and d.startswith("r:g:")][0]
         await self.do(uid, callback=gdata)
         out = await self.do(uid, text=fio)
         out = await self.do(uid, callback="r:ok")
-        await auto_verify_pending(self.repo)  # как будто фоновая задача уже отработала
+        roster_ids = []
+        if roster_evidence:
+            user = await self.repo.get_user(uid)
+            roster_ids = await _seed_manual_roster(self.repo, user["group_id"], fio.split()[0])
+        await auto_verify_pending(self.repo)  # имитируем фоновую проверку при наличии независимого roster evidence
+        if roster_ids:
+            await _remove_manual_roster(self.repo, roster_ids)
         return out
 
 def run(c): return asyncio.run(c)
@@ -112,7 +137,10 @@ class T(unittest.TestCase):
             out = await s.do(100, text="левый текст"); self.assertEqual(out.screen, None)  # ждём кнопку
             out = await s.do(100, callback="r:ok"); self.assertIn("Главное меню", texts(out)); self.assertIn("автоматическую проверку", texts(out))
             u = await s.repo.get_user(100); self.assertEqual((u["fio"], u["fio_status"]), ("Смирнова Анна Сергеевна", "pending"))  # сразу не подтверждается
-            self.assertEqual((await auto_verify_pending(s.repo))["verified"], 1)  # подтверждает фоновая проверка
+            user = await s.repo.get_user(100)
+            roster_ids = await _seed_manual_roster(s.repo, user["group_id"], "Смирнова")
+            self.assertEqual((await auto_verify_pending(s.repo))["verified"], 1)  # две независимые ручные записи в группе
+            await _remove_manual_roster(s.repo, roster_ids)
             u = await s.repo.get_user(100); self.assertEqual(u["fio_status"], "verified")
             out = await s.do(100, callback="s:d:today"); t = texts(out)
             self.assertIn("Математика", t); self.assertIn("08:30", t); self.assertIn("окно", t)  # окно между 11:50 и 14:00
@@ -276,7 +304,7 @@ class T(unittest.TestCase):
             out = await s.do(1, callback="ad:ufo:100:reset"); out = await s.do(100, command="start"); self.assertIn("ФИО", texts(out))
             # настройки
             out = await s.do(1, callback="ad:st:maintenance"); out = await s.do(100, command="today"); self.assertIn("технические", texts(out).lower())
-            out = await s.do(1, command="admin"); self.assertIn("Админ-панель", texts(out))
+            out = await s.do(1, command="admin"); self.assertIn("Панель управления", texts(out))
             await s.do(1, callback="ad:st:maintenance")
             out = await s.do(1, callback="ad:sv:min_votes"); out = await s.do(1, text="2"); self.assertEqual(s.repo.setting("min_votes"), "2")
             out = await s.do(1, callback="ad:sv:min_votes"); out = await s.do(1, text="abc"); self.assertIn("число", texts(out))

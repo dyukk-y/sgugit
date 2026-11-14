@@ -259,6 +259,19 @@ def parse_observed_hw(text: str, catalog: list[tuple[str, str]], today: date) ->
     body = " ".join(body.split()).strip(" :,-–—.;")
     if len(body) < 3 or not re.search(r"[A-Za-zА-Яа-яЁё0-9]", body):
         return None
+    # Не принимаем одно лишь повторение названия предмета за содержание задания:
+    # «домашнее задание по математике» — это ещё не само задание.
+    alias_tokens = {
+        token
+        for alias, canonical in catalog if canonical == subject
+        for token in _tokens(norm(alias)) if token not in STOP
+    }
+    meaningful = [
+        token for token in _tokens(norm(body))
+        if token not in STOP and not any(_same_stem(alias, token) for alias in alias_tokens)
+    ]
+    if not meaningful:
+        return None
     return HwPhrase(subject=subject, text=body[:1000], due=due)
 
 

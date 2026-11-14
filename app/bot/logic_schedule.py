@@ -400,9 +400,9 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
         lines = ["<b>Ближайшие экзамены и зачёты</b>"]
         for l in rows:
             d = tu.parse_iso(l["day"])
-            lines.append(f"{tu.fmt_date(d)}, {l['start_t']} · {fm.esc(l['subject'])} ({fm.esc(l['kind'])})"
-                         + (f", ауд. {fm.esc(l['room'])}" if l["room"] else ""))
-        return Screen("\n".join(lines))
+            lines.append(f"📅 <b>{tu.DAYS_FULL[d.weekday()]}, {tu.fmt_date(d)}</b>")
+            lines.extend(fm._lesson_compact_lines(l))
+        return Screen("\n".join(lines), rich=True)
 
     if name == "next":
         return Screen(await next_lesson_text(ctx, gid, subgroup),
@@ -418,7 +418,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
         l = rows[0]
         d = tu.parse_iso(l["day"])
         return Screen(f"<b>{fm.esc(subj)}</b>: ближайшая пара — {fm.when_word(d, ctx.today)} ({tu.fmt_date(d)})\n"
-                      f"{fm.short_lesson(l)}", kb_for(d))
+                      f"{fm.short_lesson(l)}", kb_for(d), rich=True)
 
     # остальные интенты работают с конкретным днём
     d, lessons, prefix = await _pick_day(ctx, gid, intent, subgroup)
@@ -428,7 +428,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
             hit = [l for l in lessons if l["num"] == intent.num and not l.get("cancelled")]
             if not hit:
                 return Screen(f"{prefix}{when.capitalize()}: пары №{intent.num} нет.", kb_for(d))
-            return Screen(f"{prefix}{when.capitalize()}:\n{fm.lesson_block(hit[0])}", kb_for(d))
+            return Screen(f"{prefix}{when.capitalize()}:\n{fm.lesson_block(hit[0])}", kb_for(d), rich=True)
         hw = await repo.hw_counts_for_day(gid, tu.iso(d))
         return Screen((prefix + "\n\n" if prefix else "") + fm.day_text(d, lessons, ctx.parity(d), hw), kb_for(d), rich=True)
     if not lessons:
@@ -446,9 +446,9 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
             return Screen(f"{prefix}{when.capitalize()}: занятий нет, все пары отменены.", kb_for(d))
         l = active_lessons[0] if name == "first" else active_lessons[-1]
         if name == "first":
-            return Screen(f"{prefix}Первая пара {when}:\n{fm.lesson_block(l)}", kb_for(d))
+            return Screen(f"{prefix}Первая пара {when}:\n{fm.lesson_block(l)}", kb_for(d), rich=True)
         return Screen(f"{prefix}Последняя пара {when} заканчивается в <b>{l['end_t']}</b>:\n{fm.lesson_block(l)}",
-                      kb_for(d))
+                      kb_for(d), rich=True)
     if name in ("room", "teacher"):
         hit: list[dict]
         if intent.num:
@@ -512,17 +512,16 @@ async def _answer_subject_day(ctx: Ctx, intent: Intent, gid: int, subgroup: int 
         author = fm.esc(cancelled[-1].get("change_author") or "студента")
         return Screen(f"«{fm.esc(subj)}» {when} отменена. По информации от {author}.", kb_for(d))
     if lessons:
-        out = []
-        for l in lessons:
-            room = f", ауд. <b>{fm.esc(l['room'])}</b>" if l["room"] else ""
-            teacher = f", преподаватель <b>{fm.esc(l['teacher'])}</b>" if l["teacher"] else ""
-            kind = f" ({fm.esc(l['kind'])})" if l["kind"] else ""
-            out.append(f"<b>{fm.esc(subj)}</b>{kind}: пара состоится {when} в {l['start_t']}–{l['end_t']}{room}{teacher}.")
-        return Screen("\n".join(out), kb_for(d))
+        out = [f"<b>{fm.esc(subj)} · {when}</b>"]
+        out.append(f"📅 <b>{tu.DAYS_FULL[d.weekday()]}, {tu.fmt_date(d)}</b>")
+        for lesson in lessons:
+            out.extend(fm._lesson_compact_lines(lesson))
+        return Screen("\n".join(out), kb_for(d), rich=True)
     rows = await repo.next_lessons(gid, tu.iso(d + timedelta(days=1)), 60, subgroup)
     nxt = [l for l in rows if l["subject"] == subj and not l.get("cancelled")][:1]
     text = f"{when.capitalize()} пары «{fm.esc(subj)}» в расписании нет."
     if nxt:
         nd = tu.parse_iso(nxt[0]["day"])
-        text += f"\nБлижайшая — {fm.when_word(nd, ctx.today)} ({tu.fmt_date(nd)}):\n{fm.short_lesson(nxt[0])}"
-    return Screen(text, kb_for(nxt and tu.parse_iso(nxt[0]["day"]) or d))
+        text += (f"\n📅 <b>{tu.DAYS_FULL[nd.weekday()]}, {tu.fmt_date(nd)}</b>"
+                 f"\n{fm.short_lesson(nxt[0])}")
+    return Screen(text, kb_for(nxt and tu.parse_iso(nxt[0]["day"]) or d), rich=bool(nxt))
