@@ -83,7 +83,8 @@ class FioContext:
     """Данные из БД: реальные фамилии (справочник, расписание, уже подтверждённые студенты) и преподаватели."""
     known_surnames: frozenset[str] = frozenset()
     staff_pairs: frozenset[tuple[str, str]] = frozenset()  # (фамилия, инициалы) преподавателей
-    require_known_surname: bool = False  # True: автоподтверждение только для фамилий из словарей
+    require_known_surname: bool = False  # True: не принимать фамилии только по форме
+    official_only: bool = False  # True: доверять только переданному официальному списку
 
 
 REASON_TEXT = {
@@ -305,6 +306,8 @@ def _celebrity_hit(words: list[str]) -> bool:
 
 def _known_surname_seg(seg: str, ctx: FioContext | None) -> bool:
     known = ctx.known_surnames if ctx else frozenset()
+    if ctx and ctx.official_only:
+        return any(k in known for k in surname_keys(seg))
     return any(k in COMMON_SURNAMES or k in known for k in surname_keys(seg))
 
 
