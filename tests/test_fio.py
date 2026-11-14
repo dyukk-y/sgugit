@@ -118,11 +118,15 @@ class AutoVerificationSafety(unittest.TestCase):
             {"id": 3, "group_id": 10, "fio": "Петров Иван Петрович"},
             {"id": 4, "group_id": 20, "fio": "Кузнецов Пётр Иванович"},
             {"id": 5, "group_id": 20, "fio": "Кузнецова Мария Андреевна"},
+            {"id": 6, "group_id": 10, "fio": "Орлов Иван Петрович", "verification_action": "fio_ok", "verification_ts": 10, "audit_id": 1},
+            {"id": 6, "group_id": 10, "fio": "Орлов Иван Петрович", "verification_action": "fio_auto_verified", "verification_ts": 20, "audit_id": 2},
+            {"id": 7, "group_id": 10, "fio": "Орлова Анна Сергеевна", "verification_action": "fio_ok", "verification_ts": 15, "audit_id": 3},
         ]
         roster = _manual_group_surnames(rows)
         self.assertIn("смирнов", roster[10])
         self.assertEqual(roster[10]["смирнов"], 2)
         self.assertNotIn("петров", roster[10])
+        self.assertNotIn("орлов", roster[10])  # старое ручное решение перекрыто авто-подтверждением
         self.assertIn("кузнецов", roster[20])
         self.assertNotIn("кузнецов", roster[10])
 
