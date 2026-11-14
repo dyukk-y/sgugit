@@ -39,18 +39,23 @@ class FioVerify(unittest.TestCase):
             self.assertEqual(u["fio_status"], "pending")
             self.assertIn("fio_needs_review", [a["action"] for a in await s.repo.list_audit(20)])
             await s.repo.update_user(100, fio_status="verified")  # администратор подтвердил вручную
+            await s.repo.audit(100, "fio_ok", "100")
             s.repo._fio_ctx = None  # сбрасываем кэш контекста
-            await s.register(101, "Зубаирова Алсу Маратовна")  # такая же фамилия в женской форме теперь «известна»
-            self.assertEqual((await s.repo.get_user(101))["fio_status"], "verified")
+            await s.register(101, "Зубаиров Азамат Тимурович")
+            self.assertEqual((await s.repo.get_user(101))["fio_status"], "pending")
+            await s.repo.update_user(101, fio_status="verified")
+            await s.repo.audit(101, "fio_ok", "101")
+            await s.register(102, "Зубаирова Алсу Маратовна")
+            self.assertEqual((await s.repo.get_user(102))["fio_status"], "verified")
             await s.db.close()
         run(go())
 
-    def test_loose_mode_accepts_plausible_surname(self):
+    def test_loose_setting_does_not_bypass_manual_roster_requirement(self):
         async def go():
             s = await Sim().setup()
             await s.repo.set_setting("fio_need_known_surname", "0")
             await s.register(100, "Зубаиров Тимур Айратович")
-            self.assertEqual((await s.repo.get_user(100))["fio_status"], "verified")
+            self.assertEqual((await s.repo.get_user(100))["fio_status"], "pending")
             await s.db.close()
         run(go())
 
@@ -72,8 +77,8 @@ class FioVerify(unittest.TestCase):
             s = await Sim().setup()  # в расписании есть преподаватель «Сидоров С. С.»
             await s.register(100, "Сидоров Сергей Семёнович")
             self.assertEqual((await s.repo.get_user(100))["fio_status"], "pending")
-            await s.register(101, "Сидоров Павел Андреевич")  # однофамилец с другими инициалами
-            self.assertEqual((await s.repo.get_user(101))["fio_status"], "verified")
+            await s.register(101, "Сидоров Павел Андреевич")  # фамилия преподавателя не является roster-доказательством
+            self.assertEqual((await s.repo.get_user(101))["fio_status"], "pending")
             await s.db.close()
         run(go())
 
