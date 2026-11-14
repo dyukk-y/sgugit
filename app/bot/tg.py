@@ -136,17 +136,33 @@ class Sender:
                 pass
 
     async def enqueue(self, chat_id: int, screen: Screen) -> None:
-        self.q.put_nowait((chat_id, screen, 0))
+        """Поставить сообщение в очередь без ожидания фактической доставки."""
+        self.q.put_nowait((chat_id, screen, 0, None))
+
+    async def send_confirmed(self, chat_id: int, screen: Screen) -> bool:
+        """Поставить сообщение в общую очередь и дождаться результата Telegram API."""
+        if self.task is None or self.task.done():
+            await self._send(chat_id, screen)
+            return True
+        future = asyncio.get_running_loop().create_future()
+        self.q.put_nowait((chat_id, screen, 0, future))
+        return await future
 
     async def _run(self) -> None:
         while True:
-            chat_id, screen, attempt = await self.q.get()
+            chat_id, screen, attempt, completion = await self.q.get()
+            delivered = False
+            requeued = False
             try:
                 await self._send(chat_id, screen)
+                delivered = True
             except TelegramRetryAfter as e:
-                await asyncio.sleep(float(e.retry_after) + 1)
                 if attempt < 3:
-                    self.q.put_nowait((chat_id, screen, attempt + 1))
+                    await asyncio.sleep(float(e.retry_after) + 1)
+                    self.q.put_nowait((chat_id, screen, attempt + 1, completion))
+                    requeued = True
+                else:
+                    log.warning("Лимит Telegram: сообщение %s не доставлено после повторов", chat_id)
             except TelegramForbiddenError:
                 await self._mark_unreachable(chat_id)
             except TelegramBadRequest as e:
@@ -155,9 +171,14 @@ class Sender:
                 else:
                     log.warning("Не отправлено %s: %s", chat_id, e)
             except asyncio.CancelledError:
+                if completion is not None and not completion.done():
+                    completion.cancel()
                 raise
             except Exception:  # noqa: BLE001 - рассылка не должна падать из-за одного получателя
                 log.exception("Ошибка отправки %s", chat_id)
+            finally:
+                if completion is not None and not completion.done() and not requeued:
+                    completion.set_result(delivered)
             await asyncio.sleep(1.0 / self.rate)
 
     async def _send(self, chat_id: int, screen: Screen) -> None:
