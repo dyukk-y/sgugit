@@ -418,7 +418,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
         l = rows[0]
         d = tu.parse_iso(l["day"])
         return Screen(f"<b>{fm.esc(subj)}</b>: ближайшая пара — {fm.when_word(d, ctx.today)} ({tu.fmt_date(d)})\n"
-                      f"{fm.short_lesson(l)}", kb_for(d))
+                      f"{fm.short_lesson(l)}", kb_for(d), rich=True)
 
     # остальные интенты работают с конкретным днём
     d, lessons, prefix = await _pick_day(ctx, gid, intent, subgroup)
@@ -428,7 +428,7 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
             hit = [l for l in lessons if l["num"] == intent.num and not l.get("cancelled")]
             if not hit:
                 return Screen(f"{prefix}{when.capitalize()}: пары №{intent.num} нет.", kb_for(d))
-            return Screen(f"{prefix}{when.capitalize()}:\n{fm.lesson_block(hit[0])}", kb_for(d))
+            return Screen(f"{prefix}{when.capitalize()}:\n{fm.lesson_block(hit[0])}", kb_for(d), rich=True)
         hw = await repo.hw_counts_for_day(gid, tu.iso(d))
         return Screen((prefix + "\n\n" if prefix else "") + fm.day_text(d, lessons, ctx.parity(d), hw), kb_for(d), rich=True)
     if not lessons:
@@ -446,9 +446,9 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
             return Screen(f"{prefix}{when.capitalize()}: занятий нет, все пары отменены.", kb_for(d))
         l = active_lessons[0] if name == "first" else active_lessons[-1]
         if name == "first":
-            return Screen(f"{prefix}Первая пара {when}:\n{fm.lesson_block(l)}", kb_for(d))
+            return Screen(f"{prefix}Первая пара {when}:\n{fm.lesson_block(l)}", kb_for(d), rich=True)
         return Screen(f"{prefix}Последняя пара {when} заканчивается в <b>{l['end_t']}</b>:\n{fm.lesson_block(l)}",
-                      kb_for(d))
+                      kb_for(d), rich=True)
     if name in ("room", "teacher"):
         hit: list[dict]
         if intent.num:
