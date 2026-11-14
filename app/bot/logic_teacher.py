@@ -274,7 +274,7 @@ async def next_screen(ctx: Ctx) -> Screen:
     lines = [title, f"📅 {tu.fmt_date(tu.parse_iso(lesson['day']))}", *fm._lesson_compact_lines(lesson)]
     if lesson.get("gname"):
         lines.append(f"👥 Группа: {fm.esc(lesson['gname'])}")
-    return Screen("\n".join(lines), [[Btn("📅 Расписание", f"p:day:{lesson['day']}")], nav("p:menu")])
+    return Screen("\n".join(lines), [[Btn("📅 Расписание", f"p:day:{lesson['day']}")], nav("p:menu")], rich=True)
 
 
 async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
