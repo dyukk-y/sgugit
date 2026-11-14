@@ -72,6 +72,33 @@ class T(unittest.TestCase):
             self.assertEqual(len(retry_sent), 3)
             await db.close()
         asyncio.run(go())
+class CancelledLessonReminderTests(unittest.TestCase):
+    def test_cancelled_student_lesson_does_not_trigger_reminder(self):
+        async def go():
+            db = Database("sqlite:///:memory:")
+            await db.connect()
+            await migrate(db)
+            repo = Repo(db)
+            await repo.load_settings()
+            group = await repo.get_or_create_group("ИС-11")
+            await repo.ensure_user(90)
+            await repo.update_user(90, group_id=group["id"], n_enabled=1, n_before=30)
+            async def cancelled_lessons(gid, day):
+                return [{
+                    "id": 900, "day": day, "num": 1, "start_t": "08:30", "end_t": "10:05",
+                    "subgroup": None, "cancelled": True, "subject": "Математика",
+                }]
+            repo.lessons_day = cancelled_lessons
+            sent = []
+            async def send(uid, screen):
+                sent.append((uid, screen))
+            notifier = Notifier(repo, send)
+            await notifier._before_lesson(at(8, 0))
+            self.assertEqual(sent, [])
+            await db.close()
+        asyncio.run(go())
+
+
 class TeacherNotifications(unittest.TestCase):
     def test_teacher_evening_and_before_lesson_notifications(self):
         async def go():
