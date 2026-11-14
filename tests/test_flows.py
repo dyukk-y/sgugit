@@ -305,7 +305,7 @@ class T(unittest.TestCase):
             out = await s.do(1, callback="ad:ufo:100:reset"); out = await s.do(100, command="start"); self.assertIn("ФИО", texts(out))
             # настройки
             out = await s.do(1, callback="ad:st:maintenance"); out = await s.do(100, command="today"); self.assertIn("технические", texts(out).lower())
-            out = await s.do(1, command="admin"); self.assertIn("Админ-панель", texts(out))
+            out = await s.do(1, command="admin"); self.assertIn("Панель управления", texts(out))
             await s.do(1, callback="ad:st:maintenance")
             out = await s.do(1, callback="ad:sv:min_votes"); out = await s.do(1, text="2"); self.assertEqual(s.repo.setting("min_votes"), "2")
             out = await s.do(1, callback="ad:sv:min_votes"); out = await s.do(1, text="abc"); self.assertIn("число", texts(out))
