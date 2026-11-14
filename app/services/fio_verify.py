@@ -20,8 +20,18 @@ def _manual_group_surnames(rows: list[dict]) -> dict[int, dict[str, int]]:
     Событие fio_ok — ручное подтверждение; fio_auto_verified намеренно не участвует,
     чтобы автоматические решения не обучали сами себя.
     """
-    evidence: dict[tuple[int, str], set[str]] = defaultdict(set)
+    # Для каждого пользователя учитываем только самое позднее событие изменения/подтверждения ФИО.
+    latest: dict[int, tuple[tuple[int, int], dict]] = {}
     for row in rows:
+        uid = int(row["id"])
+        marker = (int(row.get("verification_ts") or 0), int(row.get("audit_id") or 0))
+        if uid not in latest or marker > latest[uid][0]:
+            latest[uid] = (marker, row)
+
+    evidence: dict[tuple[int, str], set[str]] = defaultdict(set)
+    for uid, (_, row) in latest.items():
+        if row.get("verification_action", "fio_ok") != "fio_ok":
+            continue
         group_id = row.get("group_id")
         fio = " ".join((row.get("fio") or "").split())
         if not group_id or len(fio.split()) < 2:
@@ -67,8 +77,10 @@ async def auto_verify_pending(repo: Repo, notify: Notify | None = None, now: int
 
     # Только ручные решения администраторов. Автоматические подтверждения не попадают в этот набор.
     manual_rows = await repo.db.fetchall(
-        "SELECT u.id, u.group_id, u.fio FROM users u "
-        "JOIN audit a ON a.action = 'fio_ok' AND CAST(a.details AS BIGINT) = u.id "
+        "SELECT u.id, u.group_id, u.fio, a.action AS verification_action, "
+        "a.ts AS verification_ts, a.id AS audit_id FROM users u JOIN audit a ON "
+        "((a.action = 'fio_ok' AND CAST(a.details AS BIGINT) = u.id) OR "
+        "(a.action IN ('fio_auto_verified', 'fio_changed') AND a.actor = u.id)) "
         "WHERE u.fio_status = 'verified' AND u.fio IS NOT NULL AND u.group_id IS NOT NULL")
     roster = _manual_group_surnames(manual_rows)
     stop, bad = await repo.stoplists()
