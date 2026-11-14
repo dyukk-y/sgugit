@@ -5,7 +5,7 @@ import logging
 from typing import Awaitable, Callable
 
 from app.db.repo import Repo
-from app.services.fio import describe_reasons, validate_fio
+from app.services.fio import FioContext, describe_reasons, surname_keys, validate_fio
 from app.timeutil import now_ts
 
 log = logging.getLogger(__name__)
@@ -28,9 +28,19 @@ async def auto_verify_pending(repo: Repo, notify: Notify | None = None, now: int
     if not rows:
         return stats
     stop, bad = await repo.stoplists()
-    ctx = await repo.fio_context()
+    base_ctx = await repo.fio_context()
+    # Для автоподтверждения используем только фамилии из официального справочника
+    # преподавателей. Фамилии студентов не становятся доказательством для новых решений.
+    trusted_surnames: set[str] = set()
+    for surname in await repo.known_surnames():
+        trusted_surnames.update(surname_keys(surname))
+    auto_ctx = FioContext(
+        known_surnames=frozenset(trusted_surnames),
+        staff_pairs=base_ctx.staff_pairs,
+        require_known_surname=True,
+    )
     for row in rows:
-        res = validate_fio(row["fio"], stop, bad, strict=True, ctx=ctx)
+        res = validate_fio(row["fio"], stop, bad, strict=True, ctx=auto_ctx)
         why = ""
         if res.verdict != "ok" or not res.confident:
             why = describe_reasons(res.code) or "не пройдена строгая проверка"
