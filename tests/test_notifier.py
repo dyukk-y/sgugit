@@ -125,7 +125,7 @@ class TeacherNotifications(unittest.TestCase):
             await migrate(db)
             repo = Repo(db)
             await repo.load_settings()
-            day = "2026-10-20"
+            day = tu.iso(tu.today() + timedelta(days=3))
             await repo.apply_lessons([L(day, 1, "Математика", "08:30", "10:05")], manual=False)
             teacher_id = await db.insert(
                 "INSERT INTO teachers (name, norm, hidden) VALUES (?, ?, 0)",
