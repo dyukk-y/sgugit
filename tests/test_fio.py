@@ -11,21 +11,18 @@ GOOD = ["Петрова Анна Сергеевна", "Смирнов Алекс
 BAD = ["", "Фамилия Имя Отчество", "ФИО", "Иванов Иван Иванович", "Тест", "asdf asdf", "Ivan Ivanov",
        "Иван", "Аааа Бббб Вввв", "Йцукен Фывапр Олджэ", "хуй пизда джигурда", "Иванов Иван Ивaнович",
        "Иванов И.И.", "123 456", "Иванов Иван Иванович Петрович Сидорович", "Иван Иванович Иванов",
-       "Лох Дурак Идиотович", "Студент Студентов Студентович", "Иванов Иванов Иванов", "Ъъъ Ыыы Эээ",
-       "Кцк Пшт Втр", "Админ Админов Админович", "Пупкин Василий", "Иванов Хуй Иванович", "!!! ???",
+       "Лох Дурак Идиотович", "Студент Студентов Студентович", "Иванов Иван Иванов", "Ъъъ Ыыы Эээ",
+       "Кцк Пшт Втр", "Админ Админович Админович", "Пупкин Василий", "Иванов Хуй Иванович", "!!! ???",
        "Иванов @ivan Иванович", "Ебанов Иван Иванович", "Дерьмов Иван Петрович", "Сука Иван Петрович"]
 class T(unittest.TestCase):
     def test_good(self):
         for s in GOOD:
-            r = validate_fio(s)
-            self.assertNotEqual(r.verdict, "reject", (s, r))
+            self.assertNotEqual(validate_fio(s).verdict, "reject", s)
     def test_bad(self):
         for s in BAD:
-            r = validate_fio(s)
-            self.assertEqual(r.verdict, "reject", (s, r))
+            self.assertEqual(validate_fio(s).verdict, "reject", s)
     def test_soft_mode_accepts_review(self):
-        r = validate_fio("Иванов Тимофей", strict=False)
-        self.assertEqual(r.verdict, "ok")
+        self.assertEqual(validate_fio("Иванов Тимофей", strict=False).verdict, "ok")
         self.assertEqual(validate_fio("Мамаев Тагирчик").verdict, "review")
     def test_normalize(self):
         self.assertEqual(validate_fio("  сМИРНОВ   алексей дмитриевич ").fio, "Смирнов Алексей Дмитриевич")
@@ -79,28 +76,27 @@ class Strict(unittest.TestCase):
 
     def test_confident_requires_known_name_patronymic_and_surname(self):
         self.assertTrue(validate_fio("Смирнова Анна Сергеевна").confident)
-        self.assertFalse(validate_fio("Смирнов Алексей").confident)  # нет отчества
-        self.assertFalse(validate_fio("Смирнов Тагирчик Сергеевич").confident)  # неизвестное имя
-        self.assertFalse(validate_fio("Смирнов Алексей Ывапович").confident)  # отчество не от имени
+        self.assertFalse(validate_fio("Смирнов Алексей").confident)
+        self.assertFalse(validate_fio("Смирнов Тагирчик Сергеевич").confident)
+        self.assertFalse(validate_fio("Смирнов Алексей Ывапович").confident)
 
     def test_unknown_but_plausible_surname_needs_review_in_strict_mode(self):
         loose = validate_fio("Зубаиров Тимур Айратович", ctx=FioContext())
-        self.assertTrue(loose.confident)  # похожа по форме
+        self.assertTrue(loose.confident)
         strict = validate_fio("Зубаиров Тимур Айратович", ctx=FioContext(require_known_surname=True))
         self.assertEqual((strict.verdict, strict.confident, strict.code), ("review", False, "surname_pattern"))
         known = validate_fio("Зубаиров Тимур Айратович",
                              ctx=FioContext(known_surnames=frozenset({"зубаиров"}), require_known_surname=True))
-        self.assertTrue(known.confident)  # фамилию уже подтверждал администратор или она есть у преподавателя
+        self.assertTrue(known.confident)
 
     def test_surname_not_like_a_surname_is_review(self):
-        r = validate_fio("Дрмпг Тимур Айратович")
-        self.assertNotEqual(r.verdict, "ok")
+        self.assertNotEqual(validate_fio("Дрмпг Тимур Айратович").verdict, "ok")
 
     def test_staff_impersonation_goes_to_review(self):
         ctx = FioContext(known_surnames=frozenset({"сидоров"}), staff_pairs=frozenset({("сидоров", "сс")}))
         r = validate_fio("Сидоров Сергей Семёнович", ctx=ctx)
         self.assertEqual((r.verdict, r.code), ("review", "staff_match"))
-        self.assertEqual(validate_fio("Сидоров Павел Андреевич", ctx=ctx).verdict, "ok")  # просто однофамилец
+        self.assertEqual(validate_fio("Сидоров Павел Андреевич", ctx=ctx).verdict, "ok")
 
     def test_duplicate_key_ignores_case_yo_and_gender_forms(self):
         self.assertEqual(fio_key("Иванова Анна Сергеевна"), fio_key("иванова  анна сергеевна"))
@@ -112,14 +108,28 @@ if __name__ == "__main__":
     unittest.main()
 
 
-
 class AutoVerificationSafety(unittest.TestCase):
-    def test_auto_context_does_not_trust_student_only_surnames(self):
-        from app.services.fio_verify import _auto_context
+    def test_only_independently_manually_confirmed_group_surnames_are_trusted(self):
+        from app.services.fio_verify import _auto_context, _manual_group_surnames
 
-        base = FioContext(known_surnames=frozenset({"петров"}))
-        ctx = _auto_context(base, {"Смирнов"})
-        self.assertTrue(validate_fio("Смирнов Алексей Дмитриевич", ctx=ctx).confident)
-        result = validate_fio("Петров Алексей Дмитриевич", ctx=ctx)
-        self.assertEqual(result.verdict, "review")
-        self.assertFalse(result.confident)
+        rows = [
+            {"id": 1, "group_id": 10, "fio": "Смирнов Алексей Дмитриевич"},
+            {"id": 2, "group_id": 10, "fio": "Смирнова Анна Сергеевна"},
+            {"id": 3, "group_id": 10, "fio": "Петров Иван Петрович"},
+            {"id": 4, "group_id": 20, "fio": "Кузнецов Пётр Иванович"},
+            {"id": 5, "group_id": 20, "fio": "Кузнецова Мария Андреевна"},
+        ]
+        roster = _manual_group_surnames(rows)
+        self.assertIn("смирнов", roster[10])
+        self.assertEqual(roster[10]["смирнов"], 2)
+        self.assertNotIn("петров", roster[10])
+        self.assertIn("кузнецов", roster[20])
+        self.assertNotIn(20, roster.get(10, {}))
+
+        base = FioContext()
+        group_ctx = _auto_context(base, set(roster[10]))
+        self.assertTrue(validate_fio("Смирнов Алексей Дмитриевич", ctx=group_ctx).confident)
+        self.assertFalse(validate_fio("Петров Иван Петрович", ctx=group_ctx).confident)
+        # Официальная фамилия преподавателя сама по себе не даёт права на автоподтверждение.
+        staff_only = _auto_context(base, {"Иванов"})
+        self.assertFalse(validate_fio("Иванов Иван Иванович", ctx=staff_only).confident)
