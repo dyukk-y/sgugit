@@ -10,7 +10,7 @@ from typing import Awaitable, Callable
 
 from app import timeutil as tu
 from app.bot.core import Btn, Screen
-from app.db.repo import ApplyResult, Repo
+from app.db.repo import ApplyResult, Repo, name_parts
 from app.services import format as fm
 
 log = logging.getLogger(__name__)
@@ -38,7 +38,88 @@ class Notifier:
         now = now or tu.now_local()
         await self._evening(now)
         await self._before_lesson(now)
+        await self._teacher_evening(now)
+        await self._teacher_before_lesson(now)
         await self._chat_evening(now)
+
+    async def _teacher_accounts(self) -> list[dict]:
+        return await self.repo.db.fetchall(
+            "SELECT u.id, u.n_enabled, u.n_evening, u.n_evening_time, u.n_before, u.n_changes, "
+            "ta.teacher_id, t.name FROM users u JOIN teacher_accounts ta ON ta.user_id = u.id "
+            "JOIN teachers t ON t.id = ta.teacher_id "
+            "WHERE u.role = 'teacher' AND u.banned = 0 AND u.bot_blocked = 0")
+
+    @staticmethod
+    def _teacher_schedule_text(title: str, lessons: list[dict]) -> str:
+        lines = [title]
+        for lesson in lessons:
+            lines.append(f"\n📅 <b>{tu.fmt_date(tu.parse_iso(lesson['day']))}</b>")
+            lines.extend(fm._lesson_compact_lines(lesson))
+            if lesson.get("gname"):
+                lines.append(f"👥 Группа: {fm.esc(lesson['gname'])}")
+        return "\n".join(lines)
+
+    async def _teacher_evening(self, now: datetime) -> None:
+        minutes = now.hour * 60 + now.minute
+        today_iso = tu.iso(now.date())
+        tomorrow = now.date() + timedelta(days=1)
+        for teacher in await self._teacher_accounts():
+            if not teacher["n_enabled"] or not teacher["n_evening"]:
+                continue
+            scheduled = tu.hhmm_to_min(teacher["n_evening_time"])
+            if scheduled is None or not (scheduled <= minutes < scheduled + CATCHUP_MIN):
+                continue
+            key = f"tev:{teacher['id']}:{today_iso}"
+            if await self.repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key):
+                continue
+            surname, initials = name_parts(teacher["name"])
+            lessons = await self.repo.teacher_lessons(surname, initials, tu.iso(tomorrow), tu.iso(tomorrow))
+            lessons = [lesson for lesson in lessons if not lesson.get("cancelled")]
+            if not lessons:
+                continue
+            text = self._teacher_schedule_text("🌙 <b>Ваше расписание на завтра</b>", lessons)
+            await self.send(teacher["id"], Screen(text, [[Btn("📅 Открыть расписание", "p:day:tom")]], rich=True))
+            await self.repo.db.execute(
+                "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
+                key, tu.now_ts(), volatile=True)
+
+    async def _teacher_before_lesson(self, now: datetime) -> None:
+        minutes = now.hour * 60 + now.minute
+        today_iso = tu.iso(now.date())
+        for teacher in await self._teacher_accounts():
+            before = int(teacher["n_before"] or 0)
+            if not teacher["n_enabled"] or before <= 0:
+                continue
+            surname, initials = name_parts(teacher["name"])
+            lessons = await self.repo.teacher_lessons(
+                surname, initials, today_iso, tu.iso(now.date() + timedelta(days=1)))
+            lessons = [lesson for lesson in lessons if not lesson.get("cancelled")]
+            lessons.sort(key=lambda lesson: (lesson["day"], lesson["start_t"], lesson["num"]))
+            for index, lesson in enumerate(lessons):
+                if lesson["day"] != today_iso:
+                    continue
+                start = tu.hhmm_to_min(lesson["start_t"])
+                if start is None:
+                    continue
+                until = start - minutes
+                if not (0 < until <= before):
+                    continue
+                previous_end = (tu.hhmm_to_min(lessons[index - 1]["end_t"])
+                                if index > 0 and lessons[index - 1]["day"] == today_iso else None)
+                if previous_end is not None and start - previous_end < BREAK_FOR_REMINDER:
+                    continue
+                key = f"tbl:{teacher['id']}:{lesson['id']}:{lesson['day']}"
+                if await self.repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key):
+                    continue
+                text = (f"⏰ <b>До вашей пары {tu.fmt_duration(until)}</b>\n"
+                        f"{fm.short_lesson(lesson)}")
+                if lesson.get("gname"):
+                    text += f"\n👥 Группа: {fm.esc(lesson['gname'])}"
+                await self.send(teacher["id"], Screen(
+                    text, [[Btn("📅 Открыть занятие", f"p:day:{lesson['day']}")]], rich=True))
+                await self.repo.db.execute(
+                    "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
+                    key, tu.now_ts(), volatile=True)
 
     # ---------- вечерняя сводка ----------
     async def _evening(self, now: datetime) -> None:
@@ -162,4 +243,38 @@ class Notifier:
                         "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
                         key, tu.now_ts(), volatile=True)
                     sent += 1
+                # Преподаватели получают уведомление, если ведут занятия в изменившейся группе.
+                changed_days = {str(item.get("day")) for item in changes if item.get("day")}
+                if changed_days:
+                    first_day, last_day = min(changed_days), max(changed_days)
+                    for teacher in await self._teacher_accounts():
+                        if not teacher["n_enabled"] or not teacher["n_changes"]:
+                            continue
+                        surname, initials = name_parts(teacher["name"])
+                        own_lessons = await self.repo.teacher_lessons(surname, initials, first_day, last_day)
+                        relevant = [lesson for lesson in own_lessons
+                                    if int(lesson["group_id"]) == int(gid)
+                                    and lesson["day"] in changed_days]
+                        # Удалённая пара уже отсутствует в новом расписании: в таком случае
+                        # проверяем, ведёт ли преподаватель занятия в этой группе вообще.
+                        if not relevant:
+                            all_lessons = await self.repo.teacher_lessons(
+                                surname, initials, tu.iso(tu.today()), tu.iso(tu.today() + timedelta(days=60)))
+                            relevant = [lesson for lesson in all_lessons if int(lesson["group_id"]) == int(gid)]
+                        if not relevant:
+                            continue
+                        uid = int(teacher["id"])
+                        key = f"{event_key}:t:{uid}"
+                        if await self.repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key):
+                            continue
+                        teacher_text = ("🔄 <b>Изменения в расписании ваших занятий</b>\n"
+                                        f"Группа: <b>{fm.esc(group['name'])}</b>\n\n"
+                                        "В расписании этой группы появились изменения. "
+                                        "Откройте обновлённое расписание и проверьте время и аудиторию.")
+                        await self.send(uid, Screen(
+                            teacher_text, [[Btn("📅 Проверить расписание", "p:week:cur")]], rich=True))
+                        await self.repo.db.execute(
+                            "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
+                            key, tu.now_ts(), volatile=True)
+                        sent += 1
         return sent
