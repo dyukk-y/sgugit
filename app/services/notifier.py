@@ -119,7 +119,7 @@ class Notifier:
                 if await self.repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key):
                     continue
                 text = (f"⏰ <b>До вашей пары {tu.fmt_duration(until)}</b>\n"
-                        f"{fm.short_lesson(lesson)}")
+                        + "\n".join(fm._lesson_compact_lines(lesson)))
                 if lesson.get("gname"):
                     text += f"\n👥 Группа: {fm.esc(lesson['gname'])}"
                 if not await self._deliver(teacher["id"], Screen(
@@ -185,7 +185,7 @@ class Notifier:
                 key = f"bl:{u['id']}:{l['id']}"
                 if await self.repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key):
                     continue
-                text = f"⏰ <b>Через {tu.fmt_duration(until)}</b>\n{fm.short_lesson(l)}"
+                text = f"⏰ <b>Через {tu.fmt_duration(until)}</b>\n" + "\n".join(fm._lesson_compact_lines(l))
                 if await self._deliver(u["id"], Screen(text, rich=True)):
                     await self.repo.db.execute(
                         "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
