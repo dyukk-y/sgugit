@@ -16,7 +16,7 @@ from app.services import format as fm
 
 log = logging.getLogger(__name__)
 
-SendFn = Callable[[int, Screen], Awaitable[None]]
+SendFn = Callable[[int, Screen], Awaitable[bool | None]]
 PinFn = Callable[[int, Screen, int], Awaitable[bool]]  # chat_id, экран, когда открепить (unix-время)
 CATCHUP_MIN = 180        # не отправлять вечернюю сводку, если с запланированного времени прошло больше 3 часов
 BREAK_FOR_REMINDER = 40  # напоминать перед парой, если до неё не было занятий минимум 40 минут
@@ -34,6 +34,11 @@ class Notifier:
     def __init__(self, repo: Repo, send: SendFn, pin: PinFn | None = None):
         self.repo, self.send, self.pin = repo, send, pin
         self._changes_lock = asyncio.Lock()
+
+    async def _deliver(self, chat_id: int, screen: Screen) -> bool:
+        # None keeps compatibility with simple test senders; False means Telegram
+        # explicitly reported that the message was not delivered.
+        return (await self.send(chat_id, screen)) is not False
 
     async def tick(self, now: datetime | None = None) -> None:
         now = now or tu.now_local()
@@ -79,7 +84,8 @@ class Notifier:
             if not lessons:
                 continue
             text = self._teacher_schedule_text("🌙 <b>Ваше расписание на завтра</b>", lessons)
-            await self.send(teacher["id"], Screen(text, [[Btn("📅 Открыть расписание", "p:day:tom")]], rich=True))
+            if not await self._deliver(teacher["id"], Screen(text, [[Btn("📅 Открыть расписание", "p:day:tom")]], rich=True)):
+                continue
             await self.repo.db.execute(
                 "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
                 key, tu.now_ts(), volatile=True)
@@ -116,8 +122,9 @@ class Notifier:
                         f"{fm.short_lesson(lesson)}")
                 if lesson.get("gname"):
                     text += f"\n👥 Группа: {fm.esc(lesson['gname'])}"
-                await self.send(teacher["id"], Screen(
-                    text, [[Btn("📅 Открыть занятие", f"p:day:{lesson['day']}")]], rich=True))
+                if not await self._deliver(teacher["id"], Screen(
+                        text, [[Btn("📅 Открыть занятие", f"p:day:{lesson['day']}")]], rich=True)):
+                    continue
                 await self.repo.db.execute(
                     "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
                     key, tu.now_ts(), volatile=True)
@@ -135,18 +142,22 @@ class Notifier:
             sched = tu.hhmm_to_min(u["n_evening_time"])
             if sched is None or not (sched <= minutes < sched + CATCHUP_MIN):
                 continue
-            if not await self.repo.first_time(f"ev:{u['id']}:{today_iso}"):
+            key = f"ev:{u['id']}:{today_iso}"
+            if await self.repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key):
                 continue
-            key = (u["group_id"], u["subgroup"])
-            if key not in cache:
-                cache[key] = await self.repo.lessons_day(u["group_id"], tu.iso(tomorrow), u["subgroup"])
-            lessons = cache[key]
+            cache_key = (u["group_id"], u["subgroup"])
+            if cache_key not in cache:
+                cache[cache_key] = await self.repo.lessons_day(u["group_id"], tu.iso(tomorrow), u["subgroup"])
+            lessons = cache[cache_key]
             if not lessons:
                 continue
             hw = await self.repo.hw_counts_for_day(u["group_id"], tu.iso(tomorrow))
             text = "🌙 <b>Расписание на завтра</b>\n\n" + fm.day_text(tomorrow, lessons, _parity(self.repo, tomorrow), hw)
             kb = [[Btn("📅 Открыть расписание", "s:d:tom")]]
-            await self.send(u["id"], Screen(text, kb, rich=True))
+            if await self._deliver(u["id"], Screen(text, kb, rich=True)):
+                await self.repo.db.execute(
+                    "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
+                    key, tu.now_ts(), volatile=True)
 
     # ---------- перед парой ----------
     async def _before_lesson(self, now: datetime) -> None:
@@ -160,7 +171,7 @@ class Notifier:
             gid = u["group_id"]
             if gid not in cache:
                 cache[gid] = await self.repo.lessons_day(gid, today_iso)
-            lessons = [l for l in cache[gid] if l["subgroup"] is None or u["subgroup"] is None or l["subgroup"] == u["subgroup"]]
+            lessons = [l for l in cache[gid] if not l.get("cancelled") and (l["subgroup"] is None or u["subgroup"] is None or l["subgroup"] == u["subgroup"])]
             for i, l in enumerate(lessons):
                 s = tu.hhmm_to_min(l["start_t"])
                 if s is None:
@@ -171,10 +182,14 @@ class Notifier:
                 prev_end = tu.hhmm_to_min(lessons[i - 1]["end_t"]) if i > 0 else None
                 if prev_end is not None and s - prev_end < BREAK_FOR_REMINDER:
                     continue
-                if not await self.repo.first_time(f"bl:{u['id']}:{l['id']}"):
+                key = f"bl:{u['id']}:{l['id']}"
+                if await self.repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key):
                     continue
                 text = f"⏰ <b>Через {tu.fmt_duration(until)}</b>\n{fm.short_lesson(l)}"
-                await self.send(u["id"], Screen(text, rich=True))
+                if await self._deliver(u["id"], Screen(text, rich=True)):
+                    await self.repo.db.execute(
+                        "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
+                        key, tu.now_ts(), volatile=True)
 
     # ---------- сводки в групповых чатах ----------
     async def _chat_evening(self, now: datetime) -> None:
@@ -185,7 +200,8 @@ class Notifier:
             sched = tu.hhmm_to_min(c["evening_time"])
             if sched is None or not (sched <= minutes < sched + CATCHUP_MIN):
                 continue
-            if not await self.repo.first_time(f"cev:{c['chat_id']}:{today_iso}"):
+            key = f"cev:{c['chat_id']}:{today_iso}"
+            if await self.repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key):
                 continue
             lessons = await self.repo.lessons_day(c["group_id"], tu.iso(tomorrow))
             if not lessons:
@@ -200,8 +216,14 @@ class Notifier:
                 if cleanup_at > int(now.timestamp()):
                     text += f"\n\n📌 Закреплено до окончания последней пары ({tu.min_to_hhmm(last_end)}), затем сообщение удалится."
                     if await self.pin(c["chat_id"], Screen(text, rich=True), cleanup_at):
+                        await self.repo.db.execute(
+                            "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
+                            key, tu.now_ts(), volatile=True)
                         continue
-            await self.send(c["chat_id"], Screen(text, rich=True))
+            if await self._deliver(c["chat_id"], Screen(text, rich=True)):
+                await self.repo.db.execute(
+                    "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
+                    key, tu.now_ts(), volatile=True)
 
     # ---------- изменения расписания ----------
     async def notify_changes(self, result: ApplyResult) -> int:
@@ -227,7 +249,8 @@ class Notifier:
                     key = f"{event_key}:u:{uid}"
                     if await self.repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key):
                         continue
-                    await self.send(uid, Screen(text, kb))
+                    if not await self._deliver(uid, Screen(text, kb)):
+                        raise RuntimeError(f"Notification delivery failed for user {uid}")
                     await self.repo.db.execute(
                         "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
                         key, tu.now_ts(), volatile=True)
@@ -239,7 +262,8 @@ class Notifier:
                     key = f"{event_key}:c:{chat_id}"
                     if await self.repo.db.fetchone("SELECT 1 FROM notif_log WHERE k = ?", key):
                         continue
-                    await self.send(chat_id, Screen(text))
+                    if not await self._deliver(chat_id, Screen(text)):
+                        raise RuntimeError(f"Notification delivery failed for chat {chat_id}")
                     await self.repo.db.execute(
                         "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
                         key, tu.now_ts(), volatile=True)
@@ -265,8 +289,9 @@ class Notifier:
                                     f"Группа: <b>{fm.esc(group['name'])}</b>\n\n"
                                     "В одном из ваших занятий появились изменения. "
                                     "Откройте расписание и проверьте время, предмет и аудиторию.")
-                    await self.send(uid, Screen(
-                        teacher_text, [[Btn("📅 Проверить расписание", "p:week:cur")]], rich=True))
+                    if not await self._deliver(uid, Screen(
+                            teacher_text, [[Btn("📅 Проверить расписание", "p:week:cur")]], rich=True)):
+                        raise RuntimeError(f"Teacher notification delivery failed for user {uid}")
                     await self.repo.db.execute(
                         "INSERT INTO notif_log (k, ts) VALUES (?, ?) ON CONFLICT (k) DO NOTHING",
                         key, tu.now_ts(), volatile=True)
