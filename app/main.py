@@ -94,7 +94,7 @@ async def main() -> None:
     log.info("Бот @%s запущен, БД: %s, главный админ: %s", me.username, db.kind, cfg.superadmin_id)
 
     sender = tg.Sender(bot, repo)
-    notifier = Notifier(repo, sender.enqueue, pin=sender.send_pinned)
+    notifier = Notifier(repo, sender.send_confirmed, pin=sender.send_pinned)
     app = tg.App(bot=bot, repo=repo, cfg=cfg, sender=sender, services={}, username=me.username or "bot",
                  questions=QuestionService(repo, cfg))
 
