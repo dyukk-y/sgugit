@@ -157,6 +157,7 @@ class TeacherNotifications(unittest.TestCase):
             self.assertIn("До вашей пары", sent[0][1].text)
             self.assertIn("Математика", sent[0][1].text)
             self.assertTrue(sent[0][1].rich)
+            self.assertIn("<b>01</b>", sent[0][1].text)
             self.assertEqual(sent[0][1].kb[0][0].data, "p:day:2026-10-14")
 
             sent.clear()
