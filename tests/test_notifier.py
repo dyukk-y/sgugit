@@ -36,7 +36,7 @@ class T(unittest.TestCase):
             await n.tick(at(23, 30)); self.assertEqual(sent, [])               # не догоняем слишком поздно
             # напоминания: у пользователя 2 за 30 минут
             await n.tick(at(7, 59)); self.assertEqual(sent, [])                 # ещё рано: до пары 31 минута
-            await n.tick(at(8, 5)); self.assertEqual([c for c, _ in sent], [2]); self.assertIn("Математика", sent[0][1])
+            await n.tick(at(8, 5)); self.assertEqual([c for c, _ in sent], [2]); self.assertIn("Математика", sent[0][1]); self.assertTrue(rich_flags[-1])
             sent.clear(); await n.tick(at(8, 6)); self.assertEqual(sent, [])
             await n.tick(at(9, 50)); self.assertEqual(sent, [])                # Физика сразу после Математики: без напоминания
             await n.tick(at(13, 40)); self.assertEqual([c for c, _ in sent], [2]); self.assertIn("История", sent[0][1])
