@@ -110,3 +110,16 @@ class Strict(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class AutoVerificationSafety(unittest.TestCase):
+    def test_auto_context_does_not_trust_student_only_surnames(self):
+        from app.services.fio_verify import _auto_context
+
+        base = FioContext(known_surnames=frozenset({"петров"}))
+        ctx = _auto_context(base, {"Смирнов"})
+        self.assertTrue(validate_fio("Смирнов Алексей Дмитриевич", ctx=ctx).confident)
+        result = validate_fio("Петров Алексей Дмитриевич", ctx=ctx)
+        self.assertEqual(result.verdict, "review")
+        self.assertFalse(result.confident)
