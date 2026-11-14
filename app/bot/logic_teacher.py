@@ -33,7 +33,7 @@ async def menu(ctx: Ctx) -> Screen:
     account = await ctx.repo.teacher_account(ctx.uid)
     if not account:
         return Screen("Профиль преподавателя не найден. Пройдите регистрацию по фамилии.",
-                      [[Btn("👨‍🏫 Найти себя в справочнике", "p:register")], [Btn("🏠 Студенческий режим", "p:student")]])
+                      [[Btn("👨‍🏫 Найти себя в справочнике", "p:register")], [Btn("🔄 Сменить режим", "p:student_help")]])
     today = await ctx.repo.teacher_lessons(*_teacher_name(account), tu.iso(ctx.today), tu.iso(ctx.today))
     active = [l for l in today if not l.get("cancelled")]
     current, upcoming = fm.now_status(active, ctx.now)
@@ -56,6 +56,7 @@ async def menu(ctx: Ctx) -> Screen:
         [Btn("🔎 Найти коллегу", "p:find")],
         [Btn("💬 Поддержка", "me:fb"), Btn("❓ Помощь", "p:help")],
         [Btn("🔄 Сменить преподавателя", "p:change")],
+        [Btn("🔀 Сменить режим", "p:student_help")],
     ]
     count = len(active)
     intro = (f"🧑‍🏫 <b>Кабинет преподавателя</b>\n{fm.esc(account['name'])}\n\n"
@@ -313,12 +314,11 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         return Out(screen=Screen(
             "<b>Неправильно выбран профиль?</b>\n\n"
             "Если вы студент и случайно подключили кабинет преподавателя, "
-            "можно вернуться к обычному студенческому меню. "
-            "Ваша учебная группа и данные профиля сохранятся.\n\n"
-            "Если вы действительно преподаватель, просто вернитесь в кабинет — "
-            "ничего менять не нужно.",
-            [[Btn("↩ Я студент — вернуть обычное меню", "p:student")],
-             [Btn("Я преподаватель — оставить как есть", "p:menu")],
+            "можно перейти в студенческий кабинет. Ваша учебная группа и данные профиля сохранятся.\n\n"
+            "Если вы преподаватель и открыли этот пункт случайно, просто оставьте всё как есть — "
+            "ваш кабинет и профиль не изменятся.",
+            [[Btn("👨‍🎓 Перейти в кабинет студента", "p:student")],
+             [Btn("👨‍🏫 Остаться в кабинете преподавателя", "p:menu")],
              nav("p:menu")],
         ))
     if act == "student":
@@ -373,7 +373,7 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
                      "<i>Информация строится по расписанию, загруженному ботом. Внеплановые изменения могут появиться не сразу.</i>")
         return Out(screen=Screen(help_text, [
             [Btn("🌐 Сайт СГУГиТ", url="https://sgugit.ru/")],
-            [Btn("⚠️ Я случайно выбрал преподавателя", "p:student_help")],
+            [Btn("🔀 Сменить режим", "p:student_help")],
             nav("p:menu"),
         ]), clear_state=True)
     return Out(toast="Неизвестное действие")
