@@ -160,7 +160,7 @@ class Notifier:
             gid = u["group_id"]
             if gid not in cache:
                 cache[gid] = await self.repo.lessons_day(gid, today_iso)
-            lessons = [l for l in cache[gid] if l["subgroup"] is None or u["subgroup"] is None or l["subgroup"] == u["subgroup"]]
+            lessons = [l for l in cache[gid] if not l.get("cancelled") and (l["subgroup"] is None or u["subgroup"] is None or l["subgroup"] == u["subgroup"])]
             for i, l in enumerate(lessons):
                 s = tu.hhmm_to_min(l["start_t"])
                 if s is None:
