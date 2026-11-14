@@ -42,7 +42,26 @@ class Sim:
         return self
     async def do(self, uid, **kw):
         return await runtime.process(self.repo, CFG, uid, f"user{uid}", f"User{uid}", services=self.svc, now=NOW, **kw)
+    async def _seed_manual_roster(self, group: str, surname: str) -> None:
+        # Test-only fixture: two independent, manually verified students provide
+        # the roster evidence required by the production auto-verifier.
+        roster = {
+            "смирнова": [(990001, "Смирнова Мария Ивановна"), (990002, "Смирнова Елена Петровна")],
+            "орлова": [(990003, "Орлова Мария Ивановна"), (990004, "Орлова Екатерина Петровна")],
+        }.get(surname.casefold(), [])
+        if not roster:
+            return
+        group_row = await self.repo.get_or_create_group(group)
+        for seed_uid, seed_fio in roster:
+            if await self.repo.get_user(seed_uid):
+                continue
+            await self.repo.ensure_user(seed_uid)
+            await self.repo.update_user(seed_uid, group_id=group_row["id"], fio=seed_fio,
+                                        fio_status="verified", banned=1)
+            await self.repo.audit(seed_uid, "fio_ok", str(seed_uid))
+
     async def register(self, uid, fio="Смирнова Анна Сергеевна", group="ИС-11"):
+        await self._seed_manual_roster(group, fio.split()[0])
         await self.do(uid, command="start")
         out = await self.do(uid, text=group)
         gdata = [d for d in datas(out) if d and d.startswith("r:g:")][0]
