@@ -124,7 +124,7 @@ class AutoVerificationSafety(unittest.TestCase):
         self.assertEqual(roster[10]["смирнов"], 2)
         self.assertNotIn("петров", roster[10])
         self.assertIn("кузнецов", roster[20])
-        self.assertNotIn(20, roster.get(10, {}))
+        self.assertNotIn("кузнецов", roster[10])
 
         base = FioContext()
         group_ctx = _auto_context(base, set(roster[10]))
