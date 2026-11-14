@@ -417,8 +417,9 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
             return Screen(f"«{fm.esc(subj)}» в ближайшие 2 месяца в расписании не нашёл.")
         l = rows[0]
         d = tu.parse_iso(l["day"])
-        return Screen(f"<b>{fm.esc(subj)}</b>: ближайшая пара — {fm.when_word(d, ctx.today)} ({tu.fmt_date(d)})\n"
-                      f"{fm.short_lesson(l)}", kb_for(d), rich=True)
+        return Screen(f"<b>{fm.esc(subj)}</b> · ближайшая пара\n"
+                      f"📅 <b>{tu.DAYS_FULL[d.weekday()]}, {tu.fmt_date(d)}</b>\n"
+                      + "\n".join(fm._lesson_compact_lines(l)), kb_for(d), rich=True)
 
     # остальные интенты работают с конкретным днём
     d, lessons, prefix = await _pick_day(ctx, gid, intent, subgroup)
@@ -467,10 +468,10 @@ async def answer_intent(ctx: Ctx, intent: Intent, gid: int, subgroup: int | None
             return Screen(f"{prefix}Не нашёл такой пары {when}.", kb_for(d))
         l = hit[0]
         if name == "room":
-            room = f"аудитория <b>{fm.esc(l['room'])}</b>" if l["room"] else "аудитория в расписании не указана"
-            return Screen(f"{prefix}{fm.esc(l['subject'])} ({when}, {l['start_t']}): {room}.", kb_for(d))
-        who = f"<b>{fm.esc(l['teacher'])}</b>" if l["teacher"] else "преподаватель в расписании не указан"
-        return Screen(f"{prefix}{fm.esc(l['subject'])} ({when}, {l['start_t']}): {who}.", kb_for(d))
+            answer = f"📍 Аудитория: <b>{fm.esc(l['room'])}</b>" if l["room"] else "📍 Аудитория в расписании не указана"
+            return Screen(f"{prefix}{when.capitalize()}\n{fm.lesson_block(l)}\n{answer}", kb_for(d), rich=True)
+        answer = f"👨‍🏫 Преподаватель: <b>{fm.esc(l['teacher'])}</b>" if l["teacher"] else "👨‍🏫 Преподаватель в расписании не указан"
+        return Screen(f"{prefix}{when.capitalize()}\n{fm.lesson_block(l)}\n{answer}", kb_for(d), rich=True)
     return None
 
 
