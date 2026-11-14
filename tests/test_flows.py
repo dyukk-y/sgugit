@@ -199,6 +199,16 @@ class T(unittest.TestCase):
             await s.db.close()
         run(go())
 
+    def test_detailed_schedule_answers_use_rich_cards(self):
+        async def go():
+            s = await Sim().setup(); await s.register(100)
+            for question in ("какая завтра первая пара?", "где завтра вторая пара", "когда физика"):
+                out = await s.do(100, text=question)
+                self.assertIsNotNone(out.screen, question)
+                self.assertTrue(out.screen.rich, question)
+            await s.db.close()
+        run(go())
+
     def test_homework_flow(self):
         async def go():
             s = await Sim().setup(); await s.register(100)
