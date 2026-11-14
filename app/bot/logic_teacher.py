@@ -56,7 +56,6 @@ async def menu(ctx: Ctx) -> Screen:
         [Btn("🔎 Найти коллегу", "p:find")],
         [Btn("💬 Поддержка", "me:fb"), Btn("❓ Помощь", "p:help")],
         [Btn("🔄 Сменить преподавателя", "p:change")],
-        [Btn("🎓 Студенческий режим", "p:student")],
     ]
     count = len(active)
     intro = (f"🧑‍🏫 <b>Кабинет преподавателя</b>\n{fm.esc(account['name'])}\n\n"
@@ -310,6 +309,18 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         await ctx.repo.audit(ctx.uid, "teacher_mode_register", f"{teacher['id']}:{teacher['name']}")
         ctx.user["role"] = "teacher"
         return Out(screen=await menu(ctx), clear_state=True, toast="Профиль преподавателя подключён")
+    if act == "student_help":
+        return Out(screen=Screen(
+            "<b>Неправильно выбран профиль?</b>\n\n"
+            "Если вы студент и случайно подключили кабинет преподавателя, "
+            "можно вернуться к обычному студенческому меню. "
+            "Ваша учебная группа и данные профиля сохранятся.\n\n"
+            "Если вы действительно преподаватель, просто вернитесь в кабинет — "
+            "ничего менять не нужно.",
+            [[Btn("↩ Я студент — вернуть обычное меню", "p:student")],
+             [Btn("Я преподаватель — оставить как есть", "p:menu")],
+             nav("p:menu")],
+        ))
     if act == "student":
         await ctx.repo.switch_teacher_to_student(ctx.uid)
         ctx.user["role"] = "student"
@@ -360,7 +371,11 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
                      "💬 <b>Поддержка</b> — личное обращение к администрации бота.\n\n"
                      "Если потерялись, нажмите «Кабинет преподавателя» или «Меню» — вы всегда вернётесь на главный экран.\n\n"
                      "<i>Информация строится по расписанию, загруженному ботом. Внеплановые изменения могут появиться не сразу.</i>")
-        return Out(screen=Screen(help_text, [[Btn("🌐 Сайт СГУГиТ", url="https://sgugit.ru/")], nav("p:menu")]), clear_state=True)
+        return Out(screen=Screen(help_text, [
+            [Btn("🌐 Сайт СГУГиТ", url="https://sgugit.ru/")],
+            [Btn("⚠️ Я случайно выбрал преподавателя", "p:student_help")],
+            nav("p:menu"),
+        ]), clear_state=True)
     return Out(toast="Неизвестное действие")
 
 
