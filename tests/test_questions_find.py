@@ -60,7 +60,7 @@ class T(unittest.TestCase):
             out = await router.handle_text(Ctx(r, CFG, u, now=NOW), "где найти препода Крылова А.А.")
             self.assertIn("Кафедра геодезии", out.screen.text)
             out = await router.handle_text(Ctx(r, CFG, u, now=NOW), "а завтра будет мгп?")
-            self.assertIn("пара состоится завтра в 10:15–11:50", out.screen.text); self.assertIn("215", out.screen.text); self.assertIn("Крылов А. А.", out.screen.text)
+            self.assertTrue(out.screen.rich); self.assertIn("10:15–11:50", out.screen.text); self.assertIn("215", out.screen.text); self.assertIn("Крылов А. А.", out.screen.text)
             out = await router.handle_text(Ctx(r, CFG, u, now=NOW), "в пятницу мгп будет?")
             self.assertIn("в расписании нет", out.screen.text)
             await db.close()
