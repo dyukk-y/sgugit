@@ -84,9 +84,7 @@ class TeacherNotifications(unittest.TestCase):
                 L("2026-10-14", 1, "Математика", "08:30", "10:05"),
                 L("2026-10-15", 1, "Физика", "09:00", "10:35"),
             ], manual=False)
-            teacher_id = await db.insert(
-                "INSERT INTO teachers (name, norm, hidden) VALUES (?, ?, 0)",
-                "Иванов Иван Иванович", "иванов ии")
+            teacher_id = (await repo.search_teachers("Иванов", limit=10))[0]["id"]
             await repo.ensure_user(77)
             await repo.set_teacher_account(77, teacher_id)
             await repo.update_user(77, n_enabled=1, n_evening=1, n_evening_time="20:00", n_before=30, n_changes=1)
@@ -127,9 +125,7 @@ class TeacherNotifications(unittest.TestCase):
             await repo.load_settings()
             day = tu.iso(tu.today() + timedelta(days=3))
             await repo.apply_lessons([L(day, 1, "Математика", "08:30", "10:05")], manual=False)
-            teacher_id = await db.insert(
-                "INSERT INTO teachers (name, norm, hidden) VALUES (?, ?, 0)",
-                "Иванов Иван Иванович", "иванов ии")
+            teacher_id = (await repo.search_teachers("Иванов", limit=10))[0]["id"]
             await repo.ensure_user(78)
             await repo.set_teacher_account(78, teacher_id)
             await repo.update_user(78, n_enabled=1, n_changes=1)
