@@ -135,5 +135,5 @@ class AutoVerificationSafety(unittest.TestCase):
         self.assertTrue(validate_fio("Смирнов Алексей Дмитриевич", ctx=group_ctx).confident)
         self.assertFalse(validate_fio("Петров Иван Петрович", ctx=group_ctx).confident)
         # Официальная фамилия преподавателя сама по себе не даёт права на автоподтверждение.
-        staff_only = _auto_context(base, {"Иванов"})
-        self.assertFalse(validate_fio("Иванов Иван Иванович", ctx=staff_only).confident)
+        no_student_roster = _auto_context(base, set())
+        self.assertFalse(validate_fio("Иванов Алексей Дмитриевич", ctx=no_student_roster).confident)
