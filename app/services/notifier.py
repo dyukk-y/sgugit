@@ -128,7 +128,7 @@ class Notifier:
         tomorrow = now.date() + timedelta(days=1)
         users = await self.repo.db.fetchall(
             "SELECT id, group_id, subgroup, n_evening_time FROM users WHERE n_enabled = 1 AND n_evening = 1 AND group_id IS NOT NULL "
-            "AND banned = 0 AND bot_blocked = 0")
+            "AND banned = 0 AND bot_blocked = 0 AND role <> 'teacher'")
         cache: dict[tuple, list[dict]] = {}
         for u in users:
             sched = tu.hhmm_to_min(u["n_evening_time"])
@@ -153,7 +153,7 @@ class Notifier:
         today_iso = tu.iso(now.date())
         users = await self.repo.db.fetchall(
             "SELECT id, group_id, subgroup, n_before FROM users WHERE n_enabled = 1 AND n_before > 0 AND group_id IS NOT NULL "
-            "AND banned = 0 AND bot_blocked = 0")
+            "AND banned = 0 AND bot_blocked = 0 AND role <> 'teacher'")
         cache: dict[int, list[dict]] = {}
         for u in users:
             gid = u["group_id"]
@@ -220,7 +220,7 @@ class Notifier:
                 text = fm.changes_text(group["name"], changes)
                 kb = [[Btn("📅 Расписание", "s:d:today")]]
                 users = await self.repo.db.fetchall(
-                    "SELECT id FROM users WHERE group_id = ? AND n_enabled = 1 AND n_changes = 1 AND banned = 0 AND bot_blocked = 0", gid)
+                    "SELECT id FROM users WHERE group_id = ? AND role <> 'teacher' AND n_enabled = 1 AND n_changes = 1 AND banned = 0 AND bot_blocked = 0", gid)
                 for u in users:
                     uid = int(u["id"])
                     key = f"{event_key}:u:{uid}"
