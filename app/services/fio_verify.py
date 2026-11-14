@@ -12,11 +12,23 @@ log = logging.getLogger(__name__)
 Notify = Callable[[int, str], Awaitable[None]]
 
 
+def _auto_context(base: FioContext, official_surnames: set[str]) -> FioContext:
+    """Изолированный контекст автопроверки: только официальные фамилии из staff."""
+    trusted: set[str] = set()
+    for surname in official_surnames:
+        trusted.update(surname_keys(surname))
+    return FioContext(
+        known_surnames=frozenset(trusted),
+        staff_pairs=base.staff_pairs,
+        require_known_surname=True,
+    )
+
+
 async def auto_verify_pending(repo: Repo, notify: Notify | None = None, now: int | None = None) -> dict[str, int]:
     """Подтверждает ФИО, которые прошли ВСЕ проверки и «отлежали» паузу.
 
     Условия: вердикт ``ok`` в строгом режиме и ``confident`` (известное имя, отчество от известного мужского имени,
-    реальная фамилия по словарям/справочнику/подтверждённым студентам), нет двойника в группе, нет бана и частых
+    фамилия из официального справочника преподавателей), нет двойника в группе, нет бана и частых
     правок ФИО за сутки. Остальные записи не трогаем, их разбирает администратор.
     """
     now = now or now_ts()
@@ -29,16 +41,8 @@ async def auto_verify_pending(repo: Repo, notify: Notify | None = None, now: int
         return stats
     stop, bad = await repo.stoplists()
     base_ctx = await repo.fio_context()
-    # Для автоподтверждения используем только фамилии из официального справочника
-    # преподавателей. Фамилии студентов не становятся доказательством для новых решений.
-    trusted_surnames: set[str] = set()
-    for surname in await repo.known_surnames():
-        trusted_surnames.update(surname_keys(surname))
-    auto_ctx = FioContext(
-        known_surnames=frozenset(trusted_surnames),
-        staff_pairs=base_ctx.staff_pairs,
-        require_known_surname=True,
-    )
+    # Фамилии студентов не становятся доказательством для новых автоматических решений.
+    auto_ctx = _auto_context(base_ctx, await repo.known_surnames())
     for row in rows:
         res = validate_fio(row["fio"], stop, bad, strict=True, ctx=auto_ctx)
         why = ""
