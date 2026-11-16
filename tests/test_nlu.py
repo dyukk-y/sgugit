@@ -78,6 +78,12 @@ class T(unittest.TestCase):
         for s in ["", "асдф", "как дела у тебя", "я люблю котиков", "ок"]:
             self.assertIsNone(detect_intent(s, TODAY, CAT), s)
 
+    def test_generic_task_discussion_is_not_homework_question(self):
+        for text in ["это задача проекта", "у меня есть задание", "задача по математике"]:
+            self.assertIsNone(detect_intent(text, TODAY, CAT), text)
+        self.check("что задали", "hw")
+        self.check("домашнее задание по математике", "hw")
+
     def test_find_subject(self):
         self.assertEqual(find_subject("задали по инженерной графике", CAT), "Инженерная графика")
         self.assertEqual(find_subject("матешу", CAT), "Математика")

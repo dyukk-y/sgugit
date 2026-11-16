@@ -42,6 +42,25 @@ class GroupScheduleChangeTests(unittest.TestCase):
         self.assertIsNone(draft)
         self.assertIsNone(clarification)
 
+    def test_cancel_pair_without_subject(self):
+        draft, clarification = parse_group_change(
+            "Завтра не будет второй пары", TODAY, CATALOG, LESSONS)
+        self.assertIsNone(clarification)
+        self.assertEqual((draft.action, draft.day, draft.num, draft.subject),
+                         ("cancel", "2026-11-02", 2, "Химия"))
+
+    def test_cancel_by_number_without_subject(self):
+        draft, clarification = parse_group_change(
+            "Завтра отменили 2 пару", TODAY, CATALOG, LESSONS)
+        self.assertIsNone(clarification)
+        self.assertEqual((draft.action, draft.num, draft.subject), ("cancel", 2, "Химия"))
+
+    def test_cancel_without_subject_or_pair_asks_for_clarification(self):
+        draft, clarification = parse_group_change(
+            "Завтра пар не будет", TODAY, CATALOG, LESSONS)
+        self.assertIsNone(draft)
+        self.assertIn("Какую именно пару", clarification)
+
     def test_ambiguous_cancel_requests_pair_number(self):
         lessons = LESSONS + [{
             "day": "2026-11-02", "num": 5, "start_t": "17:00", "end_t": "18:30",
