@@ -45,7 +45,7 @@ async def main_menu(ctx: Ctx) -> Screen:
     ]
     if ctx.repo.flag("rating_enabled"):
         rows[3].append(Btn("⭐ Оценить преподавателя", "t:l:m:0"))
-    if not ctx.verified:
+    if not ctx.verified and not ctx.is_admin:
         if ctx.user.get("fio") and ctx.user.get("fio_status") == "pending":
             rows.append([Btn("⏳ ФИО на проверке", "me:prof")])
         else:
@@ -248,7 +248,7 @@ async def profile_screen(ctx: Ctx) -> Screen:
              f"ФИО: {fm.esc(ctx.user.get('fio') or '—')} ({_status_text(ctx)})",
              f"Подгруппа: {sub if sub else 'все'}",
              f"Роль: {role}",
-             "ФИО необязательно для расписания. " + ("Подтверждённое ФИО нужно для заданий и оценок преподавателей." if ctx.repo.flag("rating_enabled") else "Подтверждённое ФИО нужно для раздела заданий.") ]
+             ("ФИО необязательно для расписания. " + ("Подтверждённое ФИО нужно для заданий и оценок преподавателей." if ctx.repo.flag("rating_enabled") else "Подтверждённое ФИО нужно для раздела заданий.")) if not ctx.is_admin else ""]
     kb: Kb = [[Btn("✏️ Изменить ФИО", "me:fio")], [Btn("🔄 Сменить группу", "me:grp")],
               [Btn("Все" + (" ✅" if not sub else ""), "me:sub:0"),
                Btn("1" + (" ✅" if sub == 1 else ""), "me:sub:1"), Btn("2" + (" ✅" if sub == 2 else ""), "me:sub:2")],
