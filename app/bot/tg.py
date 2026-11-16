@@ -1023,7 +1023,16 @@ def build_router(app: App) -> Router:
             adder = await app.repo.get_user(event.from_user.id) if event.from_user else None
             gid = adder.get("group_id") if adder else None
             chat = await app.repo.upsert_chat(event.chat.id, event.chat.title, gid, event.from_user.id if event.from_user else None)
-            detail = f"chat_id={event.chat.id};title={(event.chat.title or 'Без названия')[:80]};by={event.from_user.id if event.from_user else 'unknown'}"
+            adder_username = (event.from_user.username or "").replace(";", "") if event.from_user else ""
+            adder_name = " ".join(filter(None, (
+                event.from_user.first_name if event.from_user else "",
+                event.from_user.last_name if event.from_user else "",
+            ))).replace(";", "")
+            detail = (
+                f"chat_id={event.chat.id};title={(event.chat.title or 'Без названия')[:80]};"
+                f"by={event.from_user.id if event.from_user else 'unknown'};"
+                f"by_username={adder_username};by_name={adder_name}"
+            )
             try:
                 await app.repo.db.execute(
                     "INSERT INTO analytics_events (user_id, event, detail, created_at) VALUES (?, 'group_added', ?, ?)",

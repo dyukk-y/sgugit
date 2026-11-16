@@ -224,8 +224,21 @@ async def _groups_log(ctx: Ctx, chat_id: int | None = None, page: int = 0) -> Sc
         }.get(item["event"], "событие")
         actor_id = item.get("user_id")
         actor = await ctx.repo.get_user(int(actor_id)) if actor_id else None
-        actor_label = (actor.get("tg_name") or actor.get("username") or str(actor_id)) if actor else (str(actor_id) if actor_id else "")
-        actor_suffix = f" · инициатор: {fm.esc(str(actor_label)[:24])}" if actor_label and item["event"] in ("group_added", "group_removed", "group_renamed", "group_photo_changed") else ""
+        metadata = dict(
+            part.split("=", 1) for part in detail.split(";")
+            if "=" in part
+        )
+        saved_username = metadata.get("by_username", "").strip().lstrip("@")
+        saved_name = metadata.get("by_name", "").strip()
+        actor_label = (
+            f"@{saved_username}" if saved_username else
+            saved_name or
+            (actor.get("tg_name") or (f"@{actor['username']}" if actor.get("username") else str(actor_id)) if actor else str(actor_id or ""))
+        )
+        actor_suffix = f" · добавил: {fm.esc(str(actor_label)[:40])}" if actor_label and item["event"] == "group_added" else (
+            f" · инициатор: {fm.esc(str(actor_label)[:40])}"
+            if actor_label and item["event"] in ("group_removed", "group_renamed", "group_photo_changed") else ""
+        )
         lines.append(f"• {when} · {fm.esc(title[:35])} · {action}{actor_suffix}")
     if not events:
         lines.append("\nПока нет записанных событий. Новая статистика начнёт собираться после обновления.")
