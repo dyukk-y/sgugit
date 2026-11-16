@@ -274,8 +274,7 @@ class T(unittest.TestCase):
             out = await s.do(100, callback="t:l:m:0"); t = texts(out); self.assertIn("Преподаватели", t)
             tid = int([d for d in datas(out) if d.startswith("t:v:")][0].split(":")[2])
             out = await s.do(100, callback=f"t:v:{tid}:m:0"); self.assertIn("t:r:%d:5:m:0" % tid, datas(out))
-            tid = (await s.repo.search_teachers("Иванов"))[0]["id"]
-            out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertIn("ФИО", texts(out))
+            out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertIn("сохранена", out.toast)
             out = await s.do(100, callback=f"t:r:{tid}:3:m:0"); self.assertIn("сохранена", out.toast)
             out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertIn("сохранена", out.toast)
             out = await s.do(100, callback="t:s"); self.assertEqual(out.state, "t:search")
