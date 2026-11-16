@@ -105,8 +105,11 @@ async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0") -> Out:
             prompt = Screen("ФИО уже отправлено на проверку. Задание откроется после подтверждения.",
                             [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
         else:
-            prompt = Screen("Чтобы открыть задание, укажите ФИО и дождитесь подтверждения.",
-                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+            return Out(screen=Screen(
+                "Чтобы открыть задание, сначала укажите ФИО.\n\nВведите полностью: <code>Фамилия Имя Отчество</code>. "
+                "Бот проверит данные, а после подтверждения откроет задания.",
+                [[home_btn()]]),
+                state="reg:fio", state_data={})
         return Out(screen=prompt)
     if not _can_see(ctx, hw):
         return Out(toast="Задание недоступно", alert=True)
@@ -337,8 +340,11 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
             prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
                             [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
         else:
-            prompt = Screen("Чтобы открыть задания группы, укажите ФИО и дождитесь подтверждения.",
-                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+            return Out(screen=Screen(
+                "Чтобы пользоваться заданиями, сначала укажите ФИО.\n\nВведите полностью: <code>Фамилия Имя Отчество</code>. "
+                "Бот проверит данные, и после подтверждения откроет раздел.",
+                [[home_btn()]]),
+                state="reg:fio", state_data={})
         return Out(screen=prompt)
     if act == "l":
         page = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
