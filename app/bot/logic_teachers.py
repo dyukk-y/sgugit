@@ -208,11 +208,11 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
     if act == "skipcomment" and len(parts) >= 2 and parts[1].isdigit():
         tid = int(parts[1]); mode = parts[2] if len(parts) > 2 else "m"
         page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
-        return await card(ctx, tid, mode, page)
+        out = await card(ctx, tid, mode, page); out.clear_state = True; return out
     if act == "cancel" and len(parts) >= 2 and parts[1].isdigit():
         tid = int(parts[1]); mode = parts[2] if len(parts) > 2 else "m"
         page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
-        return await card(ctx, tid, mode, page)
+        out = await card(ctx, tid, mode, page); out.clear_state = True; return out
     # Старые callback-ссылки безопасно перенаправляем на карточку.
     if act in ("r", "c") and len(parts) > 1 and parts[1].isdigit():
         return await card(ctx, int(parts[1]))
@@ -222,6 +222,8 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
 async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
     if not ctx.repo.flag("rating_enabled"):
         return Out(screen=Screen("Раздел сейчас недоступен.", [[home_btn()]]), clear_state=True)
+    if state == "t:rating":
+        return Out(screen=Screen("Пожалуйста, выберите оценку кнопкой от 1 до 5."), state=state, state_data=data)
     if state == "t:comment":
         tid = int(data.get("tid", 0))
         if not tid:
@@ -235,7 +237,7 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
         if comment:
             await ctx.repo.save_teacher_rating_comment(ctx.uid, tid, comment)
             await ctx.repo.audit(ctx.uid, "teacher_rating_comment", str(tid))
-        return await card(ctx, tid, data.get("mode", "m"), int(data.get("page", 0)))
+        out = await card(ctx, tid, data.get("mode", "m"), int(data.get("page", 0))); out.clear_state = True; return out
     if not ctx.verified and not ctx.is_admin:
         if ctx.user.get("fio_status") == "pending":
             prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
