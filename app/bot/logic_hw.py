@@ -38,7 +38,7 @@ async def list_screen(ctx: Ctx, page: int = 0) -> Screen:
     gid = ctx.user.get("group_id")
     if not gid:
         return Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]])
-    if not ctx.verified:
+    if not ctx.verified and not ctx.is_admin:
         return Screen("Чтобы открыть задания группы, укажите ФИО и дождитесь подтверждения. Для расписания ФИО не требуется.",
                       [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
     rows, total = await ctx.repo.list_hw(gid, tu.iso(ctx.today), page * SIZE, SIZE)
@@ -71,7 +71,7 @@ async def day_list_screen(ctx: Ctx, day: str) -> Screen:
     gid = ctx.user.get("group_id")
     if not gid:
         return Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]])
-    if not ctx.verified:
+    if not ctx.verified and not ctx.is_admin:
         return Screen("Чтобы открыть задания группы, укажите ФИО и дождитесь подтверждения.",
                       [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
     rows = await ctx.repo.hw_for_day(gid, day)
