@@ -41,13 +41,13 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     raw = (text or "").strip()
     low = raw.lower().replace("ё", "е")
     if not raw or "?" in raw or re.search(
-        r"\\b(если бы|может быть|а вдруг|кто знает|будет ли|будут ли|есть ли|когда|какая|какой|сколько)\\b",
+        r"\b(если бы|может быть|а вдруг|кто знает|будет ли|будут ли|есть ли|когда|какая|какой|сколько)\b",
         low,
     ):
         return None, None
 
-    cancel = bool(re.search(r"\\b(не будет|не состоится|отмен\\w*|не провод\\w*)\\b", low))
-    add = bool(re.search(r"\\b(будет|добав\\w*|постав\\w*|перенес\\w*|перенос|замен\\w*|начнется|начинается)\\b", low))
+    cancel = bool(re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*)\b", low))
+    add = bool(re.search(r"\b(будет|добав\w*|постав\w*|перенес\w*|перенос|замен\w*|начнется|начинается)\b", low))
     if not cancel and not add:
         return None, None
 
@@ -59,7 +59,7 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     num = _lesson_number(re.findall(r"[а-яa-z0-9]+", low))
     tm = _TIME_RE.search(low)
     start = f"{int(tm.group(1)):02d}:{tm.group(2)}" if tm else ""
-    move_verb = bool(re.search(r"\\bперенес\\w*\\b", low))
+    move_verb = bool(re.search(r"\bперенес\w*\b", low))
 
     if cancel:
         if subject:
