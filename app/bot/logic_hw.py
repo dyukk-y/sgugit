@@ -21,6 +21,8 @@ def can_moderate(ctx: Ctx, hw: dict) -> bool:
 def _can_see(ctx: Ctx, hw: dict) -> bool:
     if hw["status"] == "deleted":
         return False
+    if not ctx.verified and not ctx.is_admin:
+        return False
     if can_moderate(ctx, hw):
         return True
     if ctx.user.get("group_id") != hw["group_id"]:
@@ -36,6 +38,12 @@ async def list_screen(ctx: Ctx, page: int = 0) -> Screen:
     gid = ctx.user.get("group_id")
     if not gid:
         return Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]])
+    if not ctx.verified and not ctx.is_admin:
+        if ctx.user.get("fio_status") == "pending":
+            return Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
+                          [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
+        return Screen("Чтобы открыть этот раздел, укажите ФИО и дождитесь подтверждения. Для расписания ФИО не требуется.",
+                      [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
     rows, total = await ctx.repo.list_hw(gid, tu.iso(ctx.today), page * SIZE, SIZE)
     done = await ctx.repo.hw_done_set(ctx.uid, [r["id"] for r in rows])
     kb: Kb = []
@@ -66,6 +74,12 @@ async def day_list_screen(ctx: Ctx, day: str) -> Screen:
     gid = ctx.user.get("group_id")
     if not gid:
         return Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]])
+    if not ctx.verified and not ctx.is_admin:
+        if ctx.user.get("fio_status") == "pending":
+            return Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
+                          [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
+        return Screen("Чтобы открыть этот раздел, укажите ФИО и дождитесь подтверждения. Для расписания ФИО не требуется.",
+                      [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
     rows = await ctx.repo.hw_for_day(gid, day)
     d = tu.parse_iso(day)
     lines = [f"<b>Задания к парам · {tu.fmt_date(d)}</b>"]
@@ -84,7 +98,17 @@ async def day_list_screen(ctx: Ctx, day: str) -> Screen:
 
 async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0") -> Out:
     hw = await ctx.repo.get_hw(hid)
-    if not hw or not _can_see(ctx, hw):
+    if not hw:
+        return Out(toast="Задание недоступно", alert=True)
+    if not ctx.verified and not ctx.is_admin:
+        if ctx.user.get("fio_status") == "pending":
+            prompt = Screen("ФИО уже отправлено на проверку. Задание откроется после подтверждения.",
+                            [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
+        else:
+            prompt = Screen("Чтобы открыть задание, укажите ФИО и дождитесь подтверждения.",
+                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+        return Out(screen=prompt)
+    if not _can_see(ctx, hw):
         return Out(toast="Задание недоступно", alert=True)
     lines = [f"📚 <b>{fm.esc(hw['subject'])}</b>", f"Срок: {_due_label(hw)}"]
     if hw.get("lesson_day"):
@@ -219,6 +243,14 @@ async def quick_add(ctx: Ctx, phrase: HwPhrase) -> Out:
 
 
 async def on_text_hw(ctx: Ctx, state: str, data: dict, text: str) -> Out:
+    if not ctx.verified and not ctx.is_admin:
+        if ctx.user.get("fio_status") == "pending":
+            prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
+                            [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
+        else:
+            prompt = Screen("Чтобы работать с заданиями, укажите ФИО и дождитесь подтверждения.",
+                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+        return Out(screen=prompt, clear_state=True)
     if state == "hw:edit_subject":
         hid = int(data.get("hid", 0)); hw = await ctx.repo.get_hw(hid)
         if not hw or not (hw["author_id"] == ctx.uid or can_moderate(ctx, hw)):
@@ -300,6 +332,14 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
     gid = ctx.user.get("group_id")
     if not gid and act in ("l", "d", "dn", "add", "sub", "save", "cancel", "q"):
         return Out(screen=Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]]))
+    if not ctx.verified and not ctx.is_admin and act != "cancel":
+        if ctx.user.get("fio_status") == "pending":
+            prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
+                            [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
+        else:
+            prompt = Screen("Чтобы открыть задания группы, укажите ФИО и дождитесь подтверждения.",
+                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+        return Out(screen=prompt)
     if act == "l":
         page = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
         return Out(screen=await list_screen(ctx, page), clear_state=True)

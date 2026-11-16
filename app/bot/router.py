@@ -128,6 +128,14 @@ async def handle_document(ctx: Ctx, filename: str, blob: bytes, file_id: str | N
     if not ctx.registered and not ctx.is_admin:
         return await logic_user.start(ctx)
     state, data = await ctx.repo.get_state(ctx.uid)
+    if state and state.startswith("hw:") and not ctx.verified and not ctx.is_admin:
+        if ctx.user.get("fio_status") == "pending":
+            prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
+                            [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
+        else:
+            prompt = Screen("Чтобы работать с заданиями, укажите ФИО и дождитесь подтверждения.",
+                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+        return Out(screen=prompt, clear_state=True)
     if state and state.startswith("ad:"):
         return await logic_admin.on_document(ctx, state, filename, blob)
     if state == "hw:replace_media" and file_id:
@@ -151,6 +159,14 @@ async def handle_photo(ctx: Ctx, file_id: str, caption: str = "") -> Out:
     if not ctx.registered and not ctx.is_admin:
         return await logic_user.start(ctx)
     state, data = await ctx.repo.get_state(ctx.uid)
+    if state and state.startswith("hw:") and not ctx.verified and not ctx.is_admin:
+        if ctx.user.get("fio_status") == "pending":
+            prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
+                            [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
+        else:
+            prompt = Screen("Чтобы работать с заданиями, укажите ФИО и дождитесь подтверждения.",
+                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+        return Out(screen=prompt, clear_state=True)
     if state == "ad:bc_text" and ctx.can("broadcast"):
         data.update(media_file_id=file_id, media_type="photo")
         if caption.strip():

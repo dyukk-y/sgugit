@@ -45,6 +45,11 @@ async def main_menu(ctx: Ctx) -> Screen:
     ]
     if ctx.repo.flag("rating_enabled"):
         rows[3].append(Btn("⭐ Оценить преподавателя", "t:l:m:0"))
+    if not ctx.verified and not ctx.is_admin:
+        if ctx.user.get("fio") and ctx.user.get("fio_status") == "pending":
+            rows.append([Btn("⏳ ФИО на проверке", "me:prof")])
+        else:
+            rows.append([Btn("✍️ Указать ФИО для заданий" + (" и оценок" if ctx.repo.flag("rating_enabled") else ""), "r:redo")])
     if not ctx.is_admin:
         rows.append([Btn("👨‍🏫 Я преподаватель", "p:register")])
     if show_add_group:
@@ -64,12 +69,8 @@ async def start(ctx: Ctx) -> Out:
         await ctx.repo.update_user(ctx.uid, role="student")
         ctx.user["role"] = "student"
     ctx.user["private_started"] = 1
-    if ctx.user.get("group_id") and ctx.user.get("fio"):
-        return Out(screen=await main_menu(ctx), clear_state=True)
     if ctx.user.get("group_id"):
-        return Out(screen=Screen("Введите ФИО: <code>Фамилия Имя Отчество</code>",
-                                 [[Btn("👨‍🏫 Я преподаватель", "p:register")]]),
-                   state="reg:fio", state_data={})
+        return Out(screen=await main_menu(ctx), clear_state=True)
     welcome_rows: Kb = [[Btn("👨‍🏫 Я преподаватель", "p:register")]]
     if await _show_add_group_button(ctx):
         welcome_rows.append([Btn("➕ В чат", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")])
@@ -83,14 +84,10 @@ def _group_pick_screen(groups: list[dict], text_note: str = "") -> Screen:
 
 
 async def _after_group(ctx: Ctx, gid: int) -> Out:
-    had_fio = bool(ctx.user.get("fio"))
     await ctx.repo.update_user(ctx.uid, group_id=gid, subgroup=None)
     ctx.user["group_id"], ctx.user["subgroup"] = gid, None
     ctx._group_loaded = False
-    if had_fio:
-        return Out(screen=await main_menu(ctx), clear_state=True, toast="Группа изменена")
-    return Out(screen=Screen("Теперь введите ФИО: <code>Фамилия Имя Отчество</code>"),
-               state="reg:fio", state_data={})
+    return Out(screen=await main_menu(ctx), clear_state=True, toast="Группа сохранена")
 
 
 async def on_cb_register(ctx: Ctx, parts: list[str]) -> Out:
@@ -250,7 +247,8 @@ async def profile_screen(ctx: Ctx) -> Screen:
              f"Группа: {fm.esc(g['name']) if g else '—'}",
              f"ФИО: {fm.esc(ctx.user.get('fio') or '—')} ({_status_text(ctx)})",
              f"Подгруппа: {sub if sub else 'все'}",
-             f"Роль: {role}"]
+             f"Роль: {role}",
+             ("ФИО необязательно для расписания. " + ("Подтверждённое ФИО нужно для заданий и оценок преподавателей." if ctx.repo.flag("rating_enabled") else "Подтверждённое ФИО нужно для раздела заданий.")) if not ctx.is_admin else ""]
     kb: Kb = [[Btn("✏️ Изменить ФИО", "me:fio")], [Btn("🔄 Сменить группу", "me:grp")],
               [Btn("Все" + (" ✅" if not sub else ""), "me:sub:0"),
                Btn("1" + (" ✅" if sub == 1 else ""), "me:sub:1"), Btn("2" + (" ✅" if sub == 2 else ""), "me:sub:2")],
