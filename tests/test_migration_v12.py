@@ -33,7 +33,7 @@ class MigrationV14Tests(unittest.TestCase):
                 index = await db.scalar(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?",
                     "ix_gsc_group_day_status")
-                self.assertEqual(version, 15)
+                self.assertEqual(version, 16)
                 self.assertEqual(saved, "unchanged")
                 self.assertEqual(await db.scalar("SELECT fio FROM users WHERE id = ?", 101), "Иванов Иван")
                 self.assertEqual(await db.scalar("SELECT subject FROM lessons WHERE id = ?", 201), "Математика")

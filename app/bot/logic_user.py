@@ -15,8 +15,7 @@ _FIO_TRIES: dict[int, list] = {}   # uid -> [попытки, заблокиро�
 _FB_LAST: dict[int, float] = {}
 
 WELCOME = ("<b>Бот расписания СГУГиТ</b> 👋\n"
-           "Студент — отправьте группу (например, <code>ИС-11</code>).\n"
-           "Преподаватель — нажмите «Я преподаватель».")
+           "Отправьте вашу группу (например, <code>ИС-11</code>), чтобы открыть студенческий режим.")
 
 
 async def _show_add_group_button(ctx: Ctx) -> bool:
@@ -45,13 +44,6 @@ async def main_menu(ctx: Ctx) -> Screen:
     ]
     if ctx.repo.flag("rating_enabled"):
         rows[3].append(Btn("⭐ Оценить преподавателя", "t:l:m:0"))
-    if not ctx.verified and not ctx.is_admin:
-        if ctx.user.get("fio") and ctx.user.get("fio_status") == "pending":
-            rows.append([Btn("⏳ ФИО на проверке", "me:prof")])
-        else:
-            rows.append([Btn("✍️ Указать ФИО для заданий" + (" и оценок" if ctx.repo.flag("rating_enabled") else ""), "r:redo")])
-    if not ctx.is_admin:
-        rows.append([Btn("👨‍🏫 Я преподаватель", "p:register")])
     if show_add_group:
         rows.append([Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")])
     # Настройки и спонсор всегда стоят рядом; длинные кнопки на мобильном
@@ -71,7 +63,7 @@ async def start(ctx: Ctx) -> Out:
     ctx.user["private_started"] = 1
     if ctx.user.get("group_id"):
         return Out(screen=await main_menu(ctx), clear_state=True)
-    welcome_rows: Kb = [[Btn("👨‍🏫 Я преподаватель", "p:register")]]
+    welcome_rows: Kb = []
     if await _show_add_group_button(ctx):
         welcome_rows.append([Btn("➕ В чат", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")])
     welcome = Screen(ctx.repo.setting("welcome_text") or WELCOME, welcome_rows)
@@ -311,7 +303,17 @@ async def on_cb_me(ctx: Ctx, parts: list[str]) -> Out:
     if act == "help":
         if ctx.role == "teacher":
             return Out(screen=await logic_teacher.on_cb(ctx, ["help"]))
-        return Out(screen=Screen(ls.HELP_TEXT + "\n\n<b>Полезные ссылки</b>", [[Btn("🌐 Сайт СГУГиТ", url="https://sgugit.ru/"), Btn("📅 Расписание вуза", url="https://sgugit.ru/raspisanie/")], [Btn("🏛 Структура и кафедры", url="https://sgugit.ru/university/struct/kafedry/")], nav("me:menu")]))
+        help_text = (ls.HELP_TEXT + "\n\n"
+                     "<b>Режим преподавателя</b>\n"
+                     "Если вы преподаватель, откройте режим преподавателя по кнопке ниже. "
+                     "Если случайно выбрали не тот режим, здесь же можно переключиться обратно. "
+                     "Группа и студенческие данные сохраняются.")
+        return Out(screen=Screen(help_text + "\n\n<b>Полезные ссылки</b>", [
+            [Btn("👨‍🏫 Перейти в режим преподавателя", "p:register")],
+            [Btn("🌐 Сайт СГУГиТ", url="https://sgugit.ru/"), Btn("📅 Расписание вуза", url="https://sgugit.ru/raspisanie/")],
+            [Btn("🏛 Структура и кафедры", url="https://sgugit.ru/university/struct/kafedry/")],
+            nav("me:menu")
+        ]))
     if act == "ntf":
         return Out(screen=await notif_screen(ctx))
     if act == "n" and len(parts) >= 2:

@@ -1,4 +1,4 @@
-"""Рейтинг преподавателей: список с листанием, поиск, карточка, оценка 1–5."""
+"""Компактное анонимное оценивание преподавателей по реальным видам занятий."""
 from __future__ import annotations
 
 from app.bot.core import Btn, Ctx, Kb, Out, Screen, home_btn, nav, pager
@@ -18,6 +18,7 @@ def _plural(n: int) -> str:
     if 11 <= n % 100 <= 14:
         return "оценок"
     return {1: "оценка", 2: "оценки", 3: "оценки", 4: "оценки"}.get(n % 10, "оценок")
+
 
 
 def _disabled() -> Out:
@@ -52,6 +53,7 @@ async def list_screen(ctx: Ctx, mode: str = "m", page: int = 0) -> Screen:
     return Screen(title + note, kb)
 
 
+
 async def card(ctx: Ctx, tid: int, mode: str = "m", page: int = 0) -> Out:
     t = await ctx.repo.get_teacher(tid)
     if not t or t["hidden"]:
@@ -59,31 +61,63 @@ async def card(ctx: Ctx, tid: int, mode: str = "m", page: int = 0) -> Out:
     min_votes = ctx.repo.int_setting("min_votes") or 5
     subs = await ctx.repo.teacher_subjects(t["norm"])
     mine = await ctx.repo.my_rating(ctx.uid, tid)
+    criteria = await ctx.repo.teacher_rating_criteria(t["norm"])
+    summaries = {r["criterion"]: r for r in await ctx.repo.teacher_rating_score_summary(tid)}
     lines = [f"<b>{fm.esc(t['name'])}</b>"]
     if subs:
         lines.append("Предметы: " + fm.esc(", ".join(subs)))
     lines.append(_stars_text(t["avg"], t["cnt"], min_votes))
-    trend = await ctx.repo.db.fetchone("SELECT AVG(CASE WHEN updated_at >= ? AND stars > 0 THEN stars END) AS recent, AVG(CASE WHEN updated_at < ? AND updated_at >= ? AND stars > 0 THEN stars END) AS prior FROM ratings WHERE teacher_id = ?", ctx.now.timestamp() - 30*86400, ctx.now.timestamp() - 30*86400, ctx.now.timestamp() - 60*86400, tid)
-    if trend and trend.get("recent") is not None and trend.get("prior") is not None:
-        delta = float(trend["recent"]) - float(trend["prior"])
-        lines.append(f"Тренд за 30 дней: {'↗' if delta > 0.05 else ('↘' if delta < -0.05 else '→')} {delta:+.2f} к предыдущим 30 дням")
-    criteria = await ctx.repo.db.fetchone("SELECT AVG(NULLIF(lectures,0)) AS lectures, AVG(NULLIF(strictness,0)) AS strictness, AVG(NULLIF(assessment,0)) AS assessment FROM ratings WHERE teacher_id = ?", tid)
-    if criteria and any(criteria.get(k) is not None for k in ("lectures", "strictness", "assessment")):
-        labels = (("lectures", "Лекции"), ("strictness", "Строгость"), ("assessment", "Зачёт/оценивание"))
-        lines.append("Критерии: " + " · ".join(f"{label} {float(criteria[key]):.1f}" for key, label in labels if criteria.get(key) is not None))
     if mine:
         lines.append(f"Ваша общая оценка: {'⭐' * mine}")
+    pros, cons = [], []
+    for item in criteria:
+        summary = summaries.get(item["key"])
+        if not summary or not summary.get("cnt"):
+            continue
+        avg = float(summary["avg"])
+        lines.append(f"· {fm.esc(item['label'])}: {avg:.1f}/5 ({summary['cnt']})".replace(".", ","))
+        if avg >= 4.0:
+            pros.append(item["label"].lower())
+        elif avg <= 3.0:
+            cons.append(item["label"].lower())
+    if pros:
+        lines.append("👍 Сильные стороны: " + ", ".join(pros[:4]))
+    if cons:
+        lines.append("👎 Что можно улучшить: " + ", ".join(cons[:4]))
+    comments = await ctx.repo.public_teacher_rating_comments(tid, 3)
+    if comments:
+        lines.append("\n<b>Комментарии студентов</b>")
+        for item in comments:
+            # В публичной выборке нет user_id, username или имени автора.
+            lines.append("“" + fm.esc(item["comment"]) + "”")
     kb: Kb = []
-    if ctx.verified:
-        lines.append("\nОбщая оценка:")
-        kb.append([Btn(f"{n}⭐", f"t:r:{tid}:{n}:{mode}:{page}") for n in range(1, 6)])
-        lines.append("Оцените критерии отдельно (можно менять позже):")
-        for key, label in (("lectures", "Лекции"), ("strictness", "Строгость"), ("assessment", "Зачёт")):
-            kb.append([Btn(f"{label} {n}⭐", f"t:c:{tid}:{key}:{n}:{mode}:{page}") for n in range(1, 6)])
+    if ctx.verified or ctx.is_admin:
+        if criteria:
+            kb.append([Btn("⭐ Оценить преподавателя", f"t:begin:{tid}:{mode}:{page}")])
+            lines.append("\nОценка доступна по тем видам занятий, которые есть в расписании этого преподавателя.")
+        else:
+            lines.append("\n<i>В расписании пока нет видов занятий для оценки.</i>")
     else:
         lines.append("\n<i>Оценки доступны после подтверждения ФИО.</i>")
+    if ctx.is_admin:
+        kb.append([Btn("🔐 Авторы комментариев (админ)", f"t:admincomments:{tid}:{mode}:{page}")])
     kb.append(nav(f"t:l:{mode}:{page}"))
     return Out(screen=Screen("\n".join(lines), kb))
+
+
+async def _rating_step(ctx: Ctx, tid: int, criteria: list[dict], index: int, mode: str, page: int) -> Out:
+    if index >= len(criteria):
+        return Out(screen=Screen("Оценки по всем доступным пунктам сохранены. Хотите добавить комментарий?\n\n"
+                                 "Он будет опубликован без имени автора. Идентификатор отправителя доступен только администрации.",
+                                 [[Btn("✍️ Добавить комментарий", f"t:comment:{tid}:{mode}:{page}")],
+                                  [Btn("Пропустить", f"t:skipcomment:{tid}:{mode}:{page}")]]),
+                   state="t:comment", state_data={"tid": tid, "mode": mode, "page": page})
+    item = criteria[index]
+    kb = [[Btn(f"{n}⭐", f"t:score:{tid}:{index}:{n}:{mode}:{page}") for n in range(1, 6)],
+          [Btn("✖ Отменить", f"t:cancel:{tid}:{mode}:{page}")]]
+    return Out(screen=Screen(f"<b>{fm.esc(item['label'])}</b>\n\nНасколько хорошо преподаватель ведёт этот вид занятий?\nВыберите оценку от 1 до 5.\n\nПункт {index + 1} из {len(criteria)}", kb),
+               state="t:rating", state_data={"tid": tid, "criteria": criteria, "index": index,
+                                             "mode": mode, "page": page})
 
 
 async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
@@ -96,8 +130,10 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
                             [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
         else:
-            prompt = Screen("Чтобы просматривать и оценивать преподавателей, укажите ФИО и дождитесь подтверждения.",
-                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+            return Out(screen=Screen(
+                "Чтобы пользоваться оценками преподавателей, сначала укажите ФИО.\n\n"
+                "Введите полностью: <code>Фамилия Имя Отчество</code>. Бот проверит данные и после подтверждения откроет раздел.",
+                [[home_btn()]]), state="reg:fio", state_data={})
         return Out(screen=prompt)
     act = parts[0] if parts else "l"
     if act == "l":
@@ -111,13 +147,29 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         mode = parts[2] if len(parts) > 2 and parts[2] in ("m", "a", "s") else "m"
         page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
         return await card(ctx, int(parts[1]), mode if mode != "s" else "m", page)
-    if act == "c" and len(parts) > 4 and parts[1].isdigit() and parts[3].isdigit():
-        tid, criterion, stars = int(parts[1]), parts[2], int(parts[3])
-        mode = parts[4] if len(parts) > 4 and parts[4] in ("m", "a") else "m"
-        page = int(parts[5]) if len(parts) > 5 and parts[5].isdigit() else 0
-        if not ctx.verified:
-            return Out(toast="Оценки доступны только подтверждённым студентам", alert=True)
-        if criterion not in {"lectures", "strictness", "assessment"} or not 1 <= stars <= 5:
+    if act == "begin" and len(parts) >= 2 and parts[1].isdigit():
+        tid = int(parts[1]); mode = parts[2] if len(parts) > 2 else "m"
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        teacher = await ctx.repo.get_teacher(tid)
+        if not teacher or teacher["hidden"]:
+            return Out(toast="Преподаватель недоступен", alert=True)
+        if ctx.repo.flag("rate_only_own") and not ctx.is_admin:
+            own = await ctx.repo.teacher_ids_for_group(ctx.user["group_id"])
+            if tid not in own:
+                return Out(toast="Оценивать можно только своих преподавателей", alert=True)
+        criteria = await ctx.repo.teacher_rating_criteria(teacher["norm"])
+        if not criteria:
+            return Out(toast="В расписании нет пунктов для оценки", alert=True)
+        return await _rating_step(ctx, tid, criteria, 0, mode, page)
+    if act == "score" and len(parts) >= 6 and all(parts[i].isdigit() for i in (1, 2, 3)):
+        tid, index, stars = int(parts[1]), int(parts[2]), int(parts[3])
+        mode = parts[4] if parts[4] in ("m", "a") else "m"
+        page = int(parts[5]) if parts[5].isdigit() else 0
+        state, data = await ctx.repo.get_state(ctx.uid)
+        if state != "t:rating" or int(data.get("tid", 0)) != tid:
+            return Out(toast="Сессия оценки устарела. Откройте карточку заново.", alert=True)
+        criteria = data.get("criteria") or []
+        if not 0 <= index < len(criteria) or not 1 <= stars <= 5:
             return Out(toast="Некорректная оценка", alert=True)
         teacher = await ctx.repo.get_teacher(tid)
         if not teacher or teacher["hidden"]:
@@ -126,46 +178,75 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             own = await ctx.repo.teacher_ids_for_group(ctx.user["group_id"])
             if tid not in own:
                 return Out(toast="Оценивать можно только своих преподавателей", alert=True)
-        await ctx.repo.db.execute(f"UPDATE ratings SET {criterion} = ?, updated_at = ? WHERE user_id = ? AND teacher_id = ?", stars, int(ctx.now.timestamp()), ctx.uid, tid)
-        row = await ctx.repo.db.fetchone("SELECT user_id FROM ratings WHERE user_id = ? AND teacher_id = ?", ctx.uid, tid)
-        if not row:
-            await ctx.repo.db.execute("INSERT INTO ratings (user_id, teacher_id, stars, updated_at, " + criterion + ") VALUES (?, ?, 0, ?, ?)", ctx.uid, tid, int(ctx.now.timestamp()), stars)
-        await ctx.repo.audit(ctx.uid, "teacher_criterion_rating", f"{tid}:{criterion}:{stars}")
-        out = await card(ctx, tid, mode, page); out.toast = "Оценка критерия сохранена"; return out
-    if act == "r" and len(parts) > 2 and parts[1].isdigit() and parts[2].isdigit():
-        tid, stars = int(parts[1]), int(parts[2])
-        mode = parts[3] if len(parts) > 3 and parts[3] in ("m", "a") else "m"
-        page = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
-        if not ctx.verified:
-            return Out(toast="Оценки доступны после подтверждения ФИО", alert=True)
-        if not 1 <= stars <= 5:
-            return Out(toast="Неверная оценка", alert=True)
-        t = await ctx.repo.get_teacher(tid)
-        if not t or t["hidden"]:
-            return Out(toast="Преподаватель недоступен", alert=True)
-        if ctx.repo.flag("rate_only_own") and not ctx.is_admin:
-            own = await ctx.repo.teacher_ids_for_group(ctx.user["group_id"])
-            if tid not in own:
-                return Out(toast="Оценивать можно только своих преподавателей", alert=True)
-        status, days = await ctx.repo.rate_teacher(ctx.uid, tid, stars, ctx.repo.int_setting("rate_cooldown_days"))
-        if status == "cooldown":
-            return Out(toast=f"Оценку можно изменить через {days} дн.", alert=True)
-        out = await card(ctx, tid, mode, page)
-        out.toast = "Эта оценка уже стоит" if status == "same" else "Спасибо! Оценка сохранена ✅"
-        return out
+        await ctx.repo.save_teacher_rating_score(ctx.uid, tid, criteria[index]["key"], stars)
+        await ctx.repo.audit(ctx.uid, "teacher_criterion_rating", f"{tid}:{criteria[index]['key']}:{stars}")
+        if index + 1 >= len(criteria):
+            own_scores = await ctx.repo.my_teacher_rating_scores(ctx.uid, tid)
+            values = [own_scores[item["key"]] for item in criteria if item["key"] in own_scores]
+            if values:
+                overall = max(1, min(5, int(round(sum(values) / len(values)))))
+                await ctx.repo.rate_teacher(ctx.uid, tid, overall, 0)
+        return await _rating_step(ctx, tid, criteria, index + 1, mode, page)
+    if act == "comment" and len(parts) >= 2 and parts[1].isdigit():
+        tid = int(parts[1]); mode = parts[2] if len(parts) > 2 else "m"
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        return Out(screen=Screen("Напишите короткий комментарий (до 600 символов). Не указывайте личные данные.", 
+                                 [[Btn("Пропустить", f"t:skipcomment:{tid}:{mode}:{page}")]]),
+                   state="t:comment", state_data={"tid": tid, "mode": mode, "page": page})
+    if act == "admincomments" and len(parts) >= 2 and parts[1].isdigit():
+        if not ctx.is_admin:
+            return Out(toast="Недостаточно прав", alert=True)
+        tid = int(parts[1])
+        rows = await ctx.repo.admin_teacher_rating_comments(tid)
+        lines = ["<b>Комментарии и авторы (только администрация)</b>"]
+        for row in rows:
+            who = ("@" + row["username"]) if row.get("username") else (row.get("tg_name") or str(row["user_id"]))
+            lines.append(f"\n<b>{fm.esc(str(who))}</b> · ID <code>{row['user_id']}</code>\n{fm.esc(row['comment'])}")
+        if not rows:
+            lines.append("\nКомментариев пока нет.")
+        return Out(screen=Screen("\n".join(lines), [nav(f"t:v:{tid}:m:0")]))
+    if act == "skipcomment" and len(parts) >= 2 and parts[1].isdigit():
+        tid = int(parts[1]); mode = parts[2] if len(parts) > 2 else "m"
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        out = await card(ctx, tid, mode, page); out.clear_state = True; return out
+    if act == "cancel" and len(parts) >= 2 and parts[1].isdigit():
+        tid = int(parts[1]); mode = parts[2] if len(parts) > 2 else "m"
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        out = await card(ctx, tid, mode, page); out.clear_state = True; return out
+    # Старые callback-ссылки безопасно перенаправляем на карточку.
+    if act in ("r", "c") and len(parts) > 1 and parts[1].isdigit():
+        return await card(ctx, int(parts[1]))
     return Out(toast="Неизвестное действие")
 
 
 async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
     if not ctx.repo.flag("rating_enabled"):
         return Out(screen=Screen("Раздел сейчас недоступен.", [[home_btn()]]), clear_state=True)
+    if state == "t:rating":
+        return Out(screen=Screen("Пожалуйста, выберите оценку кнопкой от 1 до 5."), state=state, state_data=data)
+    if state == "t:comment":
+        tid = int(data.get("tid", 0))
+        if not tid:
+            return Out(screen=Screen("Не удалось определить преподавателя. Откройте карточку заново.", [[home_btn()]]), clear_state=True)
+        comment = text.strip()
+        if len(comment) > 600:
+            return Out(screen=Screen("Комментарий слишком длинный. Максимум — 600 символов. Сократите его и отправьте ещё раз."),
+                       state="t:comment", state_data=data)
+        if comment and not ctx.verified and not ctx.is_admin:
+            return Out(screen=Screen("Для отправки комментария нужно подтверждённое ФИО.", [[home_btn()]]), clear_state=True)
+        if comment:
+            await ctx.repo.save_teacher_rating_comment(ctx.uid, tid, comment)
+            await ctx.repo.audit(ctx.uid, "teacher_rating_comment", str(tid))
+        out = await card(ctx, tid, data.get("mode", "m"), int(data.get("page", 0))); out.clear_state = True; return out
     if not ctx.verified and not ctx.is_admin:
         if ctx.user.get("fio_status") == "pending":
             prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
                             [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
         else:
-            prompt = Screen("Чтобы просматривать и оценивать преподавателей, укажите ФИО и дождитесь подтверждения.",
-                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+            return Out(screen=Screen(
+                "Чтобы пользоваться оценками преподавателей, сначала укажите ФИО.\n\n"
+                "Введите полностью: <code>Фамилия Имя Отчество</code>. Бот проверит данные и после подтверждения откроет раздел.",
+                [[home_btn()]]), state="reg:fio", state_data={})
         return Out(screen=prompt, clear_state=True)
     found = await ctx.repo.search_teachers(text)
     seen = {t["id"] for t in found}
@@ -174,8 +255,7 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
     if subj:
         for t in await ctx.repo.teachers_by_subject(subj):
             if t["id"] not in seen:
-                found.append(t)
-                seen.add(t["id"])
+                found.append(t); seen.add(t["id"])
     found = found[:8]
     if not found:
         return Out(screen=Screen("Никого не нашёл. Попробуйте другую фамилию или предмет.", [nav("t:l:m:0")]),
