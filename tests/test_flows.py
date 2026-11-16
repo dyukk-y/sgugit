@@ -132,8 +132,10 @@ class T(unittest.TestCase):
             out = await s.do(100, command="start"); self.assertIn("группу", texts(out))
             out = await s.do(100, text="ис 11"); self.assertIn("r:g:", " ".join(datas(out)))
             gd = [d for d in datas(out) if d.startswith("r:g:")][0]
-            out = await s.do(100, callback=gd); self.assertIn("ФИО", texts(out))
-            self.assertNotIn("Введите ФИО", texts(out))
+            out = await s.do(100, callback=gd)
+            self.assertIn("r:redo", datas(out))
+            self.assertIn("s:d:today", datas(out))
+            self.assertIn("p:register", datas(out))
             out = await s.do(100, callback="r:redo")
             out = await s.do(100, text="Иванов Иван Иванович"); self.assertIn("Напишите свои ФИО", texts(out)); self.assertNotIn("r:ok", datas(out))
             out = await s.do(100, text="хуй пизда джигурда"); self.assertNotIn("r:ok", datas(out))
@@ -273,7 +275,7 @@ class T(unittest.TestCase):
             tid = int([d for d in datas(out) if d.startswith("t:v:")][0].split(":")[2])
             out = await s.do(100, callback=f"t:v:{tid}:m:0"); self.assertIn("t:r:%d:5:m:0" % tid, datas(out))
             tid = (await s.repo.search_teachers("Иванов"))[0]["id"]
-            out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertTrue(out.toast and "подтверждения" in out.toast)
+            out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertIn("ФИО", texts(out))
             out = await s.do(100, callback=f"t:r:{tid}:3:m:0"); self.assertIn("сохранена", out.toast)
             out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertIn("сохранена", out.toast)
             out = await s.do(100, callback="t:s"); self.assertEqual(out.state, "t:search")
@@ -328,7 +330,7 @@ class T(unittest.TestCase):
             out = await s.do(1, callback="ad:fq:0"); self.assertIn("ad:u:100", datas(out))
             out = await s.do(1, callback="ad:ufo:100:ok"); self.assertEqual(out.notify[0][0], 100)
             out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertIn("сохранена", out.toast)
-            out = await s.do(1, callback="ad:ufo:100:reset"); out = await s.do(100, command="start"); self.assertIn("ФИО", texts(out))
+            out = await s.do(1, callback="ad:ufo:100:reset"); out = await s.do(100, command="start"); self.assertIn("r:redo", datas(out))
             # настройки
             out = await s.do(1, callback="ad:st:maintenance"); out = await s.do(100, command="today"); self.assertIn("технические", texts(out).lower())
             out = await s.do(1, command="admin"); self.assertIn("Панель управления", texts(out))
