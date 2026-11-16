@@ -86,8 +86,18 @@ def start_all(app: tg.App, sync: SyncService, directory: DirectorySync, notifier
     state = {"hourly": 0.0}
 
     async def sync_job() -> None:
-        if repo.flag("sync_enabled"):
-            await sync.run_once()
+        if not repo.flag("sync_enabled"):
+            return
+        # Не скачиваем все страницы групп при каждом перезапуске процесса:
+        # используем расписание из БД, если последняя успешная синхронизация
+        # была в пределах штатного интервала обновления.
+        last_ok = int(repo.setting("sync_last_ok") or 0)
+        age = max(0, tu.now_ts() - last_ok) if last_ok else None
+        max_age = cfg.sync_interval_min * 60
+        if age is not None and age < max_age:
+            log.info("Стартовая синхронизация пропущена: сохранённое расписание актуально (%s сек. назад)", age)
+            return
+        await sync.run_once()
 
     async def directory_job() -> None:
         if repo.setting("dir_source") == "file":
