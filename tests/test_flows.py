@@ -342,7 +342,7 @@ class T(unittest.TestCase):
             out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertIn("ФИО", texts(out))
             out = await s.do(1, callback="ad:fq:0"); self.assertIn("ad:u:100", datas(out))
             out = await s.do(1, callback="ad:ufo:100:ok"); self.assertEqual(out.notify[0][0], 100)
-            out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertIn("сохранена", out.toast)
+            out = await s.do(100, callback=f"t:v:{tid}:m:0"); self.assertIn("Иванов", texts(out))
             out = await s.do(1, callback="ad:ufo:100:reset"); out = await s.do(100, command="start"); self.assertNotIn("r:redo", datas(out))
             out = await s.do(100, callback="h:l:0"); self.assertIn("ФИО", texts(out))
             # настройки
