@@ -253,17 +253,20 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         rows = await ctx.repo.admin_teacher_review_details(tid)
         lines = ["<b>Отзывы, ответы и авторы (только администрация)</b>"]
         seen_reviews = set()
+        kb: Kb = []
         for row in rows:
             if row["review_id"] not in seen_reviews:
                 who = ("@" + row["review_username"]) if row.get("review_username") else (row.get("review_tg_name") or str(row["review_user_id"]))
                 lines.append(f"\n<b>Отзыв · {fm.esc(str(who))} · ID <code>{row['review_user_id']}</code></b>\n{fm.esc(row['comment'])}")
+                kb.append([Btn("🗑 Удалить отзыв", "t:admindel:" + str(tid) + ":" + str(row["review_id"]))])
                 seen_reviews.add(row["review_id"])
             if row.get("reply"):
                 who = ("@" + row["reply_username"]) if row.get("reply_username") else (row.get("reply_tg_name") or str(row["reply_user_id"]))
                 lines.append(f"↳ <b>Ответ · {fm.esc(str(who))} · ID <code>{row['reply_user_id']}</code></b>\n{fm.esc(row['reply'])}")
         if not rows:
             lines.append("\nОтзывов пока нет.")
-        return Out(screen=Screen("\n".join(lines), [nav(f"t:v:{tid}:m:0")]))
+        kb.append(nav(f"t:v:{tid}:m:0"))
+        return Out(screen=Screen("\n".join(lines)[:3800], kb))
     if act == "admindel" and len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
         if not ctx.is_admin:
             return Out(toast="Недостаточно прав", alert=True)
