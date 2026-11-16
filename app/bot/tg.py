@@ -1219,8 +1219,8 @@ def build_router(app: App) -> Router:
             await _reply_group(app, message,
                 f"📝 Записал задание по предмету <b>{fm.esc(captured['subject'])}</b>{due}{lesson}. "
                 "Оно появится в разделе «Задания» и рядом с соответствующей парой.", chat)
-        if chat["smart_mode"] == "off":
-            return
+        # Explicit schedule cancellations/moves are analyzed independently of smart replies.
+        # Ordinary Q&A remains disabled when smart_mode is off.
 
         mention = f"@{app.username.lower()}"
         text = message.text
@@ -1276,6 +1276,8 @@ def build_router(app: App) -> Router:
                     app.spawn(_delete_later(sent, minutes * 60))
             except TelegramAPIError:
                 await app.repo.decide_group_schedule_change(change_id, message.from_user.id, False)
+            return
+        if chat["smart_mode"] == "off":
             return
         request_text = text
         scr = await logic_router.group_text(ctx, chat["group_id"], text, chat["smart_mode"], addressed)
