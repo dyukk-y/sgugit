@@ -99,6 +99,8 @@ async def card(ctx: Ctx, tid: int, mode: str = "m", page: int = 0) -> Out:
             lines.append("\n<i>В расписании пока нет видов занятий для оценки.</i>")
     else:
         lines.append("\n<i>Оценки доступны после подтверждения ФИО.</i>")
+    if ctx.is_admin:
+        kb.append([Btn("🔐 Авторы комментариев (админ)", f"t:admincomments:{tid}:{mode}:{page}")])
     kb.append(nav(f"t:l:{mode}:{page}"))
     return Out(screen=Screen("\n".join(lines), kb))
 
@@ -178,6 +180,12 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
                 return Out(toast="Оценивать можно только своих преподавателей", alert=True)
         await ctx.repo.save_teacher_rating_score(ctx.uid, tid, criteria[index]["key"], stars)
         await ctx.repo.audit(ctx.uid, "teacher_criterion_rating", f"{tid}:{criteria[index]['key']}:{stars}")
+        if index + 1 >= len(criteria):
+            own_scores = await ctx.repo.my_teacher_rating_scores(ctx.uid, tid)
+            values = [own_scores[item["key"]] for item in criteria if item["key"] in own_scores]
+            if values:
+                overall = max(1, min(5, int(round(sum(values) / len(values)))))
+                await ctx.repo.rate_teacher(ctx.uid, tid, overall, 0)
         return await _rating_step(ctx, tid, criteria, index + 1, mode, page)
     if act == "comment" and len(parts) >= 2 and parts[1].isdigit():
         tid = int(parts[1]); mode = parts[2] if len(parts) > 2 else "m"
@@ -185,6 +193,18 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         return Out(screen=Screen("Напишите короткий комментарий (до 600 символов). Не указывайте личные данные.", 
                                  [[Btn("Пропустить", f"t:skipcomment:{tid}:{mode}:{page}")]]),
                    state="t:comment", state_data={"tid": tid, "mode": mode, "page": page})
+    if act == "admincomments" and len(parts) >= 2 and parts[1].isdigit():
+        if not ctx.is_admin:
+            return Out(toast="Недостаточно прав", alert=True)
+        tid = int(parts[1])
+        rows = await ctx.repo.admin_teacher_rating_comments(tid)
+        lines = ["<b>Комментарии и авторы (только администрация)</b>"]
+        for row in rows:
+            who = ("@" + row["username"]) if row.get("username") else (row.get("tg_name") or str(row["user_id"]))
+            lines.append(f"\n<b>{fm.esc(str(who))}</b> · ID <code>{row['user_id']}</code>\n{fm.esc(row['comment'])}")
+        if not rows:
+            lines.append("\nКомментариев пока нет.")
+        return Out(screen=Screen("\n".join(lines), [nav(f"t:v:{tid}:m:0")]))
     if act == "skipcomment" and len(parts) >= 2 and parts[1].isdigit():
         tid = int(parts[1]); mode = parts[2] if len(parts) > 2 else "m"
         page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
