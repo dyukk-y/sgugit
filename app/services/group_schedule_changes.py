@@ -86,7 +86,7 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
                 return None, "Какую именно пару отменяют? Укажите предмет, номер пары или время."
             if not matches:
                 return None, f"Не нашёл подходящую пару на {tu.fmt_date(day)}. Уточните предмет или номер пары."
-            return None, f"На {tu.fmt_date(day)} подходит несколько пар. Уточните предмет или номер пары."
+            return None, f"На {tu.fmt_date(day)} подходит несколько пар. Уточните номер пары или предмет."
         lesson = matches[0]
         return ChangeDraft(
             "cancel", day_iso, int(lesson["num"]), lesson["subject"],
