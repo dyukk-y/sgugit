@@ -247,6 +247,45 @@ async def fetch_site(url: str, today: date) -> list[LessonRec]:
 
 GROUP_URL_RE = re.compile(r"/raspisanie/group/(\d+)/?")
 
+GROUP_URL_CACHE_TTL = 7 * 86400
+
+def _load_group_url_cache(cache_path, now=None):
+    """Return validated cached URLs and whether the discovery scan is still fresh."""
+    import json
+    import time
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return [], False
+    if not isinstance(payload, dict):
+        return [], False
+    groups = {}
+    entries = payload.get("groups", [])
+    if not isinstance(entries, list):
+        entries = []
+    for item in entries:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        name, url = str(item[0]).strip(), str(item[1]).strip()
+        match = GROUP_URL_RE.search(url)
+        if name and match:
+            groups.setdefault(match.group(1), (name, url))
+    try:
+        checked_at = int(payload.get("checked_at", 0))
+    except (TypeError, ValueError):
+        checked_at = 0
+    current = int(time.time()) if now is None else int(now)
+    age = current - checked_at
+    return list(groups.values()), bool(groups) and 0 <= age < GROUP_URL_CACHE_TTL
+
+
+def _save_group_url_cache(cache_path, groups, now=None):
+    import json
+    import time
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    checked_at = int(time.time()) if now is None else int(now)
+    cache_path.write_text(json.dumps({"checked_at": checked_at, "groups": groups}, ensure_ascii=False, indent=2), encoding="utf-8")
+
 
 def parse_group_links(html: str, page_url: str) -> list[tuple[str, str]]:
     """Извлекает URL групп из HTML, включая ссылки в скриптах и JSON-разметке.
@@ -360,50 +399,38 @@ async def fetch_all_groups(base_url: str, today: date) -> list[LessonRec]:
                     log.debug("Альтернативный адрес каталога недоступен (%s): %s", alternate_url, e)
 
         if len(groups) < 100:
-            # Каталог /raspisanie/ на некоторых ответах сайта содержит только
-            # навигацию (список групп может подгружаться динамически). Резервный
-            # путь: проверяем диапазон ID страниц групп. Проверяем именно заголовок
-            # «Группа ...», поэтому не считаем произвольные страницы валидными.
-            # ID сгруппированы в небольшом диапазоне, характерном для текущих URL
-            # СГУГиТ; проверка запускается только если обычный каталог не сработал.
+            # Резервное обнаружение нужно, когда каталог сайта отдаёт только часть групп.
             from bs4 import BeautifulSoup
             from pathlib import Path
             import json
-            # Встроенный в проект каталог кандидатов: не зависит от того, отдал ли
-            # сайт ссылки в HTML. Это URL-кандидаты, а не утверждение, что каждый ID
-            # существует; ниже каждая страница проверяется по заголовку.
+
             manifest_path = Path(__file__).resolve().parents[2] / "data" / "group_url_candidates.json"
             seed_ids = {1616, 1659, 1688, 1693, 1697, 1712, 1723, 1727,
                         1732, 1743, 1745, 1746, 1748, 1776, 1780, 1788, 1791, 1839}
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                seed_ids.update(int(x["id"]) for x in manifest.get("known_groups", []) if str(x.get("id", "")).isdigit())
+                seed_ids.update(int(x["id"]) for x in manifest.get("known_groups", [])
+                                if isinstance(x, dict) and str(x.get("id", "")).isdigit())
                 manifest_ids = {int(m.group(1)) for url in manifest.get("candidate_urls", [])
                                 if (m := GROUP_URL_RE.search(str(url)))}
-            except (OSError, ValueError, TypeError, AttributeError):
+            except (OSError, ValueError, TypeError, AttributeError, KeyError):
                 manifest_ids = set()
             candidate_ids = sorted(seed_ids | manifest_ids | set(range(1450, 2101)))
             probe_sem = asyncio.Semaphore(12)
-            discovered: dict[str, tuple[str, str]] = {}
-            # Сохраняем обнаруженные реальные группы, чтобы не опрашивать сотни ID
-            # при каждом плановом обновлении. Список ссылок устойчив, расписание — нет.
+            discovered = {}
             cache_path = Path("data/group_urls.json")
-            try:
-                cached = json.loads(cache_path.read_text(encoding="utf-8"))
-                cached_groups = cached.get("groups", [])
-                if cached_groups:
-                    merged = {str(GROUP_URL_RE.search(str(url)).group(1)): (str(name), str(url))
-                              for name, url in groups if GROUP_URL_RE.search(str(url))}
-                    for item in cached_groups:
-                            if isinstance(item, list) and len(item) == 2:
-                                m = GROUP_URL_RE.search(str(item[1]))
-                            if m:
-                                merged.setdefault(m.group(1), (str(item[0]), str(item[1])))
-                    groups = list(merged.values())
-                    log.info("Объединён каталог групп с кэшем: %s ссылок", len(groups))
-            except (OSError, ValueError, TypeError, AttributeError):
-                pass
-
+            cached_groups, cache_fresh = _load_group_url_cache(cache_path)
+            if cached_groups:
+                merged = {str(match.group(1)): (str(name), str(url))
+                          for name, url in groups
+                          if (match := GROUP_URL_RE.search(str(url)))}
+                for name, url in cached_groups:
+                    match = GROUP_URL_RE.search(url)
+                    if match:
+                        merged.setdefault(match.group(1), (name, url))
+                groups = list(merged.values())
+                log.info("Объединён каталог групп с кэшем: %s ссылок", len(groups))
+            scan_required = not cache_fresh
             async def probe_group(gid: int) -> None:
                 url = urljoin(base_url, f"/raspisanie/group/{gid}/")
                 async with probe_sem:
@@ -433,22 +460,21 @@ async def fetch_all_groups(base_url: str, today: date) -> list[LessonRec]:
                     except Exception as exc:
                         log.debug("Проверка ID группы %s не удалась: %s", gid, exc)
 
-            # Даже если каталог вернул часть ссылок, он иногда обрезан или отдаёт
-            # только текущую страницу. При небольшом каталоге дополняем его проверкой ID.
-            # Существующие ссылки сохраняем и объединяем по ID, не заменяя каталог целиком.
-            if len(groups) < 200:
+            # Полный перебор ID — дорогая операция. Выполняем его не чаще раза в 7 дней;
+            # между сканированиями используем сохранённый каталог, но расписания групп
+            # всё равно загружаются заново при каждом штатном обновлении.
+            if scan_required and len(groups) < 200:
                 await asyncio.gather(*(probe_group(gid) for gid in candidate_ids))
-                merged = {str(GROUP_URL_RE.search(str(url)).group(1)): (str(name), str(url))
-                          for name, url in groups if GROUP_URL_RE.search(str(url))}
+                merged = {str(match.group(1)): (str(name), str(url))
+                          for name, url in groups
+                          if (match := GROUP_URL_RE.search(str(url)))}
                 merged.update(discovered)
                 groups = list(merged.values())
-                if discovered:
-                    try:
-                        cache_path.parent.mkdir(parents=True, exist_ok=True)
-                        cache_path.write_text(json.dumps({"groups": groups}, ensure_ascii=False, indent=2), encoding="utf-8")
-                    except OSError as exc:
-                        log.warning("Не удалось сохранить локальный каталог групп: %s", exc)
-                    log.info("Каталог групп дополнен проверкой ID: найдено %s дополнительных страниц", len(discovered))
+                try:
+                    _save_group_url_cache(cache_path, groups)
+                except OSError as exc:
+                    log.warning("Не удалось сохранить локальный каталог групп: %s", exc)
+                log.info("Каталог групп проверен: найдено %s дополнительных страниц", len(discovered))
             if not groups:
                 soup = BeautifulSoup(response.text, "lxml")
                 title = _text(soup.title) if soup.title else "без title"
