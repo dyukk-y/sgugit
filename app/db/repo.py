@@ -667,6 +667,72 @@ class Repo:
             "FROM teacher_rating_comments c LEFT JOIN users u ON u.id = c.user_id "
             "WHERE c.teacher_id = ? ORDER BY c.created_at DESC", tid)
 
+    async def public_teacher_reviews(self, tid: int, viewer_id: int, limit: int = 5) -> list[dict]:
+        """Публичный список без полей автора; возвращает агрегаты реакций и выбор текущего читателя."""
+        return await self.db.fetchall(
+            """SELECT r.id, r.comment, r.created_at,
+               (SELECT COUNT(*) FROM teacher_review_reactions x WHERE x.review_id = r.id AND x.reaction = 1) AS likes,
+               (SELECT COUNT(*) FROM teacher_review_reactions x WHERE x.review_id = r.id AND x.reaction = -1) AS dislikes,
+               (SELECT reaction FROM teacher_review_reactions x WHERE x.review_id = r.id AND x.user_id = ?) AS my_reaction
+               FROM teacher_reviews r WHERE r.teacher_id = ? AND r.comment <> ''
+               ORDER BY r.created_at DESC LIMIT ?""",
+            viewer_id, tid, max(1, min(10, limit)))
+
+    async def teacher_review(self, review_id: int, tid: int) -> dict | None:
+        return await self.db.fetchone(
+            "SELECT id, teacher_id, comment FROM teacher_reviews WHERE id = ? AND teacher_id = ?",
+            review_id, tid)
+
+    async def set_teacher_review_reaction(self, review_id: int, uid: int, reaction: int) -> tuple[int, int, int]:
+        if reaction not in (-1, 1):
+            raise ValueError("reaction")
+        existing = await self.db.scalar(
+            "SELECT reaction FROM teacher_review_reactions WHERE review_id = ? AND user_id = ?",
+            review_id, uid)
+        if existing is not None and int(existing) == reaction:
+            await self.db.execute(
+                "DELETE FROM teacher_review_reactions WHERE review_id = ? AND user_id = ?", review_id, uid)
+            current = 0
+        else:
+            await self.db.execute(
+                """INSERT INTO teacher_review_reactions (review_id, user_id, reaction, created_at)
+                   VALUES (?, ?, ?, ?) ON CONFLICT (review_id, user_id)
+                   DO UPDATE SET reaction = excluded.reaction, created_at = excluded.created_at""",
+                review_id, uid, reaction, now_ts())
+            current = reaction
+        likes = int(await self.db.scalar(
+            "SELECT COUNT(*) FROM teacher_review_reactions WHERE review_id = ? AND reaction = 1", review_id) or 0)
+        dislikes = int(await self.db.scalar(
+            "SELECT COUNT(*) FROM teacher_review_reactions WHERE review_id = ? AND reaction = -1", review_id) or 0)
+        return likes, dislikes, current
+
+    async def add_teacher_review_reply(self, review_id: int, uid: int, reply: str) -> None:
+        reply = (reply or "").strip()
+        if not reply or len(reply) > 600:
+            raise ValueError("reply")
+        await self.db.execute(
+            "INSERT INTO teacher_review_replies (review_id, user_id, reply, created_at) VALUES (?, ?, ?, ?)",
+            review_id, uid, reply, now_ts())
+
+    async def public_teacher_review_replies(self, review_id: int, limit: int = 5) -> list[dict]:
+        """Публичные ответы без идентификаторов авторов."""
+        return await self.db.fetchall(
+            "SELECT reply, created_at FROM teacher_review_replies WHERE review_id = ? "
+            "ORDER BY created_at ASC LIMIT ?", review_id, max(1, min(10, limit)))
+
+    async def admin_teacher_review_details(self, tid: int) -> list[dict]:
+        """Личности авторов отзывов и ответов доступны только административному экрану."""
+        return await self.db.fetchall(
+            """SELECT r.id AS review_id, r.user_id AS review_user_id, ru.username AS review_username,
+                      ru.tg_name AS review_tg_name, r.comment, r.created_at,
+                      p.user_id AS reply_user_id, pu.username AS reply_username,
+                      pu.tg_name AS reply_tg_name, p.reply, p.created_at AS reply_created_at
+               FROM teacher_reviews r
+               LEFT JOIN users ru ON ru.id = r.user_id
+               LEFT JOIN teacher_review_replies p ON p.review_id = r.id
+               LEFT JOIN users pu ON pu.id = p.user_id
+               WHERE r.teacher_id = ? ORDER BY r.created_at DESC, p.created_at ASC""", tid)
+
     async def rate_teacher(self, uid: int, tid: int, stars: int, cooldown_days: int) -> tuple[str, int]:
         """('ok'|'same'|'cooldown', осталось_дней)."""
         if not 1 <= stars <= 5:
