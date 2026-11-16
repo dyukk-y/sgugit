@@ -7,7 +7,7 @@ import logging
 import time
 from typing import Awaitable, Callable
 
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import BufferedInputFile, InputMediaDocument
 
 from app import timeutil as tu
@@ -89,6 +89,58 @@ async def push_backup(app: tg.App, reason: str) -> None:
     await repo.set_setting("backup_history", json.dumps(history, ensure_ascii=False))
 
 
+CLEANUP_RETRY_SEC = 300
+
+
+async def process_due_pins(app: tg.App, now: int | None = None) -> None:
+    """Открепляет сообщения; временные ошибки оставляют задачу на повтор."""
+    current = tu.now_ts() if now is None else int(now)
+    for row in await app.repo.due_pins(current):
+        try:
+            await app.bot.unpin_chat_message(
+                int(row["chat_id"]), message_id=int(row["message_id"])
+            )
+        except (TelegramBadRequest, TelegramForbiddenError) as exc:
+            # Сообщение уже нельзя открепить (удалено, бот потерял доступ/права).
+            log.info("Закреп %s в чате %s больше недоступен: %s",
+                     row["message_id"], row["chat_id"], exc)
+        except TelegramAPIError as exc:
+            log.warning("Временная ошибка открепления %s в чате %s; повторим позже: %s",
+                        row["message_id"], row["chat_id"], exc)
+            await app.repo.db.execute(
+                "UPDATE pinned_messages SET unpin_at = ? WHERE id = ?",
+                current + CLEANUP_RETRY_SEC, row["id"],
+            )
+            continue
+        await app.repo.delete_pin(row["id"])
+
+
+async def process_scheduled_deletions(app: tg.App, now: int | None = None) -> None:
+    """Удаляет запланированные сообщения и повторяет попытку после временных ошибок API."""
+    current = tu.now_ts() if now is None else int(now)
+    rows = await app.repo.db.fetchall(
+        "SELECT id, chat_id, message_id FROM scheduled_deletions "
+        "WHERE delete_at <= ? ORDER BY id LIMIT 100",
+        current,
+    )
+    for row in rows:
+        try:
+            await app.bot.delete_message(int(row["chat_id"]), int(row["message_id"]))
+        except (TelegramBadRequest, TelegramForbiddenError) as exc:
+            # Telegram окончательно отказал: повторять удаление бессмысленно.
+            log.info("Сообщение %s в чате %s больше нельзя удалить: %s",
+                     row["message_id"], row["chat_id"], exc)
+        except TelegramAPIError as exc:
+            log.warning("Временная ошибка удаления %s в чате %s; повторим позже: %s",
+                        row["message_id"], row["chat_id"], exc)
+            await app.repo.db.execute(
+                "UPDATE scheduled_deletions SET delete_at = ? WHERE id = ?",
+                current + CLEANUP_RETRY_SEC, row["id"],
+            )
+            continue
+        await app.repo.db.execute("DELETE FROM scheduled_deletions WHERE id = ?", row["id"])
+
+
 def start_all(app: tg.App, sync: SyncService, directory: DirectorySync, notifier: Notifier) -> list[asyncio.Task]:
     repo, cfg = app.repo, app.cfg
     state = {"hourly": 0.0}
@@ -149,22 +201,10 @@ def start_all(app: tg.App, sync: SyncService, directory: DirectorySync, notifier
             await send_backup("после изменений")
 
     async def unpin_job() -> None:
-        """Открепляет сводки, у которых наступило время начала первой пары."""
-        for row in await repo.due_pins(tu.now_ts()):
-            try:
-                await app.bot.unpin_chat_message(int(row["chat_id"]), message_id=int(row["message_id"]))
-            except TelegramAPIError as e:
-                log.info("Не удалось открепить сообщение %s в чате %s: %s", row["message_id"], row["chat_id"], e)
-            await repo.delete_pin(row["id"])
+        await process_due_pins(app)
 
     async def scheduled_deletions_job() -> None:
-        rows = await repo.db.fetchall("SELECT id, chat_id, message_id FROM scheduled_deletions WHERE delete_at <= ? ORDER BY id LIMIT 100", tu.now_ts())
-        for row in rows:
-            try:
-                await app.bot.delete_message(int(row["chat_id"]), int(row["message_id"]))
-            except TelegramAPIError:
-                pass  # сообщение уже удалено или больше недоступно
-            await repo.db.execute("DELETE FROM scheduled_deletions WHERE id = ?", row["id"])
+        await process_scheduled_deletions(app)
 
     async def housekeeping_job() -> None:
         await repo.cleanup_notif_log()
