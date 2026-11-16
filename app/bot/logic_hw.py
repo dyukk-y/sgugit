@@ -243,6 +243,14 @@ async def quick_add(ctx: Ctx, phrase: HwPhrase) -> Out:
 
 
 async def on_text_hw(ctx: Ctx, state: str, data: dict, text: str) -> Out:
+    if not ctx.verified and not ctx.is_admin:
+        if ctx.user.get("fio_status") == "pending":
+            prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
+                            [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
+        else:
+            prompt = Screen("Чтобы работать с заданиями, укажите ФИО и дождитесь подтверждения.",
+                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+        return Out(screen=prompt, clear_state=True)
     if state == "hw:edit_subject":
         hid = int(data.get("hid", 0)); hw = await ctx.repo.get_hw(hid)
         if not hw or not (hw["author_id"] == ctx.uid or can_moderate(ctx, hw)):
