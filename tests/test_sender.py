@@ -3,7 +3,7 @@ import asyncio
 import unittest
 
 from app.bot.core import Screen
-from app.bot.tg import Sender
+from app.bot.tg import Sender, _photo_file_id
 
 
 class FakeRepo:
@@ -29,6 +29,15 @@ class FakeBot:
 
 
 class SenderDeliveryTests(unittest.TestCase):
+    def test_photo_file_id_accepts_file_id_and_chat_photo_metadata(self):
+        class ChatPhoto:
+            small_file_id = "small-id"
+            big_file_id = "big-id"
+
+        self.assertEqual(_photo_file_id("photo-id"), "photo-id")
+        self.assertEqual(_photo_file_id(ChatPhoto()), "small-id")
+        self.assertIsNone(_photo_file_id(object()))
+
     def test_confirmed_send_reports_actual_delivery_result(self):
         async def go():
             bot = FakeBot()
