@@ -131,12 +131,16 @@ class Ctx:
 
     @property
     def registered(self) -> bool:
-        """Полная регистрация: группа + ФИО для студента, связанная запись для преподавателя."""
+        """Доступ к основному кабинету: группа студента или связанный профиль преподавателя.
+
+        ФИО не является обязательным для расписания; подтверждённое ФИО проверяется
+        отдельно в разделах, где оно действительно необходимо.
+        """
         if self.is_admin:
             return True
         if self.role == "teacher":
             return bool(self.user.get("_teacher_registered"))
-        return self.user.get("group_id") is not None and bool(str(self.user.get("fio") or "").strip())
+        return self.user.get("group_id") is not None
 
     @property
     def verified(self) -> bool:
