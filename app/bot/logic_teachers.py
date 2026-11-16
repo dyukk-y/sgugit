@@ -96,8 +96,12 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
                             [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
         else:
-            prompt = Screen("Чтобы просматривать и оценивать преподавателей, укажите ФИО и дождитесь подтверждения.",
-                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+            return Out(screen=Screen(
+                "Чтобы пользоваться оценками преподавателей, сначала укажите ФИО.\n\n"
+                "Введите полностью: <code>Фамилия Имя Отчество</code>. "
+                "Бот проверит данные, и после подтверждения откроет раздел.",
+                [[home_btn()]]),
+                state="reg:fio", state_data={})
         return Out(screen=prompt)
     act = parts[0] if parts else "l"
     if act == "l":
@@ -164,8 +168,12 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
             prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
                             [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
         else:
-            prompt = Screen("Чтобы просматривать и оценивать преподавателей, укажите ФИО и дождитесь подтверждения.",
-                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+            return Out(screen=Screen(
+                "Чтобы пользоваться оценками преподавателей, сначала укажите ФИО.\n\n"
+                "Введите полностью: <code>Фамилия Имя Отчество</code>. "
+                "Бот проверит данные, и после подтверждения откроет раздел.",
+                [[home_btn()]]),
+                state="reg:fio", state_data={})
         return Out(screen=prompt, clear_state=True)
     found = await ctx.repo.search_teachers(text)
     seen = {t["id"] for t in found}
