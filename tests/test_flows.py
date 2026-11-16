@@ -281,7 +281,7 @@ class T(unittest.TestCase):
             tid = int([d for d in datas(out) if d.startswith("t:v:")][0].split(":")[2])
             out = await s.do(100, callback=f"t:v:{tid}:m:0"); self.assertIn(f"t:begin:{tid}:m:0", datas(out))
             out = await s.do(100, callback=f"t:begin:{tid}:m:0"); self.assertIn("Лекции", texts(out))
-            score_cb = next(d for d in datas(out) if d and d.startswith(f"t:score:{tid}:0:"))
+            score_cb = next(d for d in datas(out) if d == f"t:score:{tid}:0:5:m:0")
             out = await s.do(100, callback=score_cb); self.assertIn("комментарий", texts(out).lower())
             out = await s.do(100, text="Объясняет понятно, но иногда быстро.")
             public_comments = await s.repo.public_teacher_rating_comments(tid)
