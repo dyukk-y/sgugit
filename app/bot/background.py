@@ -7,7 +7,7 @@ import logging
 import time
 from typing import Awaitable, Callable
 
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import BufferedInputFile, InputMediaDocument
 
 from app import timeutil as tu
