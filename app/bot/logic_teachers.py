@@ -84,6 +84,7 @@ async def card(ctx: Ctx, tid: int, mode: str = "m", page: int = 0) -> Out:
         lines.append("👍 Сильные стороны: " + ", ".join(pros[:4]))
     if cons:
         lines.append("👎 Что можно улучшить: " + ", ".join(cons[:4]))
+    kb: Kb = []
     reviews = await ctx.repo.public_teacher_reviews(tid, ctx.uid, 5)
     if reviews:
         lines.append("\n<b>Отзывы студентов</b>")
@@ -99,7 +100,6 @@ async def card(ctx: Ctx, tid: int, mode: str = "m", page: int = 0) -> Out:
                 Btn(f"👎 {item['dislikes']}" + (" ✓" if my == -1 else ""), f"t:react:{tid}:{item['id']}:-1:{mode}:{page}"),
                 Btn("↩️ Ответить", f"t:reply:{tid}:{item['id']}:{mode}:{page}"),
             ])
-    kb: Kb = []
     if ctx.verified or ctx.is_admin:
         if criteria:
             kb.append([Btn("⭐ Оценить преподавателя", f"t:begin:{tid}:{mode}:{page}")])
