@@ -91,6 +91,9 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         return _disabled()
     if not ctx.registered:
         return Out(screen=Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]]))
+    if not ctx.verified and not ctx.is_admin:
+        return Out(screen=Screen("Чтобы просматривать и оценивать преподавателей, укажите ФИО и дождитесь подтверждения.",
+                                 [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]]))
     act = parts[0] if parts else "l"
     if act == "l":
         mode = parts[1] if len(parts) > 1 and parts[1] in ("m", "a") else "m"
@@ -151,6 +154,9 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
 async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
     if not ctx.repo.flag("rating_enabled"):
         return Out(screen=Screen("Раздел сейчас недоступен.", [[home_btn()]]), clear_state=True)
+    if not ctx.verified and not ctx.is_admin:
+        return Out(screen=Screen("Чтобы просматривать и оценивать преподавателей, укажите ФИО и дождитесь подтверждения.",
+                                 [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]]), clear_state=True)
     found = await ctx.repo.search_teachers(text)
     seen = {t["id"] for t in found}
     catalog = await ctx.repo.subject_catalog()
