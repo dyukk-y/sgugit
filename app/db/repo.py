@@ -653,6 +653,10 @@ class Repo:
             "INSERT INTO teacher_rating_comments (user_id, teacher_id, comment, created_at) VALUES (?, ?, ?, ?) "
             "ON CONFLICT (user_id, teacher_id) DO UPDATE SET comment = excluded.comment, created_at = excluded.created_at",
             uid, tid, comment, now_ts())
+        await self.db.execute(
+            "INSERT INTO teacher_reviews (user_id, teacher_id, comment, created_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (user_id, teacher_id) DO UPDATE SET comment = excluded.comment, created_at = excluded.created_at",
+            uid, tid, comment, now_ts())
 
     async def public_teacher_rating_comments(self, tid: int, limit: int = 5) -> list[dict]:
         """Публичный запрос намеренно не выбирает user_id и любые идентификаторы автора."""
