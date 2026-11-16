@@ -313,7 +313,14 @@ def detect_intent(text: str, today: date, catalog: list[tuple[str, str]] | None 
         return mk("changes")
     if any(x.startswith(("экзамен", "зачет", "сесси", "консультац")) for x in toks):
         return mk("exam")
-    if any(x.startswith(("дз", "домашк", "домашн", "задан", "задал", "задач")) or x == "д/з" for x in toks):
+    # Не принимаем любое слово «задача/задание» за вопрос о домашней работе:
+    # в групповой переписке это часто обычное обсуждение проектов и дел.
+    hw_question = any(x.startswith(("дз", "домашк", "домашн")) or x == "д/з" for x in toks)
+    hw_question = hw_question or (
+        any(x.startswith("задал") for x in toks)
+        and any(x in toks for x in ("что", "какое", "какие", "когда"))
+    )
+    if hw_question:
         return mk("hw")
     if teacher_q and any(x in _TEACHER_TRIGGERS or x.startswith(("препод", "лектор")) for x in toks):
         return mk("find_teacher")
