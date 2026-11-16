@@ -343,6 +343,18 @@ async def render(app: App, chat_id: int, out: Out, source: Message | None = None
             pass
 
 
+def _photo_file_id(value) -> str | None:
+    """Return a Telegram photo file_id, never a ChatPhoto object."""
+    if isinstance(value, str):
+        return value or None
+    # ChatPhoto is metadata; sendPhoto requires one of its file identifiers.
+    for attr in ("small_file_id", "big_file_id"):
+        candidate = getattr(value, attr, None)
+        if isinstance(candidate, str) and candidate:
+            return candidate
+    return None
+
+
 async def deliver_side_effects(app: App, chat_id: int, out: Out) -> None:
     for uid, scr in out.notify:
         await app.sender.enqueue(uid, scr)
@@ -360,7 +372,11 @@ async def deliver_side_effects(app: App, chat_id: int, out: Out) -> None:
     for uid, file_id, kind, caption in out.notify_media:
         try:
             if kind == "photo":
-                await app.bot.send_photo(uid, file_id, caption=(caption or None), parse_mode="HTML")
+                photo_id = _photo_file_id(file_id)
+                if not photo_id:
+                    log.warning("Пропущена фото-рассылка: вместо file_id получен неподдерживаемый объект %s", type(file_id).__name__)
+                    continue
+                await app.bot.send_photo(uid, photo_id, caption=(caption or None), parse_mode="HTML")
             else:
                 await app.bot.send_document(uid, file_id, caption=(caption or None), parse_mode="HTML")
         except TelegramAPIError:
@@ -370,7 +386,11 @@ async def deliver_side_effects(app: App, chat_id: int, out: Out) -> None:
         file_id, kind, caption = out.media
         try:
             if kind == "photo":
-                await app.bot.send_photo(chat_id, file_id, caption=(caption or None))
+                photo_id = _photo_file_id(file_id)
+                if not photo_id:
+                    log.warning("Пропущено фото-вложение: вместо file_id получен неподдерживаемый объект %s", type(file_id).__name__)
+                    return
+                await app.bot.send_photo(chat_id, photo_id, caption=(caption or None))
             else:
                 await app.bot.send_document(chat_id, file_id, caption=(caption or None))
         except TelegramAPIError:
