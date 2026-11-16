@@ -92,8 +92,13 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
     if not ctx.registered:
         return Out(screen=Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]]))
     if not ctx.verified and not ctx.is_admin:
-        return Out(screen=Screen("Чтобы просматривать и оценивать преподавателей, укажите ФИО и дождитесь подтверждения.",
-                                 [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]]))
+        if ctx.user.get("fio_status") == "pending":
+            prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
+                            [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
+        else:
+            prompt = Screen("Чтобы просматривать и оценивать преподавателей, укажите ФИО и дождитесь подтверждения.",
+                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+        return Out(screen=prompt)
     act = parts[0] if parts else "l"
     if act == "l":
         mode = parts[1] if len(parts) > 1 and parts[1] in ("m", "a") else "m"
@@ -155,8 +160,13 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
     if not ctx.repo.flag("rating_enabled"):
         return Out(screen=Screen("Раздел сейчас недоступен.", [[home_btn()]]), clear_state=True)
     if not ctx.verified and not ctx.is_admin:
-        return Out(screen=Screen("Чтобы просматривать и оценивать преподавателей, укажите ФИО и дождитесь подтверждения.",
-                                 [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]]), clear_state=True)
+        if ctx.user.get("fio_status") == "pending":
+            prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
+                            [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
+        else:
+            prompt = Screen("Чтобы просматривать и оценивать преподавателей, укажите ФИО и дождитесь подтверждения.",
+                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+        return Out(screen=prompt, clear_state=True)
     found = await ctx.repo.search_teachers(text)
     seen = {t["id"] for t in found}
     catalog = await ctx.repo.subject_catalog()
