@@ -294,7 +294,7 @@ class T(unittest.TestCase):
             self.assertEqual(len(reviews), 1)
             review_id = reviews[0]["id"]
             self.assertNotIn("user_id", reviews[0])
-            # Лайк ставится, переключается на дизлайк и снимается повторным нажатием.
+            # Проверяем toggle-поведение реакций: один голос на пользователя и отзыв.
             out = await s.do(101, callback=f"t:react:{tid}:{review_id}:1:m:0")
             reacted = await s.repo.public_teacher_reviews(tid, 100)
             self.assertEqual((reacted[0]["likes"], reacted[0]["dislikes"]), (1, 0))
