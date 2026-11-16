@@ -16,6 +16,13 @@ UNKNOWN_HINT = ("Не понял вопрос 🤔 Попробуйте, нап�
 BUTTON_STATES = {"hw:pick", "hw:confirm", "reg:fio_confirm", "ad:bc_confirm", "ad:restore_confirm", "hd:bc_confirm", "p:confirm"}
 
 
+def _banned(ctx: Ctx) -> Out:
+    return Out(screen=Screen(
+        "🚫 <b>Ваш аккаунт ограничен.</b>\n\nВы не можете оставлять отзывы и добавлять задания. "
+        "Чтобы разобраться и запросить разблокировку, напишите в поддержку.",
+        [[Btn("💬 Написать в поддержку", "me:fb")]]))
+
+
 def _maintenance(ctx: Ctx) -> Out | None:
     if ctx.repo.flag("maintenance") and not ctx.is_admin:
         return Out(screen=Screen("🛠 Идут технические работы. Скоро всё заработает, попробуйте чуть позже."))
@@ -23,6 +30,11 @@ def _maintenance(ctx: Ctx) -> Out | None:
 
 
 async def handle_callback(ctx: Ctx, data: str) -> Out:
+    if ctx.user.get("banned") and not ctx.is_admin:
+        parts = data.split(":")
+        support_action = parts[0] == "me" and len(parts) > 1 and parts[1] in ("fb", "fbnew", "ticket", "ticketreply")
+        if not support_action:
+            return _banned(ctx)
     block = _maintenance(ctx)
     if block:
         return block
@@ -77,6 +89,10 @@ def _gid(s: str) -> int | None:
 
 async def handle_text(ctx: Ctx, text: str) -> Out:
     """Текст в личном чате: ввод для текущего шага или вопрос обычными словами."""
+    if ctx.user.get("banned") and not ctx.is_admin:
+        state, state_data = await ctx.repo.get_state(ctx.uid)
+        if state != "me:fb":
+            return _banned(ctx)
     block = _maintenance(ctx)
     if block:
         return block
@@ -125,6 +141,8 @@ async def handle_text(ctx: Ctx, text: str) -> Out:
 
 
 async def handle_document(ctx: Ctx, filename: str, blob: bytes, file_id: str | None = None) -> Out:
+    if ctx.user.get("banned") and not ctx.is_admin:
+        return _banned(ctx)
     if not ctx.registered and not ctx.is_admin:
         return await logic_user.start(ctx)
     state, data = await ctx.repo.get_state(ctx.uid)
@@ -156,6 +174,8 @@ async def handle_document(ctx: Ctx, filename: str, blob: bytes, file_id: str | N
 
 
 async def handle_photo(ctx: Ctx, file_id: str, caption: str = "") -> Out:
+    if ctx.user.get("banned") and not ctx.is_admin:
+        return _banned(ctx)
     if not ctx.registered and not ctx.is_admin:
         return await logic_user.start(ctx)
     state, data = await ctx.repo.get_state(ctx.uid)
@@ -197,6 +217,8 @@ async def handle_photo(ctx: Ctx, file_id: str, caption: str = "") -> Out:
 
 async def handle_command(ctx: Ctx, name: str, args: str = "") -> Out | None:
     """Команды в личном чате. None - команда не распознана (для скрытых админ-команд)."""
+    if ctx.user.get("banned") and not ctx.is_admin:
+        return _banned(ctx)
     block = _maintenance(ctx) if name != "admin" else None
     if block:
         return block

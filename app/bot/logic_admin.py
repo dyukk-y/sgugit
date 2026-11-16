@@ -506,9 +506,15 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         u = await repo.get_user(uid)
         if not u or uid == ctx.cfg.superadmin_id or uid == ctx.uid or (u["role"] == "admin" and not ctx.is_super):
             return _deny()
-        await repo.update_user(uid, banned=0 if u["banned"] else 1)
-        await repo.audit(ctx.uid, "ban" if not u["banned"] else "unban", str(uid))
-        return await user_card(ctx, uid)
+        banned = not bool(u["banned"])
+        await repo.update_user(uid, banned=1 if banned else 0)
+        await repo.audit(ctx.uid, "ban" if banned else "unban", str(uid))
+        out = await user_card(ctx, uid)
+        if banned:
+            out.notify = [(uid, Screen("🚫 <b>Ваш аккаунт ограничен администрацией.</b>\n\nВы временно не можете оставлять отзывы и добавлять задания.\n\nЕсли считаете, что это ошибка, нажмите кнопку ниже и напишите в поддержку. Администратор рассмотрит обращение и сможет снять блокировку.", [[Btn("💬 Написать в поддержку", "me:fb")]]))]
+        else:
+            out.notify = [(uid, Screen("✅ Ограничение аккаунта снято. Вы снова можете оставлять отзывы и добавлять задания."))]
+        return out
     if act == "ufo" and arg.isdigit() and arg2 in ("ok", "reset"):
         if not _need(ctx, "users"):
             return _deny()
