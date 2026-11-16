@@ -21,6 +21,8 @@ def can_moderate(ctx: Ctx, hw: dict) -> bool:
 def _can_see(ctx: Ctx, hw: dict) -> bool:
     if hw["status"] == "deleted":
         return False
+    if not ctx.verified and not ctx.is_admin:
+        return False
     if can_moderate(ctx, hw):
         return True
     if ctx.user.get("group_id") != hw["group_id"]:
@@ -36,6 +38,9 @@ async def list_screen(ctx: Ctx, page: int = 0) -> Screen:
     gid = ctx.user.get("group_id")
     if not gid:
         return Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]])
+    if not ctx.verified:
+        return Screen("Чтобы открыть задания группы, укажите ФИО и дождитесь подтверждения. Для расписания ФИО не требуется.",
+                      [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
     rows, total = await ctx.repo.list_hw(gid, tu.iso(ctx.today), page * SIZE, SIZE)
     done = await ctx.repo.hw_done_set(ctx.uid, [r["id"] for r in rows])
     kb: Kb = []
@@ -66,6 +71,9 @@ async def day_list_screen(ctx: Ctx, day: str) -> Screen:
     gid = ctx.user.get("group_id")
     if not gid:
         return Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]])
+    if not ctx.verified:
+        return Screen("Чтобы открыть задания группы, укажите ФИО и дождитесь подтверждения.",
+                      [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
     rows = await ctx.repo.hw_for_day(gid, day)
     d = tu.parse_iso(day)
     lines = [f"<b>Задания к парам · {tu.fmt_date(d)}</b>"]
@@ -300,6 +308,9 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
     gid = ctx.user.get("group_id")
     if not gid and act in ("l", "d", "dn", "add", "sub", "save", "cancel", "q"):
         return Out(screen=Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]]))
+    if not ctx.verified and not ctx.is_admin and act != "cancel":
+        return Out(screen=Screen("Чтобы открыть задания группы, укажите ФИО и дождитесь подтверждения.",
+                                 [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]]))
     if act == "l":
         page = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
         return Out(screen=await list_screen(ctx, page), clear_state=True)
