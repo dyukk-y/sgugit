@@ -323,7 +323,8 @@ class T(unittest.TestCase):
             u = await s.repo.get_user(100); self.assertEqual(u["fio_status"], "pending")
             out = await s.do(100, callback="h:add:0"); self.assertIn("ФИО", texts(out))  # не подтверждён: нельзя
             out = await s.do(100, callback="t:l:m:0"); self.assertIn("ФИО", texts(out))
-            out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertTrue(out.toast and "подтверждения" in out.toast)
+            tid = (await s.repo.search_teachers("Иванов"))[0]["id"]
+            out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertIn("ФИО", texts(out))
             out = await s.do(1, callback="ad:fq:0"); self.assertIn("ad:u:100", datas(out))
             out = await s.do(1, callback="ad:ufo:100:ok"); self.assertEqual(out.notify[0][0], 100)
             out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertIn("сохранена", out.toast)
