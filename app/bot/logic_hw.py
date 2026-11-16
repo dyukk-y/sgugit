@@ -98,7 +98,17 @@ async def day_list_screen(ctx: Ctx, day: str) -> Screen:
 
 async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0") -> Out:
     hw = await ctx.repo.get_hw(hid)
-    if not hw or not _can_see(ctx, hw):
+    if not hw:
+        return Out(toast="Задание недоступно", alert=True)
+    if not ctx.verified and not ctx.is_admin:
+        if ctx.user.get("fio_status") == "pending":
+            prompt = Screen("ФИО уже отправлено на проверку. Задание откроется после подтверждения.",
+                            [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
+        else:
+            prompt = Screen("Чтобы открыть задание, укажите ФИО и дождитесь подтверждения.",
+                            [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
+        return Out(screen=prompt)
+    if not _can_see(ctx, hw):
         return Out(toast="Задание недоступно", alert=True)
     lines = [f"📚 <b>{fm.esc(hw['subject'])}</b>", f"Срок: {_due_label(hw)}"]
     if hw.get("lesson_day"):
