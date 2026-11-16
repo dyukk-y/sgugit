@@ -599,6 +599,74 @@ class Repo:
             hits = [t for s, t in scored if s >= 0.8]
         return hits[:limit]
 
+    async def teacher_rating_criteria(self, tnorm: str) -> list[dict]:
+        """Критерии только по видам занятий, реально встречающимся у преподавателя в расписании."""
+        rows = await self.db.fetchall("SELECT DISTINCT kind, teacher FROM lessons WHERE teacher <> '' AND kind <> ''")
+        labels = [
+            ("lecture", ("лекц",), "Лекции"),
+            ("practice", ("практ",), "Практики"),
+            ("lab", ("лаб",), "Лабораторные"),
+            ("seminar", ("семинар",), "Семинары"),
+            ("credit", ("зач",), "Зачёт"),
+            ("exam", ("экзам",), "Экзамен"),
+            ("coursework", ("курсов",), "Курсовые"),
+            ("consultation", ("консульт",), "Консультации"),
+        ]
+        found: dict[str, str] = {}
+        for row in rows:
+            if tnorm not in {teacher_key(n) for n in split_teachers(row["teacher"])}:
+                continue
+            raw = " ".join(str(row.get("kind") or "").lower().replace("ё", "е").split())
+            if not raw:
+                continue
+            match = next(((key, label) for key, needles, label in labels if any(n in raw for n in needles)), None)
+            if match:
+                found[match[0]] = match[1]
+            else:
+                key = "kind_" + re.sub(r"[^a-zа-я0-9]+", "_", raw).strip("_")[:24]
+                found[key] = str(row["kind"]).strip().capitalize()[:40]
+        return [{"key": k, "label": found[k]} for k in sorted(found)]
+
+    async def save_teacher_rating_score(self, uid: int, tid: int, criterion: str, stars: int) -> None:
+        if not re.fullmatch(r"[a-zа-я0-9_]{1,40}", criterion) or not 1 <= stars <= 5:
+            raise ValueError("invalid teacher rating score")
+        await self.db.execute(
+            "INSERT INTO teacher_rating_scores (user_id, teacher_id, criterion, stars, updated_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT (user_id, teacher_id, criterion) DO UPDATE SET stars = excluded.stars, updated_at = excluded.updated_at",
+            uid, tid, criterion, stars, now_ts())
+
+    async def teacher_rating_score_summary(self, tid: int) -> list[dict]:
+        return await self.db.fetchall(
+            "SELECT criterion, AVG(stars) AS avg, COUNT(*) AS cnt FROM teacher_rating_scores "
+            "WHERE teacher_id = ? GROUP BY criterion ORDER BY criterion", tid)
+
+    async def my_teacher_rating_scores(self, uid: int, tid: int) -> dict[str, int]:
+        rows = await self.db.fetchall(
+            "SELECT criterion, stars FROM teacher_rating_scores WHERE user_id = ? AND teacher_id = ?", uid, tid)
+        return {r["criterion"]: int(r["stars"]) for r in rows}
+
+    async def save_teacher_rating_comment(self, uid: int, tid: int, comment: str) -> None:
+        comment = (comment or "").strip()[:600]
+        if not comment:
+            return
+        await self.db.execute(
+            "INSERT INTO teacher_rating_comments (user_id, teacher_id, comment, created_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (user_id, teacher_id) DO UPDATE SET comment = excluded.comment, created_at = excluded.created_at",
+            uid, tid, comment, now_ts())
+
+    async def public_teacher_rating_comments(self, tid: int, limit: int = 5) -> list[dict]:
+        """Публичный запрос намеренно не выбирает user_id и любые идентификаторы автора."""
+        return await self.db.fetchall(
+            "SELECT comment, created_at FROM teacher_rating_comments WHERE teacher_id = ? "
+            "AND comment <> '' ORDER BY created_at DESC LIMIT ?", tid, max(1, min(10, limit)))
+
+    async def admin_teacher_rating_comments(self, tid: int) -> list[dict]:
+        """Идентификаторы авторов доступны только административным обработчикам."""
+        return await self.db.fetchall(
+            "SELECT c.user_id, u.username, u.tg_name, c.comment, c.created_at "
+            "FROM teacher_rating_comments c LEFT JOIN users u ON u.id = c.user_id "
+            "WHERE c.teacher_id = ? ORDER BY c.created_at DESC", tid)
+
     async def rate_teacher(self, uid: int, tid: int, stars: int, cooldown_days: int) -> tuple[str, int]:
         """('ok'|'same'|'cooldown', осталось_дней)."""
         if not 1 <= stars <= 5:
