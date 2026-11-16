@@ -158,6 +158,33 @@ async def _group_card(ctx: Ctx, chat_id: int) -> Out:
         except Exception:
             pass
     group = await repo.get_group(row.get("group_id")) if row.get("group_id") else None
+    added_event = await repo.db.fetchone(
+        "SELECT detail, created_at FROM analytics_events "
+        "WHERE event = 'group_added' AND detail LIKE ? ORDER BY id DESC LIMIT 1",
+        f"%chat_id={chat_id};%")
+    added_by_text = "неизвестно (нет сохранённой записи о добавлении)"
+    if added_event:
+        added_meta = dict(
+            part.split("=", 1) for part in str(added_event.get("detail") or "").split(";")
+            if "=" in part
+        )
+        added_username = added_meta.get("by_username", "").strip().lstrip("@")
+        added_name = added_meta.get("by_name", "").strip()
+        if added_username:
+            added_by_text = f"@{added_username}" + (f" · {added_name}" if added_name else "")
+        elif added_name:
+            added_by_text = added_name
+        elif added_meta.get("by"):
+            added_by_text = f"ID {added_meta['by']} (username не был передан Telegram)"
+        added_at = datetime.fromtimestamp(int(added_event["created_at"]), tu.tz()).strftime("%d.%m.%Y %H:%M")
+        added_by_text += f" · {added_at}"
+    elif row.get("added_by"):
+        adder = await repo.get_user(int(row["added_by"]))
+        if adder:
+            added_by_text = (f"@{adder['username']}" if adder.get("username")
+                             else adder.get("tg_name") or f"ID {row['added_by']}")
+        else:
+            added_by_text = f"ID {row['added_by']} (имя не сохранено)"
     since = tu.now_ts() - 7 * 86400
     usage = int(await repo.db.scalar(
         "SELECT COUNT(*) FROM analytics_events WHERE event IN ('group_command','group_question') AND detail LIKE ? AND created_at >= ?",
@@ -178,6 +205,7 @@ async def _group_card(ctx: Ctx, chat_id: int) -> Out:
         f"Тип: {fm.esc(str(chat_type))} · статус: {'🟢 активен' if row.get('active') else '⚪ отключён'}",
         f"Участников: <b>{members if members is not None else ('бот удалён из чата' if not row.get('active') else 'нет данных')}</b>",
         f"ID: <code>{chat_id}</code>",
+        f"Кто добавил бота: <b>{fm.esc(added_by_text)}</b>",
         f"Учебная группа: <b>{fm.esc(group['name']) if group else 'не привязана'}</b>",
         "",
         "<b>📈 Использование</b>",
