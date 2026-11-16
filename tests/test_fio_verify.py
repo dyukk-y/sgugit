@@ -12,6 +12,7 @@ class FioVerify(unittest.TestCase):
             await s.do(100, command="start")
             out = await s.do(100, text="ис 11")
             await s.do(100, callback=[d for d in datas(out) if d and d.startswith("r:g:")][0])
+            await s.do(100, callback="r:redo")
             out = await s.do(100, text="Смирнова Анна Сергеевна")
             out = await s.do(100, callback="r:ok")
             self.assertEqual((await s.repo.get_user(100))["fio_status"], "pending")
@@ -66,6 +67,7 @@ class FioVerify(unittest.TestCase):
             await s.do(100, command="start")
             out = await s.do(100, text="ис 11")
             await s.do(100, callback=[d for d in datas(out) if d and d.startswith("r:g:")][0])
+            await s.do(100, callback="r:redo")
             for bad in ("Путин Владимир Владимирович", "Фкпнов Ыюшг Ррыа", "Иванова Иван Петрович", "Хууууй Иванов Петрович"):
                 out = await s.do(100, text=bad)
                 self.assertNotIn("r:ok", datas(out), bad)
