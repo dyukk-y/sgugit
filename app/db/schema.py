@@ -11,7 +11,7 @@ TABLES = [
     "meta", "settings", "groups", "users", "lessons", "teachers", "ratings", "homework",
     "hw_done", "head_requests", "chats", "audit", "notif_log", "stopwords", "aliases", "snapshots",
     "staff", "units", "pending_questions", "support_messages", "support_tickets", "scheduled_deletions",
-    "pinned_messages", "group_schedule_changes", "teacher_accounts",
+    "pinned_messages", "group_schedule_changes", "teacher_accounts", "teacher_rating_scores", "teacher_rating_comments",
 ]
 # таблицы с автоинкрементным id (нужны для сброса последовательностей в PostgreSQL)
 SERIAL_TABLES = ["groups", "lessons", "teachers", "homework", "head_requests", "audit", "snapshots", "staff", "units",
@@ -136,7 +136,20 @@ _V14 = [
     "ALTER TABLE chats ADD COLUMN cleanup_on INTEGER NOT NULL DEFAULT 0",
 ]
 _V15 = ["ALTER TABLE chats ADD COLUMN private_questions INTEGER NOT NULL DEFAULT 0"]
-MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12), (13, _V13), (14, _V14), (15, _V15)]
+_V16 = [
+    """CREATE TABLE IF NOT EXISTS teacher_rating_scores (
+        user_id BIGINT NOT NULL, teacher_id BIGINT NOT NULL, criterion TEXT NOT NULL,
+        stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5), updated_at BIGINT NOT NULL,
+        PRIMARY KEY (user_id, teacher_id, criterion)
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_teacher_rating_scores_teacher ON teacher_rating_scores (teacher_id, criterion)",
+    """CREATE TABLE IF NOT EXISTS teacher_rating_comments (
+        user_id BIGINT NOT NULL, teacher_id BIGINT NOT NULL, comment TEXT NOT NULL,
+        created_at BIGINT NOT NULL, PRIMARY KEY (user_id, teacher_id)
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_teacher_rating_comments_teacher ON teacher_rating_comments (teacher_id, created_at)",
+]
+MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12), (13, _V13), (14, _V14), (15, _V15), (16, _V16)]
 
 
 async def migrate(db: Database) -> int:
