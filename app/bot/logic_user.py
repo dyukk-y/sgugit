@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from app import timeutil as tu
 from app.bot import logic_schedule as ls, logic_teacher
@@ -352,6 +352,23 @@ async def on_cb_me(ctx: Ctx, parts: list[str]) -> Out:
     if act == "findt":
         return Out(screen=Screen("Напишите фамилию преподавателя (можно с инициалами): покажу, где он сейчас или где его найти.",
                                  [nav("m:home")]), state="me:findt", state_data={})
+    if act == "findt_today":
+        state, data = await repo.get_state(ctx.uid)
+        query = str(data.get("query") or "") if state == "me:findt_result" else ""
+        if not query:
+            return Out(toast="Сначала найдите преподавателя", alert=True)
+        from app.bot import logic_find
+        scr = await logic_find.teacher_answer(ctx, query, ctx.today)
+        scr.kb = [[Btn("📆 Другая дата", "me:findt_date")],
+                  [Btn("🔎 Другой преподаватель", "me:findt")], nav("m:home")]
+        return Out(screen=scr, state="me:findt_result", state_data={"query": query})
+    if act == "findt_date":
+        state, data = await repo.get_state(ctx.uid)
+        query = str(data.get("query") or "") if state == "me:findt_result" else ""
+        if not query:
+            return Out(toast="Сначала найдите преподавателя", alert=True)
+        return Out(screen=Screen("Введите дату в формате ДД.ММ.ГГГГ (например, 25.11.2026).",
+                                 [nav("m:home")]), state="me:findt_date", state_data={"query": query})
     if act == "ics":
         gid = ctx.user.get("group_id")
         if not gid:
@@ -495,8 +512,27 @@ async def on_text_me(ctx: Ctx, state: str, data: dict, text: str) -> Out:
             words = text.split()
             query = " ".join(words[:2]).lower() if words else ""
         scr = await logic_find.teacher_answer(ctx, query)
-        scr.kb = [[Btn("🔎 Другой преподаватель", "me:findt")], nav("m:home")]
-        return Out(screen=scr, clear_state=True)
+        scr.kb = [[Btn("📅 Расписание на сегодня", "me:findt_today")],
+                  [Btn("📆 Выбрать другую дату", "me:findt_date")],
+                  [Btn("🔎 Другой преподаватель", "me:findt")], nav("m:home")]
+        return Out(screen=scr, state="me:findt_result", state_data={"query": query})
+    if state == "me:findt_date":
+        from datetime import date
+        raw = text.strip()
+        try:
+            selected = date.fromisoformat(raw) if len(raw) == 10 and raw[4] == "-" else datetime.strptime(raw, "%d.%m.%Y").date()
+        except (ValueError, TypeError):
+            return Out(screen=Screen("Не удалось распознать дату. Введите ДД.ММ.ГГГГ, например 25.11.2026.",
+                                     [nav("m:home")]), state=state, state_data=data)
+        from app.bot import logic_find
+        query = str(data.get("query") or "")
+        if not query:
+            return Out(screen=Screen("Не удалось определить преподавателя. Найдите его заново.", [nav("m:home")]), clear_state=True)
+        scr = await logic_find.teacher_answer(ctx, query, selected)
+        scr.kb = [[Btn("📅 Расписание на сегодня", "me:findt_today")],
+                  [Btn("📆 Выбрать другую дату", "me:findt_date")],
+                  [Btn("🔎 Другой преподаватель", "me:findt")], nav("m:home")]
+        return Out(screen=scr, state="me:findt_result", state_data={"query": query})
     if state == "me:fb":
         ticket_id = int(data.get("ticket_id") or 0)
         if not ticket_id:
