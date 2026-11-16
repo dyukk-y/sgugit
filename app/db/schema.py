@@ -11,11 +11,11 @@ TABLES = [
     "meta", "settings", "groups", "users", "lessons", "teachers", "ratings", "homework",
     "hw_done", "head_requests", "chats", "audit", "notif_log", "stopwords", "aliases", "snapshots",
     "staff", "units", "pending_questions", "support_messages", "support_tickets", "scheduled_deletions",
-    "pinned_messages", "group_schedule_changes", "teacher_accounts", "teacher_rating_scores", "teacher_rating_comments",
+    "pinned_messages", "group_schedule_changes", "teacher_accounts", "teacher_rating_scores", "teacher_rating_comments", "teacher_reviews", "teacher_review_reactions", "teacher_review_replies",
 ]
 # таблицы с автоинкрементным id (нужны для сброса последовательностей в PostgreSQL)
 SERIAL_TABLES = ["groups", "lessons", "teachers", "homework", "head_requests", "audit", "snapshots", "staff", "units",
-                 "pending_questions", "support_messages", "support_tickets", "scheduled_deletions", "pinned_messages", "group_schedule_changes"]
+                 "pending_questions", "support_messages", "support_tickets", "scheduled_deletions", "pinned_messages", "group_schedule_changes", "teacher_reviews", "teacher_review_replies"]
 
 _V1 = [
     "CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)",
@@ -149,7 +149,26 @@ _V16 = [
     )""",
     "CREATE INDEX IF NOT EXISTS ix_teacher_rating_comments_teacher ON teacher_rating_comments (teacher_id, created_at)",
 ]
-MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12), (13, _V13), (14, _V14), (15, _V15), (16, _V16)]
+_V17 = [
+    """CREATE TABLE IF NOT EXISTS teacher_reviews (
+        id {PK}, user_id BIGINT NOT NULL, teacher_id BIGINT NOT NULL,
+        comment TEXT NOT NULL, created_at BIGINT NOT NULL,
+        UNIQUE (user_id, teacher_id)
+    )""",
+    "INSERT INTO teacher_reviews (user_id, teacher_id, comment, created_at) SELECT user_id, teacher_id, comment, created_at FROM teacher_rating_comments WHERE 1=1 ON CONFLICT (user_id, teacher_id) DO NOTHING",
+    "CREATE INDEX IF NOT EXISTS ix_teacher_reviews_teacher ON teacher_reviews (teacher_id, created_at)",
+    """CREATE TABLE IF NOT EXISTS teacher_review_reactions (
+        review_id BIGINT NOT NULL, user_id BIGINT NOT NULL, reaction INTEGER NOT NULL CHECK (reaction IN (-1, 1)),
+        created_at BIGINT NOT NULL, PRIMARY KEY (review_id, user_id)
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_teacher_review_reactions_review ON teacher_review_reactions (review_id, reaction)",
+    """CREATE TABLE IF NOT EXISTS teacher_review_replies (
+        id {PK}, review_id BIGINT NOT NULL, user_id BIGINT NOT NULL,
+        reply TEXT NOT NULL, created_at BIGINT NOT NULL
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_teacher_review_replies_review ON teacher_review_replies (review_id, created_at)",
+]
+MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12), (13, _V13), (14, _V14), (15, _V15), (16, _V16), (17, _V17)]
 
 
 async def migrate(db: Database) -> int:

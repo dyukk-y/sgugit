@@ -84,13 +84,22 @@ async def card(ctx: Ctx, tid: int, mode: str = "m", page: int = 0) -> Out:
         lines.append("👍 Сильные стороны: " + ", ".join(pros[:4]))
     if cons:
         lines.append("👎 Что можно улучшить: " + ", ".join(cons[:4]))
-    comments = await ctx.repo.public_teacher_rating_comments(tid, 3)
-    if comments:
-        lines.append("\n<b>Комментарии студентов</b>")
-        for item in comments:
-            # В публичной выборке нет user_id, username или имени автора.
-            lines.append("“" + fm.esc(item["comment"]) + "”")
     kb: Kb = []
+    reviews = await ctx.repo.public_teacher_reviews(tid, ctx.uid, 5)
+    if reviews:
+        lines.append("\n<b>Отзывы студентов</b>")
+        for item in reviews:
+            # Публичный запрос не раскрывает личность автора.
+            lines.append("\n<b>Отзыв</b> · " + fm.esc(item["comment"]))
+            replies = await ctx.repo.public_teacher_review_replies(item["id"], 2)
+            for reply in replies:
+                lines.append("↳ <i>Ответ:</i> " + fm.esc(reply["reply"]))
+            my = int(item.get("my_reaction") or 0)
+            kb.append([
+                Btn(f"👍 {item['likes']}" + (" ✓" if my == 1 else ""), f"t:react:{tid}:{item['id']}:1:{mode}:{page}"),
+                Btn(f"👎 {item['dislikes']}" + (" ✓" if my == -1 else ""), f"t:react:{tid}:{item['id']}:-1:{mode}:{page}"),
+                Btn("↩️ Ответить", f"t:reply:{tid}:{item['id']}:{mode}:{page}"),
+            ])
     if ctx.verified or ctx.is_admin:
         if criteria:
             kb.append([Btn("⭐ Оценить преподавателя", f"t:begin:{tid}:{mode}:{page}")])
@@ -187,6 +196,24 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
                 overall = max(1, min(5, int(round(sum(values) / len(values)))))
                 await ctx.repo.rate_teacher(ctx.uid, tid, overall, 0)
         return await _rating_step(ctx, tid, criteria, index + 1, mode, page)
+    if act == "react" and len(parts) >= 6 and parts[1].isdigit() and parts[2].isdigit() and parts[3] in ("1", "-1"):
+        tid, review_id, reaction = int(parts[1]), int(parts[2]), int(parts[3])
+        mode = parts[4] if parts[4] in ("m", "a") else "m"
+        page = int(parts[5]) if parts[5].isdigit() else 0
+        if not await ctx.repo.teacher_review(review_id, tid):
+            return Out(toast="Отзыв уже недоступен", alert=True)
+        await ctx.repo.set_teacher_review_reaction(review_id, ctx.uid, reaction)
+        await ctx.repo.audit(ctx.uid, "teacher_review_reaction", f"{review_id}:{reaction}")
+        out = await card(ctx, tid, mode, page); out.clear_state = True; return out
+    if act == "reply" and len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
+        tid, review_id = int(parts[1]), int(parts[2])
+        mode = parts[3] if len(parts) > 3 and parts[3] in ("m", "a") else "m"
+        page = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
+        if not await ctx.repo.teacher_review(review_id, tid):
+            return Out(toast="Отзыв уже недоступен", alert=True)
+        return Out(screen=Screen("Напишите ответ на отзыв (до 600 символов). Ответ будет опубликован без имени автора.",
+                                 [[Btn("Отмена", f"t:v:{tid}:{mode}:{page}")]]),
+                   state="t:reply", state_data={"tid": tid, "review_id": review_id, "mode": mode, "page": page})
     if act == "comment" and len(parts) >= 2 and parts[1].isdigit():
         tid = int(parts[1]); mode = parts[2] if len(parts) > 2 else "m"
         page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
@@ -197,13 +224,19 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         if not ctx.is_admin:
             return Out(toast="Недостаточно прав", alert=True)
         tid = int(parts[1])
-        rows = await ctx.repo.admin_teacher_rating_comments(tid)
-        lines = ["<b>Комментарии и авторы (только администрация)</b>"]
+        rows = await ctx.repo.admin_teacher_review_details(tid)
+        lines = ["<b>Отзывы, ответы и авторы (только администрация)</b>"]
+        seen_reviews = set()
         for row in rows:
-            who = ("@" + row["username"]) if row.get("username") else (row.get("tg_name") or str(row["user_id"]))
-            lines.append(f"\n<b>{fm.esc(str(who))}</b> · ID <code>{row['user_id']}</code>\n{fm.esc(row['comment'])}")
+            if row["review_id"] not in seen_reviews:
+                who = ("@" + row["review_username"]) if row.get("review_username") else (row.get("review_tg_name") or str(row["review_user_id"]))
+                lines.append(f"\n<b>Отзыв · {fm.esc(str(who))} · ID <code>{row['review_user_id']}</code></b>\n{fm.esc(row['comment'])}")
+                seen_reviews.add(row["review_id"])
+            if row.get("reply"):
+                who = ("@" + row["reply_username"]) if row.get("reply_username") else (row.get("reply_tg_name") or str(row["reply_user_id"]))
+                lines.append(f"↳ <b>Ответ · {fm.esc(str(who))} · ID <code>{row['reply_user_id']}</code></b>\n{fm.esc(row['reply'])}")
         if not rows:
-            lines.append("\nКомментариев пока нет.")
+            lines.append("\nОтзывов пока нет.")
         return Out(screen=Screen("\n".join(lines), [nav(f"t:v:{tid}:m:0")]))
     if act == "skipcomment" and len(parts) >= 2 and parts[1].isdigit():
         tid = int(parts[1]); mode = parts[2] if len(parts) > 2 else "m"
@@ -224,6 +257,24 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
         return Out(screen=Screen("Раздел сейчас недоступен.", [[home_btn()]]), clear_state=True)
     if state == "t:rating":
         return Out(screen=Screen("Пожалуйста, выберите оценку кнопкой от 1 до 5."), state=state, state_data=data)
+    if state == "t:reply":
+        tid, review_id = int(data.get("tid", 0)), int(data.get("review_id", 0))
+        reply = text.strip()
+        if not ctx.verified and not ctx.is_admin:
+            return Out(screen=Screen("Для ответа требуется подтверждённое ФИО.", [[home_btn()]]), clear_state=True)
+        if not await ctx.repo.teacher_review(review_id, tid):
+            return Out(screen=Screen("Этот отзыв больше недоступен.", [[home_btn()]]), clear_state=True)
+        if not reply:
+            return Out(screen=Screen("Ответ не может быть пустым. Напишите текст до 600 символов."),
+                       state="t:reply", state_data=data)
+        if len(reply) > 600:
+            return Out(screen=Screen("Ответ слишком длинный. Максимум — 600 символов."),
+                       state="t:reply", state_data=data)
+        await ctx.repo.add_teacher_review_reply(review_id, ctx.uid, reply)
+        await ctx.repo.audit(ctx.uid, "teacher_review_reply", str(review_id))
+        out = await card(ctx, tid, data.get("mode", "m"), int(data.get("page", 0)))
+        out.clear_state = True
+        return out
     if state == "t:comment":
         tid = int(data.get("tid", 0))
         if not tid:
