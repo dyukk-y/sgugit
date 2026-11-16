@@ -91,7 +91,7 @@ async def teacher_answer(ctx: Ctx, query: str, day: date | None = None) -> Scree
     d1 = tu.iso(ctx.today)
     d2 = tu.iso(ctx.today + timedelta(days=WINDOW_DAYS))
     lessons = await repo.teacher_lessons(surname, initials, d1, d2)
-    if day is not None and tu.iso(day) > d2:
+    if day is not None and not (d1 <= tu.iso(day) <= d2):
         lessons += await repo.teacher_lessons(surname, initials, tu.iso(day), tu.iso(day))
 
     # отдельные люди: по справочнику и по расписанию
