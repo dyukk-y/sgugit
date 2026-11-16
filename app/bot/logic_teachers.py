@@ -85,21 +85,9 @@ async def card(ctx: Ctx, tid: int, mode: str = "m", page: int = 0) -> Out:
     if cons:
         lines.append("👎 Что можно улучшить: " + ", ".join(cons[:4]))
     kb: Kb = []
-    reviews = await ctx.repo.public_teacher_reviews(tid, ctx.uid, 5)
-    if reviews:
-        lines.append("\n<b>Отзывы студентов</b>")
-        for item in reviews:
-            # Публичный запрос не раскрывает личность автора.
-            lines.append("\n<b>Отзыв</b> · " + fm.esc(item["comment"]))
-            replies = await ctx.repo.public_teacher_review_replies(item["id"], 2)
-            for reply in replies:
-                lines.append("↳ <i>Ответ:</i> " + fm.esc(reply["reply"]))
-            my = int(item.get("my_reaction") or 0)
-            kb.append([
-                Btn(f"👍 {item['likes']}" + (" ✓" if my == 1 else ""), f"t:react:{tid}:{item['id']}:1:{mode}:{page}"),
-                Btn(f"👎 {item['dislikes']}" + (" ✓" if my == -1 else ""), f"t:react:{tid}:{item['id']}:-1:{mode}:{page}"),
-                Btn("↩️ Ответить", f"t:reply:{tid}:{item['id']}:{mode}:{page}"),
-            ])
+    review_count = await ctx.repo.public_teacher_review_count(tid)
+    if review_count:
+        kb.append([Btn(f"💬 Отзывы · {review_count}", f"t:reviews:{tid}:{mode}:{page}")])
     if ctx.verified or ctx.is_admin:
         if criteria:
             kb.append([Btn("⭐ Оценить преподавателя", f"t:begin:{tid}:{mode}:{page}")])
@@ -196,6 +184,40 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
                 overall = max(1, min(5, int(round(sum(values) / len(values)))))
                 await ctx.repo.rate_teacher(ctx.uid, tid, overall, 0)
         return await _rating_step(ctx, tid, criteria, index + 1, mode, page)
+    if act == "reviews" and len(parts) >= 2 and parts[1].isdigit():
+        tid = int(parts[1])
+        mode = parts[2] if len(parts) > 2 and parts[2] in ("m", "a") else "m"
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        reviews = await ctx.repo.public_teacher_reviews(tid, ctx.uid, 10)
+        lines = ["<b>Отзывы студентов</b>"]
+        kb: Kb = []
+        for item in reviews:
+            lines.append("\n<b>Отзыв</b>\n" + fm.esc(item["comment"]))
+            my = int(item.get("my_reaction") or 0)
+            kb.append([
+                Btn(f"👍 {item['likes']}" + (" ✓" if my == 1 else ""), f"t:react:{tid}:{item['id']}:1:{mode}:{page}"),
+                Btn(f"👎 {item['dislikes']}" + (" ✓" if my == -1 else ""), f"t:react:{tid}:{item['id']}:-1:{mode}:{page}"),
+            ])
+            kb.append([Btn("↩️ Ответить", f"t:reply:{tid}:{item['id']}:{mode}:{page}")])
+            reply_count = await ctx.repo.public_teacher_review_reply_count(item["id"])
+            if reply_count:
+                kb.append([Btn(f"💬 Ответы · {reply_count}", f"t:replies:{tid}:{item['id']}:{mode}:{page}")])
+        if not reviews:
+            lines.append("\nОтзывов пока нет.")
+        kb.append(nav(f"t:v:{tid}:{mode}:{page}"))
+        return Out(screen=Screen("\n".join(lines), kb))
+    if act == "replies" and len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
+        tid, review_id = int(parts[1]), int(parts[2])
+        mode = parts[3] if len(parts) > 3 and parts[3] in ("m", "a") else "m"
+        page = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
+        review = await ctx.repo.teacher_review(review_id, tid)
+        if not review:
+            return Out(toast="Отзыв уже недоступен", alert=True)
+        replies = await ctx.repo.public_teacher_review_replies(review_id, 10)
+        lines = ["<b>Ответы на отзыв</b>", "\n<i>" + fm.esc(review["comment"]) + "</i>"]
+        for reply in replies:
+            lines.append("\n↳ " + fm.esc(reply["reply"]))
+        return Out(screen=Screen("\n".join(lines), [nav(f"t:reviews:{tid}:{mode}:{page}")]))
     if act == "react" and len(parts) >= 6 and parts[1].isdigit() and parts[2].isdigit() and parts[3] in ("1", "-1"):
         tid, review_id, reaction = int(parts[1]), int(parts[2]), int(parts[3])
         mode = parts[4] if parts[4] in ("m", "a") else "m"
@@ -204,7 +226,7 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             return Out(toast="Отзыв уже недоступен", alert=True)
         await ctx.repo.set_teacher_review_reaction(review_id, ctx.uid, reaction)
         await ctx.repo.audit(ctx.uid, "teacher_review_reaction", f"{review_id}:{reaction}")
-        out = await card(ctx, tid, mode, page); out.clear_state = True; return out
+        return await on_cb(ctx, ["reviews", str(tid), mode, str(page)])
     if act == "reply" and len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
         tid, review_id = int(parts[1]), int(parts[2])
         mode = parts[3] if len(parts) > 3 and parts[3] in ("m", "a") else "m"

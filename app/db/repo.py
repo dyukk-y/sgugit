@@ -682,6 +682,14 @@ class Repo:
                ORDER BY r.created_at DESC LIMIT ?""",
             viewer_id, tid, max(1, min(10, limit)))
 
+    async def public_teacher_review_count(self, tid: int) -> int:
+        return int(await self.db.scalar(
+            "SELECT COUNT(*) FROM teacher_reviews WHERE teacher_id = ? AND comment <> ''", tid) or 0)
+
+    async def public_teacher_review_reply_count(self, review_id: int) -> int:
+        return int(await self.db.scalar(
+            "SELECT COUNT(*) FROM teacher_review_replies WHERE review_id = ?", review_id) or 0)
+
     async def teacher_review(self, review_id: int, tid: int) -> dict | None:
         return await self.db.fetchone(
             "SELECT id, teacher_id, comment FROM teacher_reviews WHERE id = ? AND teacher_id = ?",
