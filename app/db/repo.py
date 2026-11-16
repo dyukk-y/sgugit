@@ -690,6 +690,17 @@ class Repo:
         return int(await self.db.scalar(
             "SELECT COUNT(*) FROM teacher_review_replies WHERE review_id = ?", review_id) or 0)
 
+    async def delete_teacher_review(self, review_id: int, tid: int) -> bool:
+        """Удалить отзыв вместе с реакциями и ответами; проверка teacher_id защищает от чужого ID."""
+        async with self.db.tx() as t:
+            row = await t.fetchone("SELECT id FROM teacher_reviews WHERE id = ? AND teacher_id = ?", (review_id, tid))
+            if not row:
+                return False
+            await t.execute("DELETE FROM teacher_review_reactions WHERE review_id = ?", (review_id,))
+            await t.execute("DELETE FROM teacher_review_replies WHERE review_id = ?", (review_id,))
+            await t.execute("DELETE FROM teacher_reviews WHERE id = ? AND teacher_id = ?", (review_id, tid))
+        return True
+
     async def teacher_review(self, review_id: int, tid: int) -> dict | None:
         return await self.db.fetchone(
             "SELECT id, teacher_id, comment FROM teacher_reviews WHERE id = ? AND teacher_id = ?",
