@@ -188,7 +188,7 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         tid = int(parts[1])
         mode = parts[2] if len(parts) > 2 and parts[2] in ("m", "a") else "m"
         page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
-        reviews = await ctx.repo.public_teacher_reviews(tid, ctx.uid, 10)
+        reviews = await ctx.repo.public_teacher_reviews(tid, ctx.uid, 4)
         lines = ["<b>Отзывы студентов</b>"]
         kb: Kb = []
         for item in reviews:
@@ -216,7 +216,11 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         replies = await ctx.repo.public_teacher_review_replies(review_id, 10)
         lines = ["<b>Ответы на отзыв</b>", "\n<i>" + fm.esc(review["comment"]) + "</i>"]
         for reply in replies:
-            lines.append("\n↳ " + fm.esc(reply["reply"]))
+            line = "\n↳ " + fm.esc(reply["reply"])
+            if len("\n".join(lines + [line])) > 3600:
+                lines.append("\nОстальные ответы скрыты из-за ограничения длины сообщения.")
+                break
+            lines.append(line)
         return Out(screen=Screen("\n".join(lines), [nav(f"t:reviews:{tid}:{mode}:{page}")]))
     if act == "react" and len(parts) >= 6 and parts[1].isdigit() and parts[2].isdigit() and parts[3] in ("1", "-1"):
         tid, review_id, reaction = int(parts[1]), int(parts[2]), int(parts[3])
@@ -260,6 +264,16 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         if not rows:
             lines.append("\nОтзывов пока нет.")
         return Out(screen=Screen("\n".join(lines), [nav(f"t:v:{tid}:m:0")]))
+    if act == "admindel" and len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
+        if not ctx.is_admin:
+            return Out(toast="Недостаточно прав", alert=True)
+        tid, review_id = int(parts[1]), int(parts[2])
+        deleted = await ctx.repo.delete_teacher_review(review_id, tid)
+        if deleted:
+            await ctx.repo.audit(ctx.uid, "teacher_review_delete", f"{review_id}:{tid}")
+        out = await on_cb(ctx, ["admincomments", str(tid)])
+        out.toast = "Отзыв удалён" if deleted else "Отзыв уже удалён"
+        return out
     if act == "skipcomment" and len(parts) >= 2 and parts[1].isdigit():
         tid = int(parts[1]); mode = parts[2] if len(parts) > 2 else "m"
         page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
