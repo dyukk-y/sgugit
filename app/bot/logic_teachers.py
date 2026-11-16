@@ -192,7 +192,10 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         lines = ["<b>Отзывы студентов</b>"]
         kb: Kb = []
         for item in reviews:
-            lines.append("\n<b>Отзыв</b>\n" + fm.esc(item["comment"]))
+            block = "\n<b>Отзыв</b>\n" + fm.esc(item["comment"])
+            if len("\n".join(lines + [block])) > 3500:
+                break
+            lines.append(block)
             my = int(item.get("my_reaction") or 0)
             kb.append([
                 Btn(f"👍 {item['likes']}" + (" ✓" if my == 1 else ""), f"t:react:{tid}:{item['id']}:1:{mode}:{page}"),
@@ -257,12 +260,17 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         for row in rows:
             if row["review_id"] not in seen_reviews:
                 who = ("@" + row["review_username"]) if row.get("review_username") else (row.get("review_tg_name") or str(row["review_user_id"]))
-                lines.append(f"\n<b>Отзыв · {fm.esc(str(who))} · ID <code>{row['review_user_id']}</code></b>\n{fm.esc(row['comment'])}")
+                block = f"\n<b>Отзыв · {fm.esc(str(who))} · ID <code>{row['review_user_id']}</code></b>\n{fm.esc(row['comment'])}"
+                if len("\n".join(lines + [block])) > 3300:
+                    break
+                lines.append(block)
                 kb.append([Btn("🗑 Удалить отзыв", "t:admindel:" + str(tid) + ":" + str(row["review_id"]))])
                 seen_reviews.add(row["review_id"])
             if row.get("reply"):
                 who = ("@" + row["reply_username"]) if row.get("reply_username") else (row.get("reply_tg_name") or str(row["reply_user_id"]))
-                lines.append(f"↳ <b>Ответ · {fm.esc(str(who))} · ID <code>{row['reply_user_id']}</code></b>\n{fm.esc(row['reply'])}")
+                reply_line = f"↳ <b>Ответ · {fm.esc(str(who))} · ID <code>{row['reply_user_id']}</code></b>\n{fm.esc(row['reply'])}"
+                if len("\n".join(lines + [reply_line])) <= 3500:
+                    lines.append(reply_line)
         if not rows:
             lines.append("\nОтзывов пока нет.")
         kb.append(nav(f"t:v:{tid}:m:0"))
