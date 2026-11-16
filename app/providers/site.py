@@ -276,7 +276,7 @@ def _load_group_url_cache(cache_path, now=None):
         checked_at = 0
     current = int(time.time()) if now is None else int(now)
     age = current - checked_at
-    return list(groups.values()), bool(groups) and 0 <= age < GROUP_URL_CACHE_TTL
+    return list(groups.values()), bool(groups) and checked_at > 0 and 0 <= age < GROUP_URL_CACHE_TTL
 
 
 def _save_group_url_cache(cache_path, groups, now=None):
