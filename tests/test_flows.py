@@ -66,6 +66,8 @@ class Sim:
         out = await self.do(uid, text=group)
         gdata = [d for d in datas(out) if d and d.startswith("r:g:")][0]
         await self.do(uid, callback=gdata)
+        # ФИО — отдельный добровольный шаг, необходимый только для защищённых разделов.
+        await self.do(uid, callback="r:redo")
         out = await self.do(uid, text=fio)
         out = await self.do(uid, callback="r:ok")
         roster_ids = []
@@ -91,7 +93,7 @@ class T(unittest.TestCase):
             out = await s.do(909, callback="me:ntf")
             self.assertIn("группу", texts(out).lower())
 
-            # Одна группа без ФИО — это незавершённая регистрация.
+            # Группа завершает базовую регистрацию, но защищённые разделы требуют ФИО.
             group = await s.repo.get_or_create_group("ИС-11")
             await s.repo.update_user(909, group_id=group["id"])
             out = await s.do(909, callback="h:l:0")
@@ -103,7 +105,7 @@ class T(unittest.TestCase):
             out = await s.do(909, text="дз на завтра")
             self.assertIn("ФИО", texts(out))
             state, _ = await s.repo.get_state(909)
-            self.assertEqual(state, "reg:fio")
+            self.assertIsNone(state)
             await s.db.close()
         run(go())
 
@@ -131,6 +133,8 @@ class T(unittest.TestCase):
             out = await s.do(100, text="ис 11"); self.assertIn("r:g:", " ".join(datas(out)))
             gd = [d for d in datas(out) if d.startswith("r:g:")][0]
             out = await s.do(100, callback=gd); self.assertIn("ФИО", texts(out))
+            self.assertNotIn("Введите ФИО", texts(out))
+            out = await s.do(100, callback="r:redo")
             out = await s.do(100, text="Иванов Иван Иванович"); self.assertIn("Напишите свои ФИО", texts(out)); self.assertNotIn("r:ok", datas(out))
             out = await s.do(100, text="хуй пизда джигурда"); self.assertNotIn("r:ok", datas(out))
             out = await s.do(100, text="Смирнова Анна Сергеевна"); self.assertIn("r:ok", datas(out))
@@ -164,6 +168,7 @@ class T(unittest.TestCase):
             self.assertIn("r:g:", " ".join(datas(out)))
             gid = next(d for d in datas(out) if d.startswith("r:g:"))
             out = await s.do(777, callback=gid)
+            await s.do(777, callback="r:redo")
             out = await s.do(777, text="Смирнова Анна Сергеевна")
             out = await s.do(777, callback="r:ok")
             # В основном меню есть отдельная кнопка добавления в группу с корректной deep-link-ссылкой.
@@ -180,9 +185,7 @@ class T(unittest.TestCase):
             self.assertIn("p:register", datas(out))
             out = await s.do(200, text="ИС-11")
             group_choice = next(d for d in datas(out) if d.startswith("r:g:"))
-            await s.do(200, callback=group_choice)
-            await s.do(200, text="Смирнова Анна Сергеевна")
-            out = await s.do(200, callback="r:ok")
+            out = await s.do(200, callback=group_choice)
             self.assertIn("p:register", datas(out))
             out = await s.do(200, callback="p:register")
             self.assertIn("фамилию", texts(out).lower())
@@ -194,7 +197,7 @@ class T(unittest.TestCase):
             user = await s.repo.get_user(200)
             self.assertEqual(user["role"], "teacher")
             self.assertIsNotNone(user["group_id"])
-            self.assertEqual(user["fio"], "Смирнова Анна Сергеевна")
+            self.assertIsNone(user["fio"])
             out = await s.do(200, callback="p:day:today")
             self.assertIn("Математика", texts(out))
             self.assertIn("Группа: ИС-11", texts(out))
@@ -203,7 +206,7 @@ class T(unittest.TestCase):
             user = await s.repo.get_user(200)
             self.assertEqual(user["role"], "student")
             self.assertIsNotNone(user["group_id"])
-            self.assertEqual(user["fio"], "Смирнова Анна Сергеевна")
+            self.assertIsNone(user["fio"])
             await s.db.close()
         run(go())
 
@@ -269,7 +272,8 @@ class T(unittest.TestCase):
             out = await s.do(100, callback="t:l:m:0"); t = texts(out); self.assertIn("Преподаватели", t)
             tid = int([d for d in datas(out) if d.startswith("t:v:")][0].split(":")[2])
             out = await s.do(100, callback=f"t:v:{tid}:m:0"); self.assertIn("t:r:%d:5:m:0" % tid, datas(out))
-            out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertIn("сохранена", out.toast)
+            tid = (await s.repo.search_teachers("Иванов"))[0]["id"]
+            out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertTrue(out.toast and "подтверждения" in out.toast)
             out = await s.do(100, callback=f"t:r:{tid}:3:m:0"); self.assertIn("сохранена", out.toast)
             out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertIn("сохранена", out.toast)
             out = await s.do(100, callback="t:s"); self.assertEqual(out.state, "t:search")
@@ -317,8 +321,8 @@ class T(unittest.TestCase):
             s = await Sim().setup()
             await s.register(100, "Мамаев Тагирчик")  # две слова с редким именем: на проверку
             u = await s.repo.get_user(100); self.assertEqual(u["fio_status"], "pending")
-            out = await s.do(100, callback="h:add:0"); self.assertTrue(out.toast)   # не подтверждён: нельзя
-            out = await s.do(100, callback="t:l:m:0"); tid = int([d for d in datas(out) if d.startswith("t:v:")][0].split(":")[2])
+            out = await s.do(100, callback="h:add:0"); self.assertIn("ФИО", texts(out))  # не подтверждён: нельзя
+            out = await s.do(100, callback="t:l:m:0"); self.assertIn("ФИО", texts(out))
             out = await s.do(100, callback=f"t:r:{tid}:5:m:0"); self.assertTrue(out.toast and "подтверждения" in out.toast)
             out = await s.do(1, callback="ad:fq:0"); self.assertIn("ad:u:100", datas(out))
             out = await s.do(1, callback="ad:ufo:100:ok"); self.assertEqual(out.notify[0][0], 100)
