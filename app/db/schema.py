@@ -155,7 +155,7 @@ _V17 = [
         comment TEXT NOT NULL, created_at BIGINT NOT NULL,
         UNIQUE (user_id, teacher_id)
     )""",
-    "INSERT INTO teacher_reviews (user_id, teacher_id, comment, created_at) SELECT user_id, teacher_id, comment, created_at FROM teacher_rating_comments ON CONFLICT (user_id, teacher_id) DO NOTHING",
+    "INSERT INTO teacher_reviews (user_id, teacher_id, comment, created_at) SELECT user_id, teacher_id, comment, created_at FROM teacher_rating_comments WHERE 1=1 ON CONFLICT (user_id, teacher_id) DO NOTHING",
     "CREATE INDEX IF NOT EXISTS ix_teacher_reviews_teacher ON teacher_reviews (teacher_id, created_at)",
     """CREATE TABLE IF NOT EXISTS teacher_review_reactions (
         review_id BIGINT NOT NULL, user_id BIGINT NOT NULL, reaction INTEGER NOT NULL CHECK (reaction IN (-1, 1)),
