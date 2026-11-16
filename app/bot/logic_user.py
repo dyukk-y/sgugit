@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 
 from app import timeutil as tu
 from app.bot import logic_schedule as ls, logic_teacher
