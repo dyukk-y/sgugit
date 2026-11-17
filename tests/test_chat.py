@@ -23,6 +23,22 @@ class T(unittest.TestCase):
             await lc.apply(r, chat, u5, "ev"); chat = await r.get_chat(-7); self.assertEqual(chat["evening_on"], 1)
             for act, field, expected in (("no", "notifications_on", 0), ("pq", "private_questions", 1), ("cl", "cleanup_on", 1)):
                 await lc.apply(r, chat, u5, act); chat = await r.get_chat(-7); self.assertEqual(chat[field], expected)
+            # Отключение активного режима отменяет уже ожидающие ответы.
+            await r.update_chat(-7, smart_mode="active")
+            await r.add_pending(-7, 100, 8, "какие пары завтра?", "{}", 9999999999)
+            chat = await r.get_chat(-7)
+            self.assertEqual(len(await r.pending_for_chat(-7)), 1)
+            await lc.apply(r, chat, u5, "sm")
+            self.assertEqual((await r.get_chat(-7))["smart_mode"], "off")
+            self.assertEqual(len(await r.pending_for_chat(-7)), 0)
+            # При перепривязке к другой группе старые вопросы также сбрасываются.
+            g2 = await r.get_or_create_group("ИС-12")
+            await r.update_user(5, group_id=g2["id"]); u5 = await r.get_user(5)
+            await r.add_pending(-7, 101, 8, "какие пары завтра?", "{}", 9999999999)
+            chat = await r.get_chat(-7)
+            await lc.apply(r, chat, u5, "grp")
+            self.assertEqual((await r.get_chat(-7))["group_id"], g2["id"])
+            self.assertEqual(len(await r.pending_for_chat(-7)), 0)
             u7 = await r.ensure_user(7); await r.update_user(7, role="head", group_id=g["id"]); u7 = await r.get_user(7)
             self.assertFalse(lc.can_manage(u7, chat, 1))
             await db.close()
