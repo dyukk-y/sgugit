@@ -31,6 +31,21 @@ class T(unittest.TestCase):
         for invalid in ("МД-22.12", "МД-2", "МД-2222", "МД-22.1 пара", "МД"):
             self.assertIsNone(canonical_group_name(invalid), invalid)
 
+    def test_group_schedule_change_can_be_decided_by_another_admin(self):
+        async def go():
+            db, r = await mk()
+            group = await r.get_or_create_group("ИС-11")
+            change_id = await r.create_group_schedule_change(
+                gid=group["id"], chat_id=-100, day=iso(today() + timedelta(days=1)),
+                num=1, action="cancel", subject="Математика", author_id=10,
+                author_label="@student", message_id=55)
+            self.assertTrue(await r.decide_group_schedule_change(change_id, 20, True))
+            row = await r.get_group_schedule_change(change_id)
+            self.assertEqual(row["status"], "applied")
+            self.assertFalse(await r.decide_group_schedule_change(change_id, 30, False))
+            await db.close()
+        run(go())
+
     def test_users_groups(self):
         async def go():
             db, r = await mk()
