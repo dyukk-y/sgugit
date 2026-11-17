@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from aiogram.exceptions import TelegramAPIError
+from aiogram.methods import SendMessage
 
 from app.bot import tg
 from app.services.questions import QuestionService
@@ -17,7 +18,7 @@ class FlakyBot:
 
     async def send_message(self, chat_id, text, reply_parameters=None):
         if self.fail:
-            raise TelegramAPIError("temporary Telegram failure")
+            raise TelegramAPIError(method=SendMessage(chat_id=chat_id, text=text), message="temporary Telegram failure")
         self.sent += 1
         return SimpleNamespace(message_id=500)
 
