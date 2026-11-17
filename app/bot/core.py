@@ -64,21 +64,6 @@ def nav(back: str | None = None) -> list[Btn]:
     return row
 
 
-def pager(prefix: str, page: int, total: int, page_size: int) -> list[Btn]:
-    """Единая компактная навигация; prefix содержит все параметры фильтра до номера страницы."""
-    if page_size <= 0 or total <= page_size:
-        return []
-    pages = (total + page_size - 1) // page_size
-    current = max(0, min(page, pages - 1))
-    row: list[Btn] = []
-    if current > 0:
-        row.append(Btn("◀", f"{prefix}:{current - 1}"))
-    row.append(Btn(f"{current + 1}/{pages}", "noop"))
-    if current + 1 < pages:
-        row.append(Btn("▶", f"{prefix}:{current + 1}"))
-    return row
-
-
 def pager(prefix: str, page: int, total: int, size: int = PAGE) -> list[Btn]:
     pages = max(1, -(-total // size))
     if pages <= 1:
