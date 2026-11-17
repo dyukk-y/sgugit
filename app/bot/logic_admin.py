@@ -1317,7 +1317,7 @@ async def _broadcast_preview(ctx: Ctx, data: dict) -> Out:
         audience = f"Группа: {fm.esc(group['name'])}" if group else "Группа не найдена"
     else:
         audience = "Аудитория: все пользователи"
-    preview = (f"<b>👁 Предпросмотр рассылки</b>\n{audience}\nПолучателей: <b>{count}</b>\n"
+    preview = (f"<b>👁 Предпросмотр рассылки</b>\n{audience}\nПолучателей: {count}\n"
                f"{media}<i>Ниже показано сообщение в том же HTML-формате и с теми же кнопками, "
                f"которые получат пользователи.</i>\n\n{shown_body}")
     if data.get("buttons"):
