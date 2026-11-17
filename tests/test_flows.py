@@ -326,7 +326,7 @@ class T(unittest.TestCase):
             self.assertIn(f"ad:rtc:{tid}:rating:0", datas(out))
             out = await s.do(1, callback=f"ad:rtc:{tid}:rating:0")
             self.assertIn("Оценки по видам занятий", texts(out))
-            self.assertIn("4.00/5", texts(out))
+            self.assertIn("5.00/5", texts(out))
             out = await s.do(1, callback=f"ad:rae:{tid}:0")
             self.assertIn("ID <code>100</code>", texts(out))
             await s.do(1, callback=f"ad:radc:{tid}:100:0")
