@@ -1085,7 +1085,7 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         out = Out(screen=Screen(f"Рассылка принята в очередь: {len(recipients)} получателей. Доставка будет идти постепенно.", [nav("ad:menu")]),
                   clear_state=True)
         if data.get("media_file_id"):
-            caption = body[:900] if body.strip() else "Сообщение от администрации"
+            caption = body if body.strip() else "Сообщение от администрации"
             out.notify_media = [(uid, data["media_file_id"], data.get("media_type", "photo"), caption, markup)
                                 for uid in recipients]
         else:
@@ -1319,7 +1319,7 @@ async def _broadcast_preview(ctx: Ctx, data: dict) -> Out:
         preview += f"\n\nКнопок: <b>{len(data['buttons'])}/8</b>"
     out = Out(screen=Screen(preview, buttons), state="ad:bc_confirm", state_data=data)
     if data.get("media_file_id"):
-        caption = body[:900] if body else None
+        caption = body if body else None
         out.media = (data["media_file_id"], data.get("media_type", "photo"), caption)
     return out
 
@@ -1462,9 +1462,11 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str, *, html_text: str
         data["buttons"] = buttons
         return await _broadcast_preview(ctx, data)
     if state == "ad:bc_text" and ctx.can("broadcast"):
-        if len(text) > 3000:
-            return Out(screen=Screen("Слишком длинно (максимум 3000 символов)."), state="ad:bc_text", state_data=data)
-        new = dict(data, text=text, html_text=(html_text or fm.esc(text))[:12000])
+        limit = 900 if data.get("media_file_id") else 3000
+        if len(text) > limit:
+            return Out(screen=Screen(f"Слишком длинно (максимум {limit} символов для выбранного формата)."),
+                       state="ad:bc_text", state_data=data)
+        new = dict(data, text=text, html_text=(html_text or fm.esc(text)))
         new.setdefault("buttons", [])
         return await _broadcast_preview(ctx, new)
     if state == "ad:uitext_val" and ctx.is_super:
