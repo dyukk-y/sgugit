@@ -40,7 +40,7 @@ class Out:
     state_data: dict | None = None
     clear_state: bool = False
     notify: list[tuple[int, Screen]] = field(default_factory=list)
-    notify_media: list[tuple[int, str, str, str | None]] = field(default_factory=list)  # uid, file_id, kind, caption
+    notify_media: list[tuple] = field(default_factory=list)  # uid, file_id, kind, caption
     notify_timed: list[tuple[int, Screen, int]] = field(default_factory=list)  # chat_id, screen, delete_after_seconds
     file: tuple[str, bytes, str | None] | None = None
     media: tuple[str, str, str | None] | None = None  # file_id, kind(photo/document), caption
