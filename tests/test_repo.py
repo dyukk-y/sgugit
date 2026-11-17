@@ -31,11 +31,29 @@ class T(unittest.TestCase):
         for invalid in ("МД-22.12", "МД-2", "МД-2222", "МД-22.1 пара", "МД"):
             self.assertIsNone(canonical_group_name(invalid), invalid)
 
+    def test_group_schedule_change_can_be_decided_by_another_admin(self):
+        async def go():
+            db, r = await mk()
+            group = await r.get_or_create_group("ИС-11")
+            change_id = await r.create_group_schedule_change(
+                gid=group["id"], chat_id=-100, day=iso(today() + timedelta(days=1)),
+                num=1, action="cancel", subject="Математика", author_id=10,
+                author_label="@student", message_id=55)
+            self.assertTrue(await r.decide_group_schedule_change(change_id, 20, True))
+            row = await r.get_group_schedule_change(change_id)
+            self.assertEqual(row["status"], "applied")
+            self.assertFalse(await r.decide_group_schedule_change(change_id, 30, False))
+            await db.close()
+        run(go())
+
     def test_users_groups(self):
         async def go():
             db, r = await mk()
             u = await r.touch_user(5, "@Ann", "Anna"); self.assertEqual(u["username"], "Ann")
+            self.assertEqual(u["hw_blocked"], 0)
             await r.update_user(5, fio="Петрова Анна Сергеевна", fio_status="verified")
+            await r.update_user(5, hw_blocked=1)
+            self.assertTrue(await r.hw_creation_blocked(5))
             self.assertEqual((await r.find_user("@ann"))["id"], 5)
             self.assertEqual((await r.find_user("5555")), None)
             self.assertEqual(len(await r.search_users_by_fio("петрова")), 1)
@@ -114,6 +132,57 @@ class T(unittest.TestCase):
             await db.close()
         run(go())
 
+    def test_homework_filters_keep_overdue_until_completed(self):
+        async def go():
+            db, r = await mk()
+            group = await r.get_or_create_group("ИС-11")
+            await r.ensure_user(101)
+            today_iso = iso(today())
+            overdue_day = iso(today() - timedelta(days=2))
+            future_day = iso(today() + timedelta(days=2))
+            old = await r.add_hw(group["id"], "Математика", None, "Просроченное задание", overdue_day, 101, "approved")
+            future = await r.add_hw(group["id"], "Физика", None, "Будущее задание", future_day, 101, "approved")
+            self.assertTrue(await r.toggle_hw_done(101, future))
+
+            counts = await r.hw_list_counts(group["id"], 101, today_iso)
+            self.assertEqual(counts, {"total": 2, "done": 1, "active": 1, "overdue": 1})
+
+            active, active_total = await r.list_hw(group["id"], today_iso, 0, 5, 101, "active")
+            self.assertEqual(active_total, 1)
+            self.assertEqual([x["id"] for x in active], [old])
+
+            done, done_total = await r.list_hw(group["id"], today_iso, 0, 5, 101, "done")
+            self.assertEqual(done_total, 1)
+            self.assertEqual([x["id"] for x in done], [future])
+
+            all_rows, all_total = await r.list_hw(group["id"], today_iso, 0, 5, 101, "all")
+            self.assertEqual(all_total, 2)
+            self.assertEqual({x["id"] for x in all_rows}, {old, future})
+            await db.close()
+        run(go())
+
+    def test_admin_homework_stats_and_blocked_students(self):
+        async def go():
+            db, r = await mk()
+            group = await r.get_or_create_group("ИС-11")
+            await r.ensure_user(10001)
+            await r.update_user(10001, group_id=group["id"], fio="Смирнова Анна Сергеевна", hw_blocked=1)
+            await r.add_hw(group["id"], "Математика", None, "№15-20", None, 10001, "approved")
+            await r.add_hw(group["id"], "Физика", None, "Задачи 1-3", None, 10001, "pending")
+            stats = await r.admin_homework_stats()
+            self.assertEqual(stats["published"], 1)
+            self.assertEqual(stats["last_day"], 1)
+            self.assertEqual(stats["last_week"], 1)
+            self.assertEqual(stats["authors_week"], 1)
+            self.assertEqual(stats["blocked_students"], 1)
+            self.assertEqual(stats["legacy_pending"], 1)
+            rows, total = await r.blocked_hw_users(10, 0)
+            self.assertEqual(total, 1)
+            self.assertEqual(rows[0]["id"], 10001)
+            self.assertEqual(rows[0]["group_name"], "ИС-11")
+            await db.close()
+        run(go())
+
     def test_chat_snapshot_dump(self):
         async def go():
             db, r = await mk()
@@ -133,5 +202,60 @@ class T(unittest.TestCase):
             self.assertFalse(await r2.is_empty())
             await db.close(); await db2.close()
         run(go())
+    def test_admin_teacher_rating_management(self):
+        async def go():
+            db, r = await mk()
+            d1 = iso(today() + timedelta(days=1))
+            await r.apply_lessons([
+                L("ИС-11", d1, 1, "Математика", "Иванов Иван Иванович", kind="лекция"),
+                L("ИС-11", d1, 2, "Математика", "Иванов Иван Иванович", kind="практика"),
+                L("ИС-11", d1, 3, "Физика", "Петров Петр Петрович", kind="лекция"),
+            ], manual=False)
+            teachers, total = await r.admin_teacher_list(0, 10)
+            self.assertEqual(total, 2)
+            ivan = next(x for x in teachers if x["name"] == "Иванов Иван Иванович")
+            tid = ivan["id"]
+            await r.ensure_user(101)
+            await r.ensure_user(102)
+            criteria = await r.teacher_rating_criteria((await r.get_teacher(tid))["norm"])
+            self.assertGreaterEqual(len(criteria), 2)
+            await r.save_teacher_rating_score(101, tid, criteria[0]["key"], 5)
+            await r.save_teacher_rating_score(101, tid, criteria[1]["key"], 4)
+            await r.rate_teacher(101, tid, 5, 0)
+            await r.save_teacher_rating_score(102, tid, criteria[0]["key"], 3)
+            entries, entry_total = await r.admin_teacher_rating_entries(tid, 0, 10)
+            self.assertEqual(entry_total, 2)
+            self.assertEqual({x["user_id"] for x in entries}, {101, 102})
+            summary = await r.teacher_rating_score_summary(tid)
+            self.assertEqual(sum(x["cnt"] for x in summary), 3)
+            await r.save_teacher_rating_comment(101, tid, "Хорошо объясняет")
+            review_rows, review_total = await r.admin_teacher_reviews(tid, 0, 5)
+            self.assertEqual(review_total, 1)
+            review_id = review_rows[0]["id"]
+            await r.add_teacher_review_reply(review_id, 102, "Согласен")
+            replies = await r.admin_teacher_review_replies(review_id, tid)
+            self.assertEqual(len(replies), 1)
+            self.assertTrue(await r.delete_teacher_review_reply(replies[0]["id"], review_id, tid))
+            self.assertFalse(await r.delete_teacher_review_reply(replies[0]["id"], review_id, tid))
+            self.assertTrue(await r.delete_teacher_review(review_id, tid))
+            self.assertEqual(await db.scalar(
+                "SELECT COUNT(*) FROM teacher_rating_comments WHERE teacher_id = ?", tid), 0)
+            self.assertEqual(await db.scalar(
+                "SELECT COUNT(*) FROM teacher_review_replies WHERE review_id = ?", review_id), 0)
+            self.assertTrue(await r.delete_teacher_rating(101, tid))
+            self.assertFalse(await r.delete_teacher_rating(101, tid))
+            entries, entry_total = await r.admin_teacher_rating_entries(tid, 0, 10)
+            self.assertEqual(entry_total, 1)
+            self.assertEqual(entries[0]["user_id"], 102)
+            await r.set_teacher_hidden(tid, True)
+            all_rows, all_total = await r.admin_teacher_list(0, 10)
+            self.assertEqual(all_total, 2)
+            self.assertTrue(next(x for x in all_rows if x["id"] == tid)["hidden"])
+            found, found_total = await r.admin_teacher_list(0, 10, "Иванов")
+            self.assertEqual(found_total, 1)
+            self.assertEqual(found[0]["id"], tid)
+            await db.close()
+        run(go())
+
 if __name__ == "__main__":
     unittest.main()

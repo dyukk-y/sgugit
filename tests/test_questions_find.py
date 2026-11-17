@@ -89,11 +89,29 @@ class T(unittest.TestCase):
             res = await qs.due_answers(t0 + 3600 + 5, NOW)
             self.assertEqual(len(res), 1); p, scr = res[0]
             self.assertEqual(p["message_id"], 100); self.assertIn("Пока никто не ответил", scr.text); self.assertIn("215", scr.text); self.assertIn("Крылов А. А.", scr.text)
-            self.assertEqual(await qs.due_answers(t0 + 9999, NOW), [])                          # повторно не отвечает
-            # ответ человека снимает вопрос
+            # Вопрос взят в работу, но повторно не выдаётся до истечения аренды.
+            self.assertEqual(await qs.due_answers(t0 + 3705, NOW), [])
+            recovered = await qs.due_answers(t0 + 3906, NOW)  # восстановление после условного падения процесса
+            self.assertEqual(len(recovered), 1)
+            self.assertTrue(await r.finish_pending(p["id"], True))
+            self.assertEqual(await qs.due_answers(t0 + 9999, NOW), [])  # успешно доставленный ответ не дублируется
+            # Посторонняя реплика с числом не должна снимать общий вопрос.
             self.assertTrue(await qs.consider(chat, 20, 200, "где завтра первая пара?", t0, NOW))
+            self.assertEqual(await qs.mark_answers(-9, 21, "у меня 2 пары", None), 0)
             self.assertEqual(await qs.mark_answers(-9, 21, "в 215", None), 1)
             self.assertEqual(await qs.due_answers(t0 + 99999, NOW), [])
+            # Одновременные одинаковые вопросы не создают дубли.
+            chat2 = await r.upsert_chat(-10, "ИС-11 второй", g, 1)
+            await r.update_chat(-10, smart_mode="active")
+            chat2 = await r.get_chat(-10)
+            results = await asyncio.gather(
+                qs.consider(chat2, 31, 301, "какие пары завтра?", t0, NOW),
+                qs.consider(chat2, 32, 302, "какие пары завтра?", t0, NOW),
+            )
+            self.assertEqual(sum(results), 1)
+            self.assertEqual(len(await r.pending_for_chat(-10)), 1)
+            await r.cancel_pending_for_chat(-10)
+            self.assertEqual(len(await r.pending_for_chat(-10)), 0)
             # режим mention/keywords вопросы не копит
             await r.update_chat(-9, smart_mode="mention"); chat = await r.get_chat(-9)
             self.assertFalse(await qs.consider(chat, 30, 300, "какие пары завтра?", t0, NOW))

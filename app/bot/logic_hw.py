@@ -13,8 +13,7 @@ SIZE = 5
 
 
 def can_moderate(ctx: Ctx, hw: dict) -> bool:
-    if ctx.is_super or (ctx.role == "admin" and ctx.can("homework")):
-        return True
+    """Администраторы больше не проверяют публикации студентов."""
     return False
 
 
@@ -30,11 +29,16 @@ def _can_see(ctx: Ctx, hw: dict) -> bool:
     return hw["status"] == "approved" or (hw["status"] == "pending" and hw["author_id"] == ctx.uid)
 
 
-def _due_label(hw: dict) -> str:
-    return f"до {tu.fmt_dm(date.fromisoformat(hw['due_day']))}" if hw.get("due_day") else "без срока"
+def _due_label(hw: dict, today: date | None = None) -> str:
+    if not hw.get("due_day"):
+        return "без срока"
+    due = date.fromisoformat(hw["due_day"])
+    if today and due < today:
+        return f"просрочено · {tu.fmt_dm(due)}"
+    return f"до {tu.fmt_dm(due)}"
 
 
-async def list_screen(ctx: Ctx, page: int = 0) -> Screen:
+async def list_screen(ctx: Ctx, page: int = 0, mode: str = "active") -> Screen:
     gid = ctx.user.get("group_id")
     if not gid:
         return Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]])
@@ -44,24 +48,40 @@ async def list_screen(ctx: Ctx, page: int = 0) -> Screen:
                           [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
         return Screen("Чтобы открыть этот раздел, укажите ФИО и дождитесь подтверждения. Для расписания ФИО не требуется.",
                       [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
-    rows, total = await ctx.repo.list_hw(gid, tu.iso(ctx.today), page * SIZE, SIZE)
+    if mode not in ("active", "done", "all"):
+        mode = "active"
+    rows, total = await ctx.repo.list_hw(gid, tu.iso(ctx.today), page * SIZE, SIZE, ctx.uid, mode)
     done = await ctx.repo.hw_done_set(ctx.uid, [r["id"] for r in rows])
-    kb: Kb = []
+    counts = await ctx.repo.hw_list_counts(gid, ctx.uid, tu.iso(ctx.today))
+    kb: Kb = [
+        [Btn(f"⏳ К выполнению · {counts['active']}", "h:l:0:active"),
+         Btn(f"✅ Выполнено · {counts['done']}", "h:l:0:done")],
+        [Btn(f"📋 Все · {counts['total']}", "h:l:0:all")],
+    ]
     lines = ["<b>Задания группы</b>"]
+    if counts["overdue"]:
+        lines.append(f"⚠️ Просрочено и не отмечено выполненным: <b>{counts['overdue']}</b>")
     if not rows:
-        lines.append("\nПока заданий нет.")
+        empty = {"active": "Все задания выполнены 🎉", "done": "Пока нет выполненных заданий.",
+                 "all": "Пока заданий нет."}[mode]
+        lines.append("\n" + empty)
     for r in rows:
-        mark = "✅ " if r["id"] in done else ""
-        kb.append([Btn(f"{mark}{r['subject'][:22]} · {_due_label(r)}", f"h:v:{r['id']}")])
+        is_done = r["id"] in done
+        overdue = bool(r.get("due_day") and r["due_day"] < tu.iso(ctx.today) and not is_done)
+        mark = "⚠️ " if overdue else ("✅ " if is_done else "⏳ ")
+        kb.append([Btn(f"{mark}{r['subject'][:18]} · {_due_label(r, ctx.today)}", f"h:v:{r['id']}:{mode}")])
     if total > SIZE:
-        from app.bot.core import pager
-        kb.append(pager("h:l", page, total, SIZE))
+        pages = (total + SIZE - 1) // SIZE
+        page_row: list[Btn] = []
+        if page > 0:
+            page_row.append(Btn("◀", f"h:l:{page - 1}:{mode}"))
+        page_row.append(Btn(f"{page + 1}/{pages}", "noop"))
+        if page + 1 < pages:
+            page_row.append(Btn("▶", f"h:l:{page + 1}:{mode}"))
+        kb.append(page_row)
     row = []
     if ctx.verified:
         row.append(Btn("➕ Добавить", "h:add:0"))
-    if ctx.is_head:
-        n = (await ctx.repo.pending_hw(gid, 1))[1]
-        row.append(Btn(f"📋 На проверке ({n})", "h:q:0"))
     if row:
         kb.append(row)
     if not ctx.verified:
@@ -86,7 +106,7 @@ async def day_list_screen(ctx: Ctx, day: str) -> Screen:
     kb: Kb = []
     for r in rows:
         txt = r["text"] if len(r["text"]) <= 120 else r["text"][:117] + "…"
-        lines.append(f"• <b>{fm.esc(r['subject'])}</b> ({_due_label(r)}): {fm.esc(txt)}")
+        lines.append(f"• <b>{fm.esc(r['subject'])}</b> ({_due_label(r, ctx.today)}): {fm.esc(txt)}")
         kb.append([Btn(f"{r['subject'][:22]} · открыть", f"h:v:{r['id']}")])
     if not rows:
         lines.append("\nПока ничего нет.")
@@ -96,7 +116,7 @@ async def day_list_screen(ctx: Ctx, day: str) -> Screen:
     return Screen("\n".join(lines), kb)
 
 
-async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0") -> Out:
+async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0:active") -> Out:
     hw = await ctx.repo.get_hw(hid)
     if not hw:
         return Out(toast="Задание недоступно", alert=True)
@@ -113,7 +133,7 @@ async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0") -> Out:
         return Out(screen=prompt)
     if not _can_see(ctx, hw):
         return Out(toast="Задание недоступно", alert=True)
-    lines = [f"📚 <b>{fm.esc(hw['subject'])}</b>", f"Срок: {_due_label(hw)}"]
+    lines = [f"📚 <b>{fm.esc(hw['subject'])}</b>", f"Срок: {_due_label(hw, ctx.today)}"]
     if hw.get("lesson_day"):
         lines.append(f"К паре: {tu.fmt_date(tu.parse_iso(hw['lesson_day']))}")
     if ctx.repo.flag("hw_show_author"):
@@ -123,17 +143,18 @@ async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0") -> Out:
     if hw.get("media_file_id"):
         lines.append("\n📎 Прикреплено: " + fm.esc("фото" if hw.get("media_type") == "photo" else (hw.get("media_name") or "файл")))
     kb: Kb = []
+    back_mode = back.split(":")[-1] if back.split(":")[-1] in ("active", "done", "all") else "active"
     if hw["status"] == "pending":
-        lines.insert(1, "⏳ <i>Ждёт одобрения старосты</i>")
+        lines.insert(1, "⏳ <i>Старое задание ещё не опубликовано</i>")
         if can_moderate(ctx, hw):
             kb.append([Btn("✅ Одобрить", f"h:ok:{hid}"), Btn("❌ Отклонить", f"h:no:{hid}")])
     elif hw["status"] == "approved":
         done = await ctx.repo.hw_done_set(ctx.uid, [hid])
-        kb.append([Btn("↩ Не сделано" if hid in done else "✅ Сделано", f"h:dn:{hid}")])
+        kb.append([Btn("↩ Не сделано" if hid in done else "✅ Сделано", f"h:dn:{hid}:{back_mode}")])
     if hw["author_id"] == ctx.uid or can_moderate(ctx, hw):
         kb.append([Btn("✏️ Текст", f"h:edit:{hid}"), Btn("📚 Предмет", f"h:editfield:{hid}:subject")])
         kb.append([Btn("📅 Срок", f"h:editfield:{hid}:due"), Btn("📎 Вложение", f"h:editfield:{hid}:media")])
-        kb.append([Btn("🗑 Удалить", f"h:del:{hid}")])
+        kb.append([Btn("🗑 Удалить", f"h:del:{hid}:n:{back_mode}")])
     kb.append(nav(back))
     out = Out(screen=Screen("\n".join(lines), kb))
     if hw.get("media_file_id"):
@@ -143,6 +164,8 @@ async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0") -> Out:
 
 
 async def start_add(ctx: Ctx, day: str) -> Out:
+    if not ctx.is_admin and await ctx.repo.hw_creation_blocked(ctx.uid):
+        return Out(screen=Screen("Администрация запретила вам создавать новые задания. Уже опубликованные задания остаются доступными группе.", [[home_btn()]]))
     gid = ctx.user.get("group_id")
     if not gid or not ctx.verified:
         return Out(toast="Добавлять задания можно после подтверждения ФИО", alert=True)
@@ -213,6 +236,8 @@ async def capture_group_assignment(ctx: Ctx, gid: int, text: str, author_id: int
     phrase = parse_observed_hw(text, catalog, ctx.today)
     if not phrase or not _looks_like_assignment(phrase.text):
         return None
+    if await ctx.repo.hw_creation_blocked(author_id):
+        return None
     daily_limit = ctx.repo.int_setting("hw_daily_limit") or 10
     if await ctx.repo.hw_today_count(author_id) >= daily_limit:
         return None
@@ -240,12 +265,16 @@ async def quick_add(ctx: Ctx, phrase: HwPhrase) -> Out:
     gid = ctx.user.get("group_id")
     if not gid or not ctx.verified:
         return Out(screen=Screen("Добавлять задания можно после подтверждения ФИО.", [[home_btn()]]))
+    if not ctx.is_admin and await ctx.repo.hw_creation_blocked(ctx.uid):
+        return Out(screen=Screen("Администрация запретила вам создавать новые задания. Уже опубликованные задания остаются доступными группе.", [[home_btn()]]))
     due = tu.iso(phrase.due) if phrase.due else await _default_due(ctx, gid, phrase.subject, None)
     data = {"subject": phrase.subject, "day": None, "text": phrase.text[:1000], "due": due}
     return Out(screen=_preview(ctx, data), state="hw:confirm", state_data=data)
 
 
 async def on_text_hw(ctx: Ctx, state: str, data: dict, text: str) -> Out:
+    if state in ("hw:text", "hw:confirm") and not ctx.is_admin and await ctx.repo.hw_creation_blocked(ctx.uid):
+        return Out(screen=Screen("Администрация запретила вам создавать новые задания. Уже опубликованные задания остаются доступными группе.", [[home_btn()]]), clear_state=True)
     if not ctx.verified and not ctx.is_admin:
         if ctx.user.get("fio_status") == "pending":
             prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
@@ -315,26 +344,14 @@ async def on_text_hw(ctx: Ctx, state: str, data: dict, text: str) -> Out:
     return Out(screen=await list_screen(ctx), clear_state=True)
 
 
-async def _notify_moderators(ctx: Ctx, gid: int, hid: int, data: dict) -> list[tuple[int, Screen]]:
-    heads = [u["id"] for u in await ctx.repo.heads_of_group(gid)]
-    if not heads:
-        for a in await ctx.repo.users_with_role("admin"):
-            if "homework" in (a.get("admin_perms") or "").split(","):
-                heads.append(a["id"])
-    g = await ctx.group()
-    due = f"до {tu.fmt_dm(date.fromisoformat(data['due']))}" if data.get("due") else "без срока"
-    text = (f"📝 <b>Новое задание на проверку</b> · {fm.esc(g['name']) if g else ''}\n"
-            f"От: {fm.esc(short_name(ctx.user.get('fio')))}\n📚 {fm.esc(data['subject'])} · {due}\n\n{fm.esc(data['text'])}")
-    kb = [[Btn("✅ Одобрить", f"h:ok:{hid}"), Btn("❌ Отклонить", f"h:no:{hid}")]]
-    return [(h, Screen(text, kb)) for h in heads if h != ctx.uid]
-
-
 async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
     act = parts[0] if parts else "l"
     repo = ctx.repo
     gid = ctx.user.get("group_id")
     if not gid and act in ("l", "d", "dn", "add", "sub", "save", "cancel", "q"):
         return Out(screen=Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]]))
+    if act in ("add", "sub", "save") and not ctx.is_admin and await repo.hw_creation_blocked(ctx.uid):
+        return Out(screen=Screen("Администрация запретила вам создавать новые задания. Уже опубликованные задания остаются доступными группе.", [[home_btn()]]), clear_state=True)
     if not ctx.verified and not ctx.is_admin and act != "cancel":
         if ctx.user.get("fio_status") == "pending":
             prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
@@ -348,18 +365,21 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
         return Out(screen=prompt)
     if act == "l":
         page = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-        return Out(screen=await list_screen(ctx, page), clear_state=True)
+        mode = parts[2] if len(parts) > 2 else "active"
+        return Out(screen=await list_screen(ctx, page, mode), clear_state=True)
     if act == "d" and len(parts) > 1:
         return Out(screen=await day_list_screen(ctx, parts[1]))
     if act == "v" and len(parts) > 1 and parts[1].isdigit():
-        return await view_screen(ctx, int(parts[1]))
+        mode = parts[2] if len(parts) > 2 and parts[2] in ("active", "done", "all") else "active"
+        return await view_screen(ctx, int(parts[1]), f"h:l:0:{mode}")
     if act == "dn" and len(parts) > 1 and parts[1].isdigit():
         hid = int(parts[1])
+        mode = parts[2] if len(parts) > 2 and parts[2] in ("active", "done", "all") else "active"
         hw = await repo.get_hw(hid)
         if not hw or hw["group_id"] != gid or hw["status"] != "approved":
             return Out(toast="Задание недоступно", alert=True)
         await repo.toggle_hw_done(ctx.uid, hid)
-        out = await view_screen(ctx, hid)
+        out = await view_screen(ctx, hid, f"h:l:0:{mode}")
         out.toast = "Отмечено"
         return out
     if act == "editfield" and len(parts) > 2 and parts[1].isdigit():
@@ -395,33 +415,15 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
         hw = await repo.get_hw(hid)
         if not hw or not (hw["author_id"] == ctx.uid or can_moderate(ctx, hw)):
             return Out(toast="Нет прав", alert=True)
+        mode = parts[3] if len(parts) > 3 and parts[3] in ("active", "done", "all") else "active"
         if len(parts) > 2 and parts[2] == "y":
             await repo.set_hw_status(hid, "deleted", ctx.uid)
             await repo.audit(ctx.uid, "hw_delete", str(hid))
-            return Out(screen=await list_screen(ctx), toast="Удалено")
-        return Out(screen=Screen("Удалить это задание?", [[Btn("Да, удалить", f"h:del:{hid}:y"),
-                                                           Btn("Отмена", f"h:v:{hid}")]]))
-    if act in ("ok", "no") and len(parts) > 1 and parts[1].isdigit():
-        hid = int(parts[1])
-        hw = await repo.get_hw(hid)
-        if not hw or not can_moderate(ctx, hw):
-            return Out(toast="Нет прав", alert=True)
-        if hw["status"] != "pending":
-            return Out(toast="Уже обработано", alert=True)
-        new = "approved" if act == "ok" else "rejected"
-        await repo.set_hw_status(hid, new, ctx.uid)
-        await repo.audit(ctx.uid, f"hw_{new}", str(hid))
-        out = Out(screen=await queue_screen(ctx, 0) if ctx.is_admin else Screen("Готово.", [nav("m:home")]),
-                  toast="Одобрено ✅" if act == "ok" else "Отклонено")
-        verdict = "одобрено ✅" if act == "ok" else "отклонено ❌"
-        out.notify = [(hw["author_id"], Screen(f"Ваше задание по предмету «{fm.esc(hw['subject'])}» {verdict}."))] \
-            if hw["author_id"] != ctx.uid else []
-        return out
-    if act == "q":
-        if not (ctx.is_super or (ctx.role == "admin" and ctx.can("homework"))):
-            return Out(toast="Очередь заданий доступна администраторам", alert=True)
-        page = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-        return Out(screen=await queue_screen(ctx, page))
+            return Out(screen=await list_screen(ctx, 0, mode), toast="Удалено")
+        return Out(screen=Screen("Удалить это задание?", [[Btn("Да, удалить", f"h:del:{hid}:y:{mode}"),
+                                                           Btn("Отмена", f"h:v:{hid}:{mode}")]]))
+    if act in ("ok", "no", "q"):
+        return Out(toast="Проверка заданий администрацией отключена", alert=True)
     if act == "add":
         return await start_add(ctx, parts[1] if len(parts) > 1 else "0")
     if act == "sub" and len(parts) > 1 and parts[1].isdigit():
@@ -453,18 +455,3 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
         return Out(screen=Screen("✅ Задание опубликовано и уже доступно группе.", [[Btn("📝 Задания", "h:l:0"), home_btn()]]), clear_state=True)
     return Out(toast="Неизвестное действие")
 
-
-async def queue_screen(ctx: Ctx, page: int) -> Screen:
-    gid = ctx.user.get("group_id")
-    rows, total = await ctx.repo.pending_hw(gid, SIZE, page * SIZE)
-    lines = [f"<b>На проверке: {total}</b>"]
-    kb: Kb = []
-    if not rows:
-        lines.append("\nНовых заданий нет.")
-    for r in rows:
-        kb.append([Btn(f"{r['subject'][:18]}: {r['text'][:24]}", f"h:v:{r['id']}")])
-    if total > SIZE:
-        from app.bot.core import pager
-        kb.append(pager("h:q", page, total, SIZE))
-    kb.append(nav("ad:hw:0" if ctx.is_admin else "m:home"))
-    return Screen("\n".join(lines), kb)

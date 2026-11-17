@@ -35,7 +35,7 @@ DEFAULT_SETTINGS = {
     "notify_changes": "1",       # глобальный выключатель рассылки «изменения в расписании» (личка и чаты)
 }
 
-USER_COLS = {"username", "tg_name", "group_id", "fio", "fio_status", "role", "admin_perms", "head_blocked", "banned",
+USER_COLS = {"username", "tg_name", "group_id", "fio", "fio_status", "role", "admin_perms", "head_blocked", "hw_blocked", "banned",
              "bot_blocked", "subgroup", "n_enabled", "fio_submitted_at", "private_started", "n_evening", "n_evening_time", "n_before", "n_changes", "last_seen"}
 CHAT_COLS = {"title", "group_id", "smart_mode", "autodelete_min", "evening_on", "evening_time", "added_by", "active",
              "wait_min", "changes_on", "pin_on", "notifications_on", "cleanup_on", "private_questions"}
@@ -390,11 +390,13 @@ class Repo:
     async def get_group_schedule_change(self, change_id: int) -> dict | None:
         return await self.db.fetchone("SELECT * FROM group_schedule_changes WHERE id = ?", change_id)
 
-    async def decide_group_schedule_change(self, change_id: int, author_id: int, approve: bool) -> bool:
+    async def decide_group_schedule_change(self, change_id: int, decided_by: int, approve: bool) -> bool:
+        """Atomically records an administrator's decision; proposer and reviewer are different users."""
         status = "applied" if approve else "rejected"
         n = await self.db.execute(
-            "UPDATE group_schedule_changes SET status = ?, decided_at = ? WHERE id = ? AND author_id = ? AND status = 'pending'",
-            status, now_ts(), change_id, author_id)
+            "UPDATE group_schedule_changes SET status = ?, decided_at = ? "
+            "WHERE id = ? AND status = 'pending'",
+            status, now_ts(), change_id, volatile=True)
         return n > 0
 
     async def get_lesson(self, lid: int) -> dict | None:
@@ -635,6 +637,99 @@ class Repo:
             "ON CONFLICT (user_id, teacher_id, criterion) DO UPDATE SET stars = excluded.stars, updated_at = excluded.updated_at",
             uid, tid, criterion, stars, now_ts())
 
+    async def admin_teacher_list(self, offset: int = 0, limit: int = 6, query: str = "", sort: str = "rating") -> tuple[list[dict], int]:
+        """Полный административный список, включая скрытых преподавателей."""
+        q = teacher_key(query or "")
+        where, params = "1 = 1", []
+        if q:
+            where += " AND t.norm LIKE ?"
+            params.append("%" + q + "%")
+        total = int(await self.db.scalar(f"SELECT COUNT(*) FROM teachers t WHERE {where}", *params) or 0)
+        order = ("t.name ASC" if sort == "name" else
+                 "CASE WHEN r.avg IS NULL THEN 1 ELSE 0 END, r.avg DESC, COALESCE(r.cnt, 0) DESC, t.name ASC")
+        rows = await self.db.fetchall(
+            "SELECT t.id, t.name, t.hidden, COALESCE(r.cnt, 0) AS cnt, r.avg, "
+            "COALESCE(s.score_users, 0) AS score_users, COALESCE(s.score_count, 0) AS score_count, "
+            "COALESCE(v.review_count, 0) AS review_count "
+            "FROM teachers t "
+            "LEFT JOIN (SELECT teacher_id, COUNT(*) AS cnt, AVG(stars) AS avg FROM ratings GROUP BY teacher_id) r "
+            "ON r.teacher_id = t.id "
+            "LEFT JOIN (SELECT teacher_id, COUNT(DISTINCT user_id) AS score_users, COUNT(*) AS score_count "
+            "FROM teacher_rating_scores GROUP BY teacher_id) s ON s.teacher_id = t.id "
+            "LEFT JOIN (SELECT teacher_id, COUNT(*) AS review_count FROM teacher_reviews "
+            "WHERE comment <> '' GROUP BY teacher_id) v ON v.teacher_id = t.id "
+            f"WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+            *params, max(1, min(50, limit)), max(0, offset))
+        for row in rows:
+            row["avg"] = float(row["avg"]) if row["avg"] is not None else None
+        return rows, total
+
+    async def admin_teacher_rating_entries(self, tid: int, offset: int = 0, limit: int = 6) -> tuple[list[dict], int]:
+        """Одна строка на студента: общая оценка и число сохранённых критериев."""
+        total = int(await self.db.scalar(
+            "SELECT COUNT(*) FROM (SELECT user_id FROM ratings WHERE teacher_id = ? "
+            "UNION SELECT user_id FROM teacher_rating_scores WHERE teacher_id = ?) x", tid, tid) or 0)
+        rows = await self.db.fetchall(
+            "SELECT x.user_id, u.username, u.tg_name, r.stars, "
+            "COALESCE(s.score_count, 0) AS score_count, s.score_avg, "
+            "COALESCE(r.updated_at, s.last_updated, 0) AS updated_at "
+            "FROM (SELECT user_id FROM ratings WHERE teacher_id = ? "
+            "UNION SELECT user_id FROM teacher_rating_scores WHERE teacher_id = ?) x "
+            "LEFT JOIN users u ON u.id = x.user_id "
+            "LEFT JOIN ratings r ON r.user_id = x.user_id AND r.teacher_id = ? "
+            "LEFT JOIN (SELECT user_id, COUNT(*) AS score_count, AVG(stars) AS score_avg, "
+            "MAX(updated_at) AS last_updated FROM teacher_rating_scores WHERE teacher_id = ? GROUP BY user_id) s "
+            "ON s.user_id = x.user_id "
+            "ORDER BY COALESCE(r.updated_at, s.last_updated, 0) DESC, x.user_id "
+            "LIMIT ? OFFSET ?", tid, tid, tid, tid, max(1, min(50, limit)), max(0, offset))
+        for row in rows:
+            row["score_avg"] = float(row["score_avg"]) if row["score_avg"] is not None else None
+        return rows, total
+
+    async def delete_teacher_rating(self, uid: int, tid: int) -> bool:
+        """Удалить одну оценку студента целиком: общий балл и все критерии преподавателя."""
+        async with self.db.tx() as tx:
+            exists = await tx.fetchone(
+                "SELECT user_id FROM ratings WHERE user_id = ? AND teacher_id = ? "
+                "UNION SELECT user_id FROM teacher_rating_scores WHERE user_id = ? AND teacher_id = ?",
+                (uid, tid, uid, tid))
+            if not exists:
+                return False
+            await tx.execute("DELETE FROM ratings WHERE user_id = ? AND teacher_id = ?", (uid, tid))
+            await tx.execute("DELETE FROM teacher_rating_scores WHERE user_id = ? AND teacher_id = ?", (uid, tid))
+        return True
+
+    async def admin_teacher_reviews(self, tid: int, offset: int = 0, limit: int = 5) -> tuple[list[dict], int]:
+        total = int(await self.db.scalar(
+            "SELECT COUNT(*) FROM teacher_reviews WHERE teacher_id = ? AND comment <> ''", tid) or 0)
+        rows = await self.db.fetchall(
+            "SELECT r.id, r.user_id, r.comment, r.created_at, u.username, u.tg_name, "
+            "(SELECT COUNT(*) FROM teacher_review_replies p WHERE p.review_id = r.id) AS reply_count "
+            "FROM teacher_reviews r LEFT JOIN users u ON u.id = r.user_id "
+            "WHERE r.teacher_id = ? AND r.comment <> '' ORDER BY r.created_at DESC, r.id DESC LIMIT ? OFFSET ?",
+            tid, max(1, min(20, limit)), max(0, offset))
+        return rows, total
+
+    async def admin_teacher_review_replies(self, review_id: int, tid: int) -> list[dict]:
+        return await self.db.fetchall(
+            "SELECT p.id, p.user_id, p.reply, p.created_at, u.username, u.tg_name "
+            "FROM teacher_review_replies p JOIN teacher_reviews r ON r.id = p.review_id "
+            "LEFT JOIN users u ON u.id = p.user_id "
+            "WHERE p.review_id = ? AND r.teacher_id = ? ORDER BY p.created_at ASC, p.id ASC",
+            review_id, tid)
+
+    async def delete_teacher_review_reply(self, reply_id: int, review_id: int, tid: int) -> bool:
+        async with self.db.tx() as tx:
+            row = await tx.fetchone(
+                "SELECT p.id FROM teacher_review_replies p JOIN teacher_reviews r ON r.id = p.review_id "
+                "WHERE p.id = ? AND p.review_id = ? AND r.teacher_id = ?",
+                (reply_id, review_id, tid))
+            if not row:
+                return False
+            await tx.execute("DELETE FROM teacher_review_replies WHERE id = ? AND review_id = ?",
+                             (reply_id, review_id))
+        return True
+
     async def teacher_rating_score_summary(self, tid: int) -> list[dict]:
         return await self.db.fetchall(
             "SELECT criterion, AVG(stars) AS avg, COUNT(*) AS cnt FROM teacher_rating_scores "
@@ -693,11 +788,14 @@ class Repo:
     async def delete_teacher_review(self, review_id: int, tid: int) -> bool:
         """Удалить отзыв вместе с реакциями и ответами; проверка teacher_id защищает от чужого ID."""
         async with self.db.tx() as t:
-            row = await t.fetchone("SELECT id FROM teacher_reviews WHERE id = ? AND teacher_id = ?", (review_id, tid))
-            if not row:
+            review = await t.fetchone(
+                "SELECT user_id FROM teacher_reviews WHERE id = ? AND teacher_id = ?", (review_id, tid))
+            if not review:
                 return False
             await t.execute("DELETE FROM teacher_review_reactions WHERE review_id = ?", (review_id,))
             await t.execute("DELETE FROM teacher_review_replies WHERE review_id = ?", (review_id,))
+            await t.execute("DELETE FROM teacher_rating_comments WHERE user_id = ? AND teacher_id = ?",
+                            (review["user_id"], tid))
             await t.execute("DELETE FROM teacher_reviews WHERE id = ? AND teacher_id = ?", (review_id, tid))
         return True
 
@@ -803,15 +901,69 @@ class Repo:
     async def hw_today_count(self, uid: int) -> int:
         return await self.count("homework", "author_id = ? AND created_at >= ?", uid, now_ts() - 86400)
 
+    async def hw_creation_blocked(self, uid: int) -> bool:
+        value = await self.db.scalar("SELECT hw_blocked FROM users WHERE id = ?", uid)
+        return bool(value or 0)
+
+    async def admin_homework_stats(self) -> dict[str, int]:
+        now = now_ts()
+        week_start = now - 7 * 86400
+        return {
+            "published": await self.count("homework", "status = 'approved'"),
+            "last_day": await self.count("homework", "status = 'approved' AND created_at >= ?", now - 86400),
+            "last_week": await self.count("homework", "status = 'approved' AND created_at >= ?", week_start),
+            "authors_week": int(await self.db.scalar(
+                "SELECT COUNT(DISTINCT author_id) FROM homework WHERE status = 'approved' AND created_at >= ?",
+                week_start) or 0),
+            "blocked_students": await self.count("users", "role = 'student' AND hw_blocked = 1"),
+            "legacy_pending": await self.count("homework", "status = 'pending'"),
+        }
+
+    async def blocked_hw_users(self, limit: int = 10, offset: int = 0) -> tuple[list[dict], int]:
+        total = await self.count("users", "role = 'student' AND hw_blocked = 1")
+        rows = await self.db.fetchall(
+            "SELECT u.id, u.fio, u.tg_name, u.username, g.name AS group_name "
+            "FROM users u LEFT JOIN groups g ON g.id = u.group_id "
+            "WHERE u.role = 'student' AND u.hw_blocked = 1 "
+            "ORDER BY COALESCE(u.fio, u.tg_name, u.username, ''), u.id LIMIT ? OFFSET ?",
+            limit, offset)
+        return rows, total
+
     async def get_hw(self, hid: int) -> dict | None:
         return await self.db.fetchone("SELECT * FROM homework WHERE id = ?", hid)
 
-    async def list_hw(self, gid: int, today_iso: str, offset: int, limit: int) -> tuple[list[dict], int]:
-        cond = "group_id = ? AND status = 'approved' AND (due_day IS NULL OR due_day >= ?)"
-        total = int(await self.db.scalar(f"SELECT COUNT(*) FROM homework WHERE {cond}", gid, today_iso) or 0)
+    async def hw_list_counts(self, gid: int, uid: int, today_iso: str) -> dict[str, int]:
+        row = await self.db.fetchone(
+            """SELECT COUNT(*) AS total,
+               COUNT(CASE WHEN EXISTS (
+                   SELECT 1 FROM hw_done d WHERE d.user_id = ? AND d.hw_id = h.id
+               ) THEN 1 END) AS done,
+               COUNT(CASE WHEN NOT EXISTS (
+                   SELECT 1 FROM hw_done d WHERE d.user_id = ? AND d.hw_id = h.id
+               ) THEN 1 END) AS active,
+               COUNT(CASE WHEN h.due_day IS NOT NULL AND h.due_day < ? AND NOT EXISTS (
+                   SELECT 1 FROM hw_done d WHERE d.user_id = ? AND d.hw_id = h.id
+               ) THEN 1 END) AS overdue
+               FROM homework h WHERE h.group_id = ? AND h.status = 'approved'""",
+            uid, uid, today_iso, uid, gid)
+        return {key: int((row or {}).get(key) or 0) for key in ("total", "done", "active", "overdue")}
+
+    async def list_hw(self, gid: int, today_iso: str, offset: int, limit: int,
+                      uid: int | None = None, mode: str = "all") -> tuple[list[dict], int]:
+        cond = "h.group_id = ? AND h.status = 'approved'"
+        params: list[Any] = [gid]
+        if uid is not None and mode == "active":
+            cond += " AND NOT EXISTS (SELECT 1 FROM hw_done d WHERE d.user_id = ? AND d.hw_id = h.id)"
+            params.append(uid)
+        elif uid is not None and mode == "done":
+            cond += " AND EXISTS (SELECT 1 FROM hw_done d WHERE d.user_id = ? AND d.hw_id = h.id)"
+            params.append(uid)
+        total = int(await self.db.scalar(f"SELECT COUNT(*) FROM homework h WHERE {cond}", *params) or 0)
         rows = await self.db.fetchall(
-            f"SELECT * FROM homework WHERE {cond} ORDER BY CASE WHEN due_day IS NULL THEN 1 ELSE 0 END, due_day, id "
-            "LIMIT ? OFFSET ?", gid, today_iso, limit, offset)
+            f"SELECT h.* FROM homework h WHERE {cond} "
+            "ORDER BY CASE WHEN h.due_day IS NOT NULL AND h.due_day < ? THEN 0 "
+            "WHEN h.due_day IS NULL THEN 2 ELSE 1 END, h.due_day, h.id LIMIT ? OFFSET ?",
+            *params, today_iso, limit, offset)
         return rows, total
 
     async def hw_for_day(self, gid: int, day: str) -> list[dict]:
@@ -1053,15 +1205,47 @@ class Repo:
             "VALUES (?, ?, ?, ?, ?, ?, ?, 'wait')", chat_id, message_id, user_id, text[:300], intent, now_ts(), due_at)
 
     async def pending_for_chat(self, chat_id: int) -> list[dict]:
-        return await self.db.fetchall("SELECT * FROM pending_questions WHERE chat_id = ? AND status = 'wait'", chat_id)
+        # Учитываем и короткую фазу отправки: иначе новый вопрос может пройти
+        # параллельно с уже взятым в работу таким же вопросом.
+        return await self.db.fetchall(
+            "SELECT * FROM pending_questions WHERE chat_id = ? AND status IN ('wait', 'sending') ORDER BY created_at",
+            chat_id)
 
     async def pending_due(self, now: int) -> list[dict]:
+        # sending с истёкшей арендой — восстановление после перезапуска во время отправки.
         return await self.db.fetchall(
-            "SELECT * FROM pending_questions WHERE status = 'wait' AND due_at <= ? ORDER BY due_at LIMIT 50", now)
+            "SELECT * FROM pending_questions WHERE status IN ('wait', 'sending') AND due_at <= ? "
+            "ORDER BY due_at LIMIT 50", now)
+
+    async def claim_pending(self, pid: int, now: int) -> bool:
+        # Атомарная аренда на 5 минут защищает от двойной отправки и позволяет
+        # автоматически повторить задачу, если процесс завершился посреди отправки.
+        n = await self.db.execute(
+            "UPDATE pending_questions SET status = 'sending', due_at = ? WHERE id = ? "
+            "AND ((status = 'wait' AND due_at <= ?) OR (status = 'sending' AND due_at <= ?))",
+            now + 300, pid, now, now, volatile=True)
+        return n > 0
+
+    async def finish_pending(self, pid: int, delivered: bool, retry_at: int | None = None) -> bool:
+        if delivered:
+            n = await self.db.execute(
+                "UPDATE pending_questions SET status = 'sent' WHERE id = ? AND status = 'sending'",
+                pid, volatile=True)
+        else:
+            n = await self.db.execute(
+                "UPDATE pending_questions SET status = 'wait', due_at = ? WHERE id = ? AND status = 'sending'",
+                retry_at if retry_at is not None else now_ts() + 60, pid, volatile=True)
+        return n > 0
+
+    async def cancel_pending_for_chat(self, chat_id: int) -> int:
+        return await self.db.execute(
+            "UPDATE pending_questions SET status = 'cancelled' WHERE chat_id = ? AND status IN ('wait', 'sending')",
+            chat_id, volatile=True)
 
     async def set_pending_status(self, pid: int, status: str) -> bool:
-        n = await self.db.execute("UPDATE pending_questions SET status = ? WHERE id = ? AND status = 'wait'", status, pid,
-                                  volatile=True)
+        n = await self.db.execute(
+            "UPDATE pending_questions SET status = ? WHERE id = ? AND status IN ('wait', 'sending')",
+            status, pid, volatile=True)
         return n > 0
 
     async def purge_pending(self) -> None:

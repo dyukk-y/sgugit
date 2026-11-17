@@ -212,8 +212,9 @@ async def next_lesson_screen(ctx: Ctx) -> Screen:
     return Screen(text, [[Btn("📅 Сегодня", "s:d:today"), home_btn()]], rich=True)
 
 
-async def next_lesson_text(ctx: Ctx, gid: int, subgroup: int | None) -> str:
-    await _ensure_group_schedule(ctx, gid)
+async def next_lesson_text(ctx: Ctx, gid: int, subgroup: int | None, ensure: bool = True) -> str:
+    if ensure:
+        await _ensure_group_schedule(ctx, gid)
     today_lessons = await ctx.repo.lessons_day(gid, tu.iso(ctx.today), subgroup)
     cur, nxt = fm.now_status(today_lessons, ctx.now)
     lines: list[str] = []

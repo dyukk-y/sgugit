@@ -133,6 +133,14 @@ class T(unittest.TestCase):
             async def h(event, data): hits.append(1)
             for _ in range(12): await mw(h, object(), {"event_from_user": user(5)})
             self.assertEqual(len(hits), 8)
+            # Групповой лимит действует отдельно в каждом чате.
+            hits.clear()
+            event_a = NS(chat=NS(id=-100, type="supergroup"), from_user=user(6))
+            event_b = NS(chat=NS(id=-200, type="supergroup"), from_user=user(6))
+            for _ in range(8): await mw(h, event_a, {"event_from_user": user(6)})
+            self.assertEqual(len(hits), 7)
+            await mw(h, event_b, {"event_from_user": user(6)})
+            self.assertEqual(len(hits), 8)
             await db.close()
         asyncio.run(go())
 
@@ -190,8 +198,26 @@ class T(unittest.TestCase):
             self.assertEqual(await tg.answer_due_questions(app), 1)
             last = bot.of("send")[-1]; self.assertEqual(last["chat_id"], -100); self.assertEqual(last["reply"].message_id, 20)
             self.assertIn("Пока никто не ответил", last["text"]); self.assertIn("10:15–11:50", last["text"]); self.assertIn("215", last["text"])
+            # Временная ошибка Telegram возвращает вопрос в очередь, а не теряет его.
+            await gtext(msg(bot, 55, "где завтра первая пара?", chat_id=-100, ctype="supergroup", mid=23))
+            await repo.db.execute("UPDATE pending_questions SET due_at = 1 WHERE message_id = 23")
+            from aiogram.exceptions import TelegramBadRequest
+            bot.fail[-100] = TelegramBadRequest("Bad Request: temporary failure")
+            self.assertEqual(await tg.answer_due_questions(app), 0)
+            pending = await repo.db.fetchone("SELECT * FROM pending_questions WHERE message_id = 23")
+            self.assertEqual(pending["status"], "wait")
+            self.assertGreater(pending["due_at"], tu.now_ts())
+            bot.fail.pop(-100)
+            await repo.db.execute("UPDATE pending_questions SET due_at = 1 WHERE message_id = 23")
+            self.assertEqual(await tg.answer_due_questions(app), 1)
+            pending = await repo.db.fetchone("SELECT * FROM pending_questions WHERE message_id = 23")
+            self.assertEqual(pending["status"], "sent")
+            # При удалении бота не должны ожить старые ожидающие вопросы после повторного добавления.
+            await gtext(msg(bot, 56, "какие пары завтра?", chat_id=-100, ctype="supergroup", mid=24))
+            self.assertEqual(len(await repo.pending_for_chat(-100)), 1)
             # бот удалён из чата
             await member(ev(50, "member", "kicked")); self.assertEqual((await repo.get_chat(-100))["active"], 0)
+            self.assertEqual(len(await repo.pending_for_chat(-100)), 0)
             await db.close()
         asyncio.run(go())
 

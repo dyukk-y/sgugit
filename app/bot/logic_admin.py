@@ -14,18 +14,14 @@ from app.services.fio import describe_reasons, short_name, validate_fio
 PAGE = 6
 DEFAULT_ADMIN_PERMS = ("users", "homework", "teachers", "stats")
 BOOL_SETTINGS = {
-    "rating_enabled": "Раздел «Преподаватели»",
     "hw_show_author": "Показывать автора задания",
     "maintenance": "Режим техработ",
     "fio_need_known_surname": "Автоподтверждение ФИО только для известных фамилий",
-    "rate_only_own": "Оценивать только своих преподавателей",
     "sync_enabled": "Автосинхронизация расписания",
     "notify_changes": "Рассылать «изменения в расписании»",
     "group_require_start": "В группе требовать запуск бота в личке",
 }
 INT_SETTINGS = {
-    "rate_cooldown_days": "Менять оценку не чаще (дней)",
-    "min_votes": "Оценок для показа средней",
     "hw_daily_limit": "Заданий в сутки от одного студента",
     "fio_auto_delay_min": "Автопроверка ФИО через (мин)",
 }
@@ -49,10 +45,147 @@ def _user_label(u: dict) -> str:
     return f"{name[:22]} · {u['id']}"
 
 
+def _rating_author(row: dict) -> str:
+    return str(("@" + row["username"]) if row.get("username") else
+               row.get("tg_name") or row.get("user_id") or row.get("uid") or "неизвестен")
+
+
+async def _admin_rating_list_screen(ctx: Ctx, page: int = 0, sort: str = "rating") -> Screen:
+    sort = sort if sort in ("name", "rating") else "rating"
+    rows, total = await ctx.repo.admin_teacher_list(page * PAGE, PAGE, sort=sort)
+    enabled = ctx.repo.flag("rating_enabled")
+    own_only = ctx.repo.flag("rate_only_own")
+    min_votes = ctx.repo.int_setting("min_votes") or 5
+    lines = ["<b>⭐ Рейтинг преподавателей</b>",
+             f"Раздел для студентов: {'включён' if enabled else 'скрыт'}",
+             f"Оценивать можно: {'только своих преподавателей' if own_only else 'всех преподавателей'}",
+             f"Порог показа средней оценки: <b>{min_votes}</b> голосов",
+             f"Преподавателей: <b>{total}</b>",
+             "Список включает и скрытых преподавателей."]
+    kb: Kb = [[Btn("🙈 Скрыть раздел у всех" if enabled else "👁 Показать раздел", f"ad:rte:{sort}:{page}")],
+              [Btn("🔎 Найти преподавателя", f"ad:rts:{sort}:{page}"),
+               Btn("↕️ Сортировка: " + ("по имени" if sort == "name" else "по рейтингу"),
+                   f"ad:rt:{'rating' if sort == 'name' else 'name'}:0")]]
+    if ctx.is_super:
+        kb.extend([
+            [Btn("🔒 Оценивать только своих: " + ("вкл" if own_only else "выкл"), f"ad:rto:{sort}:{page}")],
+            [Btn(f"⚙️ Порог средней: {min_votes} голосов", f"ad:rtv:{sort}:{page}")],
+        ])
+    for row in rows:
+        avg = f"{row['avg']:.2f}/5" if row["avg"] is not None else "нет оценок"
+        status = "🙈 " if row["hidden"] else ""
+        label = f"{status}{row['name'][:22]} · {avg} ({row['cnt']})"
+        kb.append([Btn(label[:60], f"ad:rtc:{row['id']}:{sort}:{page}")])
+    if not rows:
+        lines.append("\nПока нет преподавателей.")
+    page_buttons = pager(f"ad:rt:{sort}", page, total, PAGE)
+    if page_buttons:
+        kb.append(page_buttons)
+    kb.append(nav("ad:menu"))
+    return Screen("\n".join(lines), kb)
+
+
+async def _admin_teacher_card(ctx: Ctx, tid: int, sort: str = "rating", page: int = 0) -> Out:
+    t = await ctx.repo.get_teacher(tid)
+    if not t:
+        return Out(toast="Преподаватель не найден", alert=True)
+    _, rating_count = await ctx.repo.admin_teacher_rating_entries(tid, 0, 1)
+    _, review_count = await ctx.repo.admin_teacher_reviews(tid, 0, 1)
+    summaries = await ctx.repo.teacher_rating_score_summary(tid)
+    criteria = {item["key"]: item["label"] for item in await ctx.repo.teacher_rating_criteria(t["norm"])}
+    avg = f"{t['avg']:.2f}/5" if t["avg"] is not None else "—"
+    lines = [f"<b>{fm.esc(t['name'])}</b>",
+             f"Общая оценка: <b>{avg}</b> · голосов: <b>{t['cnt']}</b>",
+             f"Записей оценивания: {rating_count} · отзывов: {review_count}",
+             f"Статус: {'скрыт 🙈' if t['hidden'] else 'виден 👁'}",
+             "", "<b>Оценки по видам занятий</b>"]
+    if summaries:
+        for item in summaries:
+            label = criteria.get(item["criterion"], item["criterion"])
+            lines.append(f"• {fm.esc(label)}: <b>{float(item['avg']):.2f}/5</b> · {item['cnt']}")
+    else:
+        lines.append("Пока нет оценок по критериям.")
+    kb: Kb = [[Btn("👁 Показать" if t["hidden"] else "🙈 Скрыть", f"ad:rth:{tid}:{sort}:{page}")],
+              [Btn(f"📊 Оценки студентов · {rating_count}", f"ad:rae:{tid}:0")],
+              [Btn(f"💬 Отзывы и комментарии · {review_count}", f"ad:rrv:{tid}:0")],
+              nav(f"ad:rt:{sort}:{page}")]
+    return Out(screen=Screen("\n".join(lines), kb))
+
+
+async def _admin_rating_entries_screen(ctx: Ctx, tid: int, page: int = 0) -> Out:
+    t = await ctx.repo.get_teacher(tid)
+    if not t:
+        return Out(toast="Преподаватель не найден", alert=True)
+    rows, total = await ctx.repo.admin_teacher_rating_entries(tid, page * PAGE, PAGE)
+    lines = [f"<b>Оценки студентов · {fm.esc(t['name'])}</b>", f"Записей: <b>{total}</b>",
+             "Удаление одной записи убирает общий балл этого студента и все его критерии."]
+    kb: Kb = []
+    for row in rows:
+        who = _rating_author(row)
+        overall = f"{row['stars']}/5" if row["stars"] is not None else "не завершена"
+        score_avg = f"{row['score_avg']:.2f}/5" if row["score_avg"] is not None else "—"
+        stamp = datetime.fromtimestamp(int(row["updated_at"]), tu.tz()).strftime("%d.%m.%Y")
+        lines.append(f"\n<b>{fm.esc(who)}</b> · ID <code>{row['user_id']}</code>"
+                     f"\nОбщая: {overall} · по критериям: {score_avg} ({row['score_count']}) · {stamp}")
+        kb.append([Btn(f"🗑 Удалить оценку · {str(who)[:22]}",
+                       f"ad:radc:{tid}:{row['user_id']}:{page}")])
+    if not rows:
+        lines.append("\nОценок пока нет.")
+    page_buttons = pager(f"ad:rae:{tid}", page, total, PAGE)
+    if page_buttons:
+        kb.append(page_buttons)
+    kb.append(nav(f"ad:rtc:{tid}:rating:0"))
+    return Out(screen=Screen("\n".join(lines)[:3800], kb))
+
+
+async def _admin_reviews_screen(ctx: Ctx, tid: int, page: int = 0) -> Out:
+    t = await ctx.repo.get_teacher(tid)
+    if not t:
+        return Out(toast="Преподаватель не найден", alert=True)
+    rows, total = await ctx.repo.admin_teacher_reviews(tid, page * 4, 4)
+    lines = [f"<b>Отзывы и комментарии · {fm.esc(t['name'])}</b>", f"Всего: <b>{total}</b>"]
+    kb: Kb = []
+    for row in rows:
+        who = _rating_author(row)
+        stamp = datetime.fromtimestamp(int(row["created_at"]), tu.tz()).strftime("%d.%m.%Y %H:%M")
+        lines.append(f"\n<b>{fm.esc(who)}</b> · ID <code>{row['user_id']}</code> · {stamp}"
+                     f"\n{fm.esc(row['comment'])}")
+        kb.append([Btn("🗑 Удалить отзыв", f"ad:rrdc:{tid}:{row['id']}:{page}")])
+        if row["reply_count"]:
+            kb.append([Btn(f"↳ Ответы · {row['reply_count']}",
+                           f"ad:rrp:{tid}:{row['id']}:{page}")])
+    if not rows:
+        lines.append("\nОтзывов и комментариев пока нет.")
+    page_buttons = pager(f"ad:rrv:{tid}", page, total, 4)
+    if page_buttons:
+        kb.append(page_buttons)
+    kb.append(nav(f"ad:rtc:{tid}:rating:0"))
+    return Out(screen=Screen("\n".join(lines)[:3800], kb))
+
+
+async def _admin_review_replies_screen(ctx: Ctx, tid: int, review_id: int, page: int = 0) -> Out:
+    t = await ctx.repo.get_teacher(tid)
+    review = await ctx.repo.teacher_review(review_id, tid)
+    if not t or not review:
+        return Out(toast="Отзыв уже недоступен", alert=True)
+    replies = await ctx.repo.admin_teacher_review_replies(review_id, tid)
+    lines = [f"<b>Ответы на отзыв · {fm.esc(t['name'])}</b>", fm.esc(review["comment"])]
+    kb: Kb = []
+    for row in replies:
+        who = _rating_author(row)
+        stamp = datetime.fromtimestamp(int(row["created_at"]), tu.tz()).strftime("%d.%m.%Y %H:%M")
+        lines.append(f"\n<b>{fm.esc(who)}</b> · ID <code>{row['user_id']}</code> · {stamp}"
+                     f"\n↳ {fm.esc(row['reply'])}")
+        kb.append([Btn("🗑 Удалить ответ", f"ad:rrpc:{tid}:{review_id}:{row['id']}:{page}")])
+    if not replies:
+        lines.append("\nОтветов пока нет.")
+    kb.append(nav(f"ad:rrv:{tid}:{page}"))
+    return Out(screen=Screen("\n".join(lines)[:3800], kb))
+
+
 async def menu_screen(ctx: Ctx) -> Screen:
     rows: Kb = []
     pend_fio = await ctx.repo.count("users", "fio_status = 'pending'") if ctx.can("users") else 0
-    pend_hw = await ctx.repo.count("homework", "status = 'pending'") if ctx.can("homework") else 0
     unread = int(await ctx.repo.db.scalar(
         "SELECT COUNT(*) FROM support_messages WHERE sender_role = 'user' AND seen = 0") or 0) if ctx.is_admin else 0
 
@@ -67,7 +200,7 @@ async def menu_screen(ctx: Ctx) -> Screen:
          Btn(f"💬 Диалоги · {unread}", "ad:msg:0"))
     pair(Btn(f"🛡 ФИО · {pend_fio}", "ad:fq:0") if ctx.can("users") else None,
          Btn("🗓 Расписание", "ad:sch") if ctx.can("schedule") else None)
-    pair(Btn(f"📝 Задания · {pend_hw}", "ad:hw:0") if ctx.can("homework") else None,
+    pair(Btn("📝 Задания", "ad:hw") if ctx.can("homework") else None,
          Btn("⭐ Рейтинг", "ad:rt") if ctx.can("teachers") else None)
     pair(Btn("📣 Рассылка", "ad:bc") if ctx.can("broadcast") else None,
          Btn("🧰 Инструменты", "ad:tools") if ctx.is_super or ctx.can("users") else None)
@@ -297,6 +430,8 @@ async def user_card(ctx: Ctx, uid: int) -> Out:
              f"ФИО: {u['fio_status']}", f"Роль: {role}",
              f"Бан: {'да 🚫' if u['banned'] else 'нет'}",
              f"Регистрация: {reg} · активность: {seen}"]
+    if u["role"] == "student":
+        lines.append(f"Создание заданий: {'запрещено 🚫' if u.get('hw_blocked') else 'разрешено ✅'}")
     kb: Kb = []
     if u["fio_status"] == "pending" and u.get("fio") and not (is_target_super and not ctx.is_super):
         chk = validate_fio(u["fio"], *await ctx.repo.stoplists(), ctx=await ctx.repo.fio_context())
@@ -312,13 +447,14 @@ async def user_card(ctx: Ctx, uid: int) -> Out:
     protected = is_target_super or (u["role"] == "admin" and not ctx.is_super) or uid == ctx.uid
     if ctx.can("users") and not protected:
         kb.append([Btn("✅ Разбанить" if u["banned"] else "🚫 Забанить", f"ad:ub:{uid}")])
+    if ctx.can("homework") and not protected and u["role"] == "student":
+        label = "🔓 Разрешить создавать задания" if u.get("hw_blocked") else "🚫 Запретить создавать задания"
+        kb.append([Btn(label, f"ad:hwb:{uid}")])
     if ctx.can("users"):
         if u["fio_status"] == "pending":
             kb.append([Btn("✅ Подтвердить ФИО", f"ad:ufo:{uid}:ok"), Btn("🔄 Сбросить ФИО", f"ad:ufo:{uid}:reset")])
         elif u.get("fio"):
             kb.append([Btn("🔄 Сбросить ФИО", f"ad:ufo:{uid}:reset")])
-    if ctx.is_super:
-        kb.append([Btn("⭐ Оценки пользователя", f"ad:ur:{uid}")])
     kb.append(nav("ad:menu"))
     return Out(screen=Screen("\n".join(x for x in lines if x), kb))
 
@@ -487,7 +623,7 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         text = (f"<b>Статистика</b>\nПользователей: {s['users']} (подтверждено ФИО: {s['verified']}, на проверке: {s['pending']})\n"
                 f"Активных за сутки: {s['dau']} · за неделю: {s['wau']}\nАдмины: {s['admins']}\n"
                 f"Группы: {s['groups']} · занятий в базе: {s['lessons']}\nПреподавателей: {s['teachers']} · оценок: {s['ratings']}\n"
-                f"Заданий: {s['hw']} (на проверке: {s['hw_pending']})\nЗаблокировано: {s['banned']}\n\n<b>Аналитика за 7 дней</b>\nПопулярные события: {fm.esc(popular)}\nВопросы без ответа: {unanswered} · ориентировочная доля: {ratio:.1f}%\n"
+                f"Опубликовано заданий: {s['hw']}\nЗаблокировано аккаунтов: {s['banned']}\n\n<b>Аналитика за 7 дней</b>\nПопулярные события: {fm.esc(popular)}\nВопросы без ответа: {unanswered} · ориентировочная доля: {ratio:.1f}%\n"
                 f"Синхронизация расписания: {last_s}")
         return Out(screen=Screen(text, [nav("ad:menu")]))
 
@@ -499,6 +635,52 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             return await user_card(ctx, int(arg))
         return Out(screen=Screen("Введите @username, Telegram ID или часть ФИО.", [nav("ad:menu")]),
                    state="ad:user_search", state_data={})
+    if act == "hwfind":
+        if not _need(ctx, "homework"):
+            return _deny()
+        return Out(screen=Screen("Введите @username, Telegram ID или часть ФИО студента, которому нужно изменить доступ к созданию заданий.", [nav("ad:hw")]),
+                   state="ad:hw_user_search", state_data={})
+    if act == "hwuser" and arg.isdigit():
+        if not _need(ctx, "homework"):
+            return _deny()
+        u = await repo.get_user(int(arg))
+        if not u:
+            return Out(toast="Пользователь не найден", alert=True)
+        return await user_card(ctx, int(arg))
+    if act == "hwblocked":
+        if not _need(ctx, "homework"):
+            return _deny()
+        page = int(arg) if arg.isdigit() else 0
+        rows, total = await repo.blocked_hw_users(PAGE, page * PAGE)
+        lines = ["<b>🚫 Студенты без права создавать задания</b>", f"Всего: <b>{total}</b>"]
+        kb: Kb = []
+        for row in rows:
+            who = row.get("tg_name") or (f"@{row['username']}" if row.get("username") else "без имени")
+            group = row.get("group_name") or "без группы"
+            lines.append(f"\n{fm.esc(who[:28])} · {fm.esc(group[:18])} · ID <code>{row['id']}</code>")
+            kb.append([Btn(f"Открыть · {who[:22]}", f"ad:hwuser:{row['id']}")])
+        if not rows:
+            lines.append("\nНет студентов с ограничением.")
+        page_buttons = pager("ad:hwblocked", page, total, PAGE)
+        if page_buttons:
+            kb.append(page_buttons)
+        kb.append(nav("ad:hw"))
+        return Out(screen=Screen("\n".join(lines)[:3800], kb))
+    if act == "hwb" and arg.isdigit():
+        if not _need(ctx, "homework"):
+            return _deny()
+        uid = int(arg)
+        u = await repo.get_user(uid)
+        if not u or u.get("role") != "student" or uid in (ctx.cfg.superadmin_id, ctx.uid):
+            return _deny()
+        blocked = not bool(u.get("hw_blocked"))
+        await repo.update_user(uid, hw_blocked=1 if blocked else 0)
+        await repo.audit(ctx.uid, "hw_create_block" if blocked else "hw_create_unblock", str(uid))
+        out = await user_card(ctx, uid)
+        message = ("🚫 Администрация запретила вам создавать новые задания. Уже опубликованные задания остаются доступными группе."
+                   if blocked else "✅ Вам снова разрешено создавать задания.")
+        out.notify = [(uid, Screen(message))]
+        return out
     if act == "ub" and arg.isdigit():
         if not _need(ctx, "users"):
             return _deny()
@@ -533,16 +715,6 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             out.notify = [(uid, Screen("Администратор попросил указать ФИО заново. Нажмите /start."))]
         await repo.audit(ctx.uid, f"fio_{arg2}", str(uid))
         return out
-    if act == "ur" and arg.isdigit():
-        if not _need(ctx, sup=True):
-            return _deny()
-        rows = await repo.user_ratings(int(arg))
-        lines = [f"<b>Оценки пользователя {arg}</b>"]
-        if rows:
-            lines += [f"{'⭐' * r['stars']} · {fm.esc(r['name'])}" for r in rows[:30]]
-        else:
-            lines.append("Оценок нет.")
-        return Out(screen=Screen("\n".join(lines), [nav(f"ad:u:{arg}")]))
     if act == "fvh":
         if not _need(ctx, "users"):
             return _deny()
@@ -688,66 +860,165 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
     if act == "hw":
         if not _need(ctx, "homework"):
             return _deny()
-        page = int(arg) if arg.isdigit() else 0
-        rows, total = await repo.pending_hw(None, PAGE, page * PAGE)
-        kb = []
-        for r in rows:
-            g = await repo.get_group(r["group_id"])
-            kb.append([Btn(f"{g['name'] if g else ''} · {r['subject'][:14]}: {r['text'][:14]}", f"h:v:{r['id']}")])
-        if total > PAGE:
-            kb.append(pager("ad:hw", page, total, PAGE))
-        kb.append(nav("ad:menu"))
-        return Out(screen=Screen(f"<b>Задания на проверке: {total}</b>" + ("" if rows else "\nОчередь пуста."), kb))
+        stats = await repo.admin_homework_stats()
+        lines = [
+            "<b>📝 Задания · статистика</b>",
+            f"Опубликовано всего: <b>{stats['published']}</b>",
+            f"За последние 24 часа: <b>{stats['last_day']}</b>",
+            f"За 7 дней: <b>{stats['last_week']}</b>",
+            f"Студентов публиковали за 7 дней: <b>{stats['authors_week']}</b>",
+            f"Ограничено студентов: <b>{stats['blocked_students']}</b>",
+        ]
+        if stats["legacy_pending"]:
+            lines.append(f"Старых неопубликованных заданий: <b>{stats['legacy_pending']}</b>")
+        kb = [[Btn("🔎 Найти студента", "ad:hwfind")],
+              [Btn(f"🚫 Ограниченные студенты · {stats['blocked_students']}", "ad:hwblocked:0")],
+              nav("ad:menu")]
+        return Out(screen=Screen("\n".join(lines), kb))
 
-    # ---- рейтинг ----
+    # ---- рейтинг преподавателей: единая точка управления ----
     if act == "rt":
         if not _need(ctx, "teachers"):
             return _deny()
-        on = repo.flag("rating_enabled")
-        kb = [[Btn("🙈 Скрыть раздел у всех" if on else "👁 Показать раздел", "ad:rte")],
-              [Btn("🔎 Найти преподавателя", "ad:rts")], nav("ad:menu")]
-        return Out(screen=Screen(f"<b>Рейтинг преподавателей</b>\nРаздел сейчас: {'включён ✅' if on else 'скрыт 🙈'}", kb))
+        sort = arg if arg in ("name", "rating") else "rating"
+        page = int(arg2) if arg2.isdigit() else (int(arg) if arg.isdigit() else 0)
+        return Out(screen=await _admin_rating_list_screen(ctx, page, sort))
     if act == "rte":
         if not _need(ctx, "teachers"):
             return _deny()
         new = "0" if repo.flag("rating_enabled") else "1"
         await repo.set_setting("rating_enabled", new)
         await repo.audit(ctx.uid, "rating_toggle", new)
-        return await on_cb(ctx, ["rt"])
+        sort = arg if arg in ("name", "rating") else "rating"
+        page = int(arg2) if arg2.isdigit() else 0
+        return Out(screen=await _admin_rating_list_screen(ctx, page, sort))
+    if act == "rto":
+        if not _need(ctx, sup=True):
+            return _deny()
+        new = "0" if repo.flag("rate_only_own") else "1"
+        await repo.set_setting("rate_only_own", new)
+        await repo.audit(ctx.uid, "setting", f"rate_only_own={new}")
+        sort = arg if arg in ("name", "rating") else "rating"
+        page = int(arg2) if arg2.isdigit() else 0
+        return Out(screen=await _admin_rating_list_screen(ctx, page, sort))
+    if act == "rtv":
+        if not _need(ctx, sup=True):
+            return _deny()
+        sort = arg if arg in ("name", "rating") else "rating"
+        page = int(arg2) if arg2.isdigit() else 0
+        return Out(screen=Screen(
+            f"Сколько оценок нужно для показа средней оценки преподавателя? Сейчас: {repo.int_setting('min_votes') or 5}. Введите число от 1 до 365.",
+            [nav(f"ad:rt:{sort}:{page}")]),
+            state="ad:rating_min_votes", state_data={"sort": sort, "page": page})
     if act == "rts":
         if not _need(ctx, "teachers"):
             return _deny()
-        return Out(screen=Screen("Введите фамилию преподавателя.", [nav("ad:rt")]), state="ad:teacher_search", state_data={})
+        sort = arg if arg in ("name", "rating") else "rating"
+        page = int(arg2) if arg2.isdigit() else 0
+        return Out(screen=Screen("Введите фамилию или часть имени преподавателя. В поиске учитываются и скрытые преподаватели.",
+                                 [nav(f"ad:rt:{sort}:{page}")]),
+                   state="ad:teacher_search", state_data={"sort": sort, "page": page})
     if act == "rtc" and arg.isdigit():
         if not _need(ctx, "teachers"):
             return _deny()
-        t = await repo.get_teacher(int(arg))
-        if not t:
-            return Out(toast="Не найден", alert=True)
-        avg = f"{t['avg']:.2f}" if t["avg"] is not None else "—"
-        text = (f"<b>{fm.esc(t['name'])}</b>\nОценок: {t['cnt']} · средняя: {avg}\n"
-                f"Статус: {'скрыт 🙈' if t['hidden'] else 'виден'}")
-        kb = [[Btn("👁 Показать" if t["hidden"] else "🙈 Скрыть", f"ad:rth:{t['id']}")],
-              [Btn("🧹 Сбросить оценки", f"ad:rtr:{t['id']}")], nav("ad:rt")]
-        return Out(screen=Screen(text, kb))
+        sort = arg2 if arg2 in ("name", "rating") else "rating"
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        return await _admin_teacher_card(ctx, int(arg), sort, page)
     if act == "rth" and arg.isdigit():
         if not _need(ctx, "teachers"):
             return _deny()
         t = await repo.get_teacher(int(arg))
         if not t:
-            return Out(toast="Не найден", alert=True)
+            return Out(toast="Преподаватель не найден", alert=True)
         await repo.set_teacher_hidden(t["id"], not t["hidden"])
         await repo.audit(ctx.uid, "teacher_hide", f"{t['id']}:{not t['hidden']}")
-        return await on_cb(ctx, ["rtc", arg])
-    if act == "rtr" and arg.isdigit():
+        sort = arg2 if arg2 in ("name", "rating") else "rating"
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        return await _admin_teacher_card(ctx, int(arg), sort, page)
+    if act == "rae" and arg.isdigit():
         if not _need(ctx, "teachers"):
             return _deny()
-        if arg2 != "y":
-            return Out(screen=Screen("Удалить все оценки этого преподавателя? Это нельзя отменить.",
-                                     [[Btn("Да, сбросить", f"ad:rtr:{arg}:y"), Btn("Отмена", f"ad:rtc:{arg}")]]))
-        n = await repo.reset_ratings(int(arg))
-        await repo.audit(ctx.uid, "ratings_reset", f"{arg}:{n}")
-        return Out(screen=Screen(f"Удалено оценок: {n}", [nav(f"ad:rtc:{arg}")]))
+        page = int(arg2) if arg2.isdigit() else 0
+        return await _admin_rating_entries_screen(ctx, int(arg), page)
+    if act == "radc" and len(parts) >= 4 and parts[1].isdigit() and parts[2].isdigit():
+        if not _need(ctx, "teachers"):
+            return _deny()
+        tid, uid = int(parts[1]), int(parts[2])
+        page = int(parts[3]) if parts[3].isdigit() else 0
+        return Out(screen=Screen(
+            "Удалить оценку этого студента у преподавателя? Будут удалены его общий балл и оценки по всем критериям.",
+            [[Btn("🗑 Да, удалить", f"ad:radel:{tid}:{uid}:{page}:y"),
+              Btn("Отмена", f"ad:rae:{tid}:{page}")]]))
+    if act == "radel" and len(parts) >= 5 and parts[1].isdigit() and parts[2].isdigit():
+        if not _need(ctx, "teachers"):
+            return _deny()
+        tid, uid = int(parts[1]), int(parts[2])
+        page = int(parts[3]) if parts[3].isdigit() else 0
+        if parts[4] != "y":
+            return Out(toast="Подтвердите удаление", alert=True)
+        deleted = await repo.delete_teacher_rating(uid, tid)
+        if deleted:
+            await repo.audit(ctx.uid, "teacher_rating_delete", f"{tid}:{uid}")
+        out = await _admin_rating_entries_screen(ctx, tid, page)
+        out.toast = "Оценка удалена" if deleted else "Оценка уже отсутствует"
+        return out
+    if act == "rrv" and arg.isdigit():
+        if not _need(ctx, "teachers"):
+            return _deny()
+        page = int(arg2) if arg2.isdigit() else 0
+        return await _admin_reviews_screen(ctx, int(arg), page)
+    if act == "rrp" and len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
+        if not _need(ctx, "teachers"):
+            return _deny()
+        tid, review_id = int(parts[1]), int(parts[2])
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        return await _admin_review_replies_screen(ctx, tid, review_id, page)
+    if act == "rrdc" and len(parts) >= 4 and parts[1].isdigit() and parts[2].isdigit():
+        if not _need(ctx, "teachers"):
+            return _deny()
+        tid, review_id = int(parts[1]), int(parts[2])
+        page = int(parts[3]) if parts[3].isdigit() else 0
+        return Out(screen=Screen(
+            "Удалить этот отзыв вместе со всеми ответами и реакциями? Действие нельзя отменить.",
+            [[Btn("🗑 Да, удалить", f"ad:rrdel:{tid}:{review_id}:{page}:y"),
+              Btn("Отмена", f"ad:rrv:{tid}:{page}")]]))
+    if act == "rrdel" and len(parts) >= 5 and parts[1].isdigit() and parts[2].isdigit():
+        if not _need(ctx, "teachers"):
+            return _deny()
+        tid, review_id = int(parts[1]), int(parts[2])
+        page = int(parts[3]) if parts[3].isdigit() else 0
+        if parts[4] != "y":
+            return Out(toast="Подтвердите удаление", alert=True)
+        deleted = await repo.delete_teacher_review(review_id, tid)
+        if deleted:
+            await repo.audit(ctx.uid, "teacher_review_delete", f"{review_id}:{tid}")
+        out = await _admin_reviews_screen(ctx, tid, page)
+        out.toast = "Отзыв и связанные данные удалены" if deleted else "Отзыв уже отсутствует"
+        return out
+    if act == "rrpc" and len(parts) >= 5 and parts[1].isdigit() and parts[2].isdigit() and parts[3].isdigit():
+        if not _need(ctx, "teachers"):
+            return _deny()
+        tid, review_id, reply_id = int(parts[1]), int(parts[2]), int(parts[3])
+        page = int(parts[4]) if parts[4].isdigit() else 0
+        return Out(screen=Screen(
+            "Удалить только этот ответ на отзыв?",
+            [[Btn("🗑 Да, удалить", f"ad:rrpd:{tid}:{review_id}:{reply_id}:{page}:y"),
+              Btn("Отмена", f"ad:rrp:{tid}:{review_id}:{page}")]]))
+    if act == "rrpd" and len(parts) >= 6 and all(parts[i].isdigit() for i in (1, 2, 3, 4)):
+        if not _need(ctx, "teachers"):
+            return _deny()
+        tid, review_id, reply_id = int(parts[1]), int(parts[2]), int(parts[3])
+        page = int(parts[4])
+        if parts[5] != "y":
+            return Out(toast="Подтвердите удаление", alert=True)
+        deleted = await repo.delete_teacher_review_reply(reply_id, review_id, tid)
+        if deleted:
+            await repo.audit(ctx.uid, "teacher_review_reply_delete", f"{tid}:{review_id}:{reply_id}")
+        out = await _admin_review_replies_screen(ctx, tid, review_id, page)
+        out.toast = "Ответ удалён" if deleted else "Ответ уже отсутствует"
+        return out
+    if act == "rtr":
+        return Out(toast="Общий сброс оценок отключён. Удаляйте записи по отдельности в карточке преподавателя.", alert=True)
 
     # ---- рассылка ----
     if act == "bc":
@@ -864,11 +1135,11 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
     if act == "ex":
         if not _need(ctx, sup=True):
             return _deny()
-        if arg in ("users", "ratings", "homework"):
+        if arg in ("users", "homework"):
             name, blob = await ex.export_xlsx(repo, arg)
             await repo.audit(ctx.uid, "export", arg)
             return Out(file=(name, blob, "Выгрузка данных"), toast="Файл отправлен")
-        kb = [[Btn("👥 Пользователи", "ad:ex:users"), Btn("⭐ Оценки", "ad:ex:ratings")],
+        kb = [[Btn("👥 Пользователи", "ad:ex:users")],
               [Btn("📝 Задания", "ad:ex:homework")], nav("ad:menu")]
         return Out(screen=Screen("<b>Экспорт в Excel</b>\nФайл придёт сообщением и не хранится на сервере.", kb))
 
@@ -965,6 +1236,8 @@ def _settings_screen(ctx: Ctx) -> Screen:
     for key, label in BOOL_SETTINGS.items():
         kb.append([Btn(f"{'✅' if ctx.repo.flag(key) else '⬜'} {label}", f"ad:st:{key}")])
     for key, label in INT_SETTINGS.items():
+        if key == "min_votes":
+            continue
         kb.append([Btn(f"{label}: {ctx.repo.setting(key)}", f"ad:sv:{key}")])
     kb.append([Btn("📝 Редактор текстов интерфейса", "ad:uitext")])
     kb.append(nav("ad:menu"))
@@ -1000,6 +1273,14 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
     if not ctx.is_admin:
         return _deny()
     repo = ctx.repo
+    if state == "ad:hw_user_search" and ctx.can("homework"):
+        u = await _resolve_user(ctx, text)
+        if not u or u.get("role") != "student":
+            return Out(screen=Screen("Студента не нашёл. Проверьте @username, Telegram ID или ФИО.", [nav("ad:hw")]),
+                       state=state, state_data=data)
+        out = await user_card(ctx, int(u["id"]))
+        out.clear_state = True
+        return out
     if state == "ad:group_search":
         query = text.strip()[:80]
         if len(query) < 2:
@@ -1068,12 +1349,31 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
         await repo.set_setting("parity_anchor", d)
         await repo.audit(ctx.uid, "parity_anchor", d)
         return Out(screen=Screen(f"Готово: неделя с {d} нечётная.", [nav("ad:sch")]), clear_state=True)
+    if state == "ad:rating_min_votes" and ctx.is_super:
+        value = text.strip()
+        if not value.isdigit() or not 1 <= int(value) <= 365:
+            return Out(screen=Screen("Введите целое число от 1 до 365.", [nav("ad:rt")]),
+                       state=state, state_data=data)
+        await repo.set_setting("min_votes", str(int(value)))
+        await repo.audit(ctx.uid, "setting", f"min_votes={int(value)}")
+        sort = data.get("sort", "rating") if data.get("sort") in ("name", "rating") else "rating"
+        page = int(data.get("page", 0) or 0)
+        return Out(screen=await _admin_rating_list_screen(ctx, page, sort), clear_state=True)
     if state == "ad:teacher_search" and ctx.can("teachers"):
-        found = await repo.search_teachers(text)
+        sort = data.get("sort", "rating") if data.get("sort") in ("name", "rating") else "rating"
+        page = int(data.get("page", 0) or 0)
+        found, total = await repo.admin_teacher_list(0, 30, text, sort)
         if not found:
-            return Out(screen=Screen("Не нашёл. Попробуйте ещё раз.", [nav("ad:rt")]), state="ad:teacher_search", state_data={})
-        kb = [[Btn(t["name"][:32], f"ad:rtc:{t['id']}")] for t in found] + [nav("ad:rt")]
-        return Out(screen=Screen("Нашёл:", kb), clear_state=True)
+            return Out(screen=Screen("Не нашёл преподавателей. Попробуйте другую фамилию.", [nav(f"ad:rt:{sort}:{page}")]),
+                       state="ad:teacher_search", state_data=data)
+        kb = []
+        for t in found:
+            rating = f"⭐ {t['avg']:.1f}" if t["avg"] is not None else "нет оценок"
+            status = "🙈 " if t["hidden"] else ""
+            kb.append([Btn(f"{status}{t['name'][:24]} · {rating}",
+                           f"ad:rtc:{t['id']}:{sort}:{page}")])
+        kb.append(nav(f"ad:rt:{sort}:{page}"))
+        return Out(screen=Screen(f"Найдено преподавателей: {total}. Выберите нужного:", kb), clear_state=True)
     if state == "ad:bc_group" and ctx.can("broadcast"):
         groups = await repo.search_groups(text, 1)
         if not groups:

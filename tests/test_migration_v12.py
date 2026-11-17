@@ -22,6 +22,7 @@ class MigrationV14Tests(unittest.TestCase):
                 await db.execute("DROP TABLE teacher_accounts")
                 await db.execute("ALTER TABLE chats DROP COLUMN cleanup_on")
                 await db.execute("ALTER TABLE chats DROP COLUMN private_questions")
+                await db.execute("ALTER TABLE users DROP COLUMN hw_blocked")
                 await db.execute("ALTER TABLE chats DROP COLUMN notifications_on")
                 await db.execute("UPDATE meta SET v = ? WHERE k = ?", "11", "schema_version")
 
@@ -33,9 +34,10 @@ class MigrationV14Tests(unittest.TestCase):
                 index = await db.scalar(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?",
                     "ix_gsc_group_day_status")
-                self.assertEqual(version, 17)
+                self.assertEqual(version, 18)
                 self.assertEqual(saved, "unchanged")
                 self.assertEqual(await db.scalar("SELECT fio FROM users WHERE id = ?", 101), "Иванов Иван")
+                self.assertEqual(await db.scalar("SELECT hw_blocked FROM users WHERE id = ?", 101), 0)
                 self.assertEqual(await db.scalar("SELECT subject FROM lessons WHERE id = ?", 201), "Математика")
                 self.assertEqual(await db.scalar("SELECT title FROM chats WHERE chat_id = ?", -100123), "ИС-21")
                 self.assertEqual(await db.scalar("SELECT name FROM groups WHERE id = ?", 7), "ИС-21")

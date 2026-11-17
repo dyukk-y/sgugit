@@ -130,7 +130,7 @@ class T(unittest.TestCase):
         async def go():
             s = await Sim().setup()
             out = await s.do(100, command="start"); self.assertIn("группу", texts(out))
-            out = await s.do(100, text="ис 11"); self.assertIn("r:g:", " ".join(datas(out)))
+            out = await s.do(100, text="ис 11"); self.assertIn("r:g:", " ".join(d for d in datas(out) if d))
             gd = [d for d in datas(out) if d.startswith("r:g:")][0]
             out = await s.do(100, callback=gd)
             self.assertNotIn("r:redo", datas(out))
@@ -274,6 +274,75 @@ class T(unittest.TestCase):
             await s.db.close()
         run(go())
 
+    def test_main_menu_shows_next_lesson_and_homework_filters(self):
+        async def go():
+            s = await Sim().setup()
+            await s.register(202)
+            out = await s.do(202, command="start")
+            self.assertIn("s:n", datas(out))
+            self.assertIn("Дальше", texts(out))
+
+            group = (await s.repo.search_groups("ИС-11"))[0]
+            gid = group["id"]
+            overdue = await s.repo.add_hw(gid, "Математика", None, "Просрочено", "2026-10-13", 202, "approved")
+            future = await s.repo.add_hw(gid, "Физика", None, "Скоро", "2026-10-15", 202, "approved")
+            await s.repo.toggle_hw_done(202, future)
+
+            out = await s.do(202, callback="h:l:0")
+            self.assertIn("Просрочено и не отмечено выполненным: <b>1</b>", texts(out))
+            self.assertIn("просрочено", texts(out).lower())
+            self.assertIn("h:l:0:done", datas(out))
+            self.assertIn("h:l:0:all", datas(out))
+            self.assertIn(f"h:v:{overdue}:active", datas(out))
+
+            out = await s.do(202, callback=f"h:v:{future}:done")
+            self.assertIn(f"h:l:0:done", datas(out))
+            out = await s.do(202, callback=f"h:dn:{future}:done")
+            self.assertIn(f"h:l:0:done", datas(out))
+            await s.db.close()
+        run(go())
+
+    def test_admin_can_restrict_homework_creation_without_banning_account(self):
+        async def go():
+            s = await Sim().setup()
+            await s.register(100)
+            out = await s.do(1, callback="ad:hw")
+            self.assertIn("статистика", texts(out).lower())
+            self.assertNotIn("на проверке", texts(out).lower())
+            self.assertIn("ad:hwfind", datas(out))
+            out = await s.do(1, callback="ad:hwfind")
+            self.assertEqual(out.state, "ad:hw_user_search")
+            out = await s.do(1, text="Смирнова Анна")
+            self.assertIn("Создание заданий: разрешено", texts(out))
+            self.assertIn("ad:hwb:100", datas(out))
+
+            out = await s.do(1, callback="ad:hwb:100")
+            self.assertIn("Создание заданий: запрещено", texts(out))
+            user = await s.repo.get_user(100)
+            self.assertEqual(user["hw_blocked"], 1)
+            self.assertEqual(user["banned"], 0)
+
+            blocked = await s.do(100, callback="h:add:0")
+            self.assertIn("запретила", texts(blocked).lower())
+            blocked = await s.do(100, text="дз математика №15-20 к пятнице")
+            self.assertIn("запретила", texts(blocked).lower())
+
+            out = await s.do(1, callback="ad:hwblocked:0")
+            self.assertIn("User100", texts(out))
+            self.assertIn("ad:hwuser:100", datas(out))
+            out = await s.do(1, callback="ad:hwuser:100")
+            self.assertIn("ad:hwb:100", datas(out))
+
+            await s.do(1, callback="ad:hwb:100")
+            draft = await s.do(100, text="дз математика №15-20 к пятнице")
+            self.assertIn("h:save", datas(draft))
+            await s.do(1, callback="ad:hwb:100")
+            blocked = await s.do(100, callback="h:save")
+            self.assertIn("запретила", texts(blocked).lower())
+            self.assertEqual(await s.repo.count("homework", "author_id = ?", 100), 0)
+            await s.db.close()
+        run(go())
+
     def test_teachers_rating(self):
         async def go():
             s = await Sim().setup(); await s.register(100); await s.register(101, "Орлова Ольга Игоревна")
@@ -321,9 +390,42 @@ class T(unittest.TestCase):
             out = await s.do(100, callback="t:l:m:0"); self.assertIn("недоступен", out.toast)
             out = await s.do(100, command="menu"); self.assertNotIn("t:l:m:0", datas(out))
             await s.do(1, callback="ad:rte")
-            out = await s.do(1, callback=f"ad:rth:{tid}"); self.assertIn("скрыт", texts(out))
+            out = await s.do(1, callback="ad:rt")
+            self.assertIn(f"ad:rtc:{tid}:rating:0", datas(out))
+            self.assertIn("ad:rto:rating:0", datas(out))
+            self.assertIn("ad:rtv:rating:0", datas(out))
+            settings = await s.do(1, callback="ad:set")
+            self.assertNotIn("ad:st:rate_only_own", datas(settings))
+            self.assertNotIn("ad:sv:min_votes", datas(settings))
+            out = await s.do(1, callback="ad:rtv:rating:0")
+            self.assertEqual(out.state, "ad:rating_min_votes")
+            out = await s.do(1, text="3")
+            self.assertIn("Порог показа средней оценки: <b>3</b>", texts(out))
+            self.assertIn(f"ad:rtc:{tid}:rating:0", datas(out))
+            out = await s.do(1, callback=f"ad:rtc:{tid}:rating:0")
+            self.assertIn("Оценки по видам занятий", texts(out))
+            self.assertIn("5.00/5", texts(out))
+            out = await s.do(1, callback=f"ad:rae:{tid}:0")
+            self.assertIn("ID <code>100</code>", texts(out))
+            await s.do(1, callback=f"ad:radc:{tid}:100:0")
+            out = await s.do(1, callback=f"ad:radel:{tid}:100:0:y")
+            self.assertIn("Оценка удалена", out.toast)
+            self.assertIsNone(await s.repo.my_rating(100, tid))
+            out = await s.do(1, callback=f"ad:rrp:{tid}:{review_id}:0")
+            self.assertIn("Согласен", texts(out))
+            reply_id = (await s.repo.admin_teacher_review_replies(review_id, tid))[0]["id"]
+            await s.do(1, callback=f"ad:rrpc:{tid}:{review_id}:{reply_id}:0")
+            out = await s.do(1, callback=f"ad:rrpd:{tid}:{review_id}:{reply_id}:0:y")
+            self.assertIn("Ответ удалён", out.toast)
+            await s.do(1, callback=f"ad:rrdc:{tid}:{review_id}:0")
+            out = await s.do(1, callback=f"ad:rrdel:{tid}:{review_id}:0:y")
+            self.assertIn("Отзыв и связанные данные удалены", out.toast)
+            self.assertEqual(await s.repo.admin_teacher_reviews(tid, 0, 5), ([], 0))
+            self.assertEqual(await s.repo.db.scalar("SELECT COUNT(*) FROM teacher_rating_comments WHERE teacher_id = ?", tid), 0)
+            await s.do(1, callback=f"ad:rth:{tid}:rating:0")
             out = await s.do(100, callback=f"t:v:{tid}:m:0"); self.assertTrue(out.toast)
-            out = await s.do(1, callback=f"ad:rtr:{tid}:y"); self.assertIn("Удалено", texts(out))
+            out = await s.do(1, callback=f"ad:rtr:{tid}:y")
+            self.assertIn("отключён", (out.toast or "").lower())
             await s.db.close()
         run(go())
 
@@ -371,8 +473,8 @@ class T(unittest.TestCase):
             out = await s.do(1, callback="ad:st:maintenance"); out = await s.do(100, command="today"); self.assertIn("технические", texts(out).lower())
             out = await s.do(1, command="admin"); self.assertIn("Панель управления", texts(out))
             await s.do(1, callback="ad:st:maintenance")
-            out = await s.do(1, callback="ad:sv:min_votes"); out = await s.do(1, text="2"); self.assertEqual(s.repo.setting("min_votes"), "2")
-            out = await s.do(1, callback="ad:sv:min_votes"); out = await s.do(1, text="abc"); self.assertIn("число", texts(out))
+            out = await s.do(1, callback="ad:rtv:rating:0"); out = await s.do(1, text="2"); self.assertEqual(s.repo.setting("min_votes"), "2")
+            out = await s.do(1, callback="ad:rtv:rating:0"); out = await s.do(1, text="abc"); self.assertIn("число", texts(out))
             await s.do(1, callback="ad:menu")
             # стоп-слова и синонимы
             await s.do(1, callback="ad:sw:stub"); await s.do(1, text="Маракуйя"); stop, bad = await s.repo.stoplists(); self.assertIn("маракуйя", stop)
@@ -405,8 +507,10 @@ class T(unittest.TestCase):
             out = await s.do(100, callback="hd:ml")
             self.assertIn("отключ", (out.toast or "").lower())
             # экспорт
-            for kind in ("users", "ratings", "homework"):
+            for kind in ("users", "homework"):
                 out = await s.do(1, callback=f"ad:ex:{kind}"); self.assertTrue(out.file[1][:2] == b"PK")
+            out = await s.do(1, callback="ad:ex:ratings")
+            self.assertIsNone(out.file)  # рейтинг управляется только через раздел «Рейтинг»
             # бэкап и восстановление
             out = await s.do(1, callback="ad:bkn"); name, blob, _ = out.file; self.assertTrue(name.endswith(".json.gz"))
             await s.do(1, callback="ad:bkr"); out = await s.do(1, document=("b.json.gz", b"junk")); self.assertIn("не похож", texts(out))
