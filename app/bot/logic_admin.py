@@ -1273,6 +1273,14 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
     if not ctx.is_admin:
         return _deny()
     repo = ctx.repo
+    if state == "ad:hw_user_search" and ctx.can("homework"):
+        u = await _resolve_user(ctx, text)
+        if not u or u.get("role") != "student":
+            return Out(screen=Screen("Студента не нашёл. Проверьте @username, Telegram ID или ФИО.", [nav("ad:hw")]),
+                       state=state, state_data=data)
+        out = await user_card(ctx, int(u["id"]))
+        out.clear_state = True
+        return out
     if state == "ad:group_search":
         query = text.strip()[:80]
         if len(query) < 2:
