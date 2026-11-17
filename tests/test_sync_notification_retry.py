@@ -1,11 +1,13 @@
 import asyncio
 import unittest
+from datetime import timedelta
 
 from app.db.core import Database
 from app.db.repo import Repo
 from app.db.schema import migrate
 from app.models import LessonRec
 from app.services.sync import SyncService
+from app.timeutil import iso, today
 
 
 class SyncNotificationRetryTests(unittest.TestCase):
@@ -17,8 +19,9 @@ class SyncNotificationRetryTests(unittest.TestCase):
             repo = Repo(db)
             await repo.load_settings()
 
-            old = LessonRec("ИС-11", "2026-11-16", 1, "08:30", "10:05", "Математика")
-            new = LessonRec("ИС-11", "2026-11-16", 1, "09:00", "10:35", "Математика")
+            lesson_day = iso(today() + timedelta(days=1))
+            old = LessonRec("ИС-11", lesson_day, 1, "08:30", "10:05", "Математика")
+            new = LessonRec("ИС-11", lesson_day, 1, "09:00", "10:35", "Математика")
             await repo.apply_lessons([old], manual=False)
 
             attempts = 0
