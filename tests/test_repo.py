@@ -133,5 +133,60 @@ class T(unittest.TestCase):
             self.assertFalse(await r2.is_empty())
             await db.close(); await db2.close()
         run(go())
+    def test_admin_teacher_rating_management(self):
+        async def go():
+            db, r = await mk()
+            d1 = iso(today() + timedelta(days=1))
+            await r.apply_lessons([
+                L("ИС-11", d1, 1, "Математика", "Иванов Иван Иванович", kind="лекция"),
+                L("ИС-11", d1, 2, "Математика", "Иванов Иван Иванович", kind="практика"),
+                L("ИС-11", d1, 3, "Физика", "Петров Петр Петрович", kind="лекция"),
+            ], manual=False)
+            teachers, total = await r.admin_teacher_list(0, 10)
+            self.assertEqual(total, 2)
+            ivan = next(x for x in teachers if x["name"] == "Иванов Иван Иванович")
+            tid = ivan["id"]
+            await r.ensure_user(101)
+            await r.ensure_user(102)
+            criteria = await r.teacher_rating_criteria((await r.get_teacher(tid))["norm"])
+            self.assertGreaterEqual(len(criteria), 2)
+            await r.save_teacher_rating_score(101, tid, criteria[0]["key"], 5)
+            await r.save_teacher_rating_score(101, tid, criteria[1]["key"], 4)
+            await r.rate_teacher(101, tid, 5, 0)
+            await r.save_teacher_rating_score(102, tid, criteria[0]["key"], 3)
+            entries, entry_total = await r.admin_teacher_rating_entries(tid, 0, 10)
+            self.assertEqual(entry_total, 2)
+            self.assertEqual({x["user_id"] for x in entries}, {101, 102})
+            summary = await r.teacher_rating_score_summary(tid)
+            self.assertEqual(sum(x["cnt"] for x in summary), 3)
+            await r.save_teacher_rating_comment(101, tid, "Хорошо объясняет")
+            review_rows, review_total = await r.admin_teacher_reviews(tid, 0, 5)
+            self.assertEqual(review_total, 1)
+            review_id = review_rows[0]["id"]
+            await r.add_teacher_review_reply(review_id, 102, "Согласен")
+            replies = await r.admin_teacher_review_replies(review_id, tid)
+            self.assertEqual(len(replies), 1)
+            self.assertTrue(await r.delete_teacher_review_reply(replies[0]["id"], review_id, tid))
+            self.assertFalse(await r.delete_teacher_review_reply(replies[0]["id"], review_id, tid))
+            self.assertTrue(await r.delete_teacher_review(review_id, tid))
+            self.assertEqual(await db.scalar(
+                "SELECT COUNT(*) FROM teacher_rating_comments WHERE teacher_id = ?", tid), 0)
+            self.assertEqual(await db.scalar(
+                "SELECT COUNT(*) FROM teacher_review_replies WHERE review_id = ?", review_id), 0)
+            self.assertTrue(await r.delete_teacher_rating(101, tid))
+            self.assertFalse(await r.delete_teacher_rating(101, tid))
+            entries, entry_total = await r.admin_teacher_rating_entries(tid, 0, 10)
+            self.assertEqual(entry_total, 1)
+            self.assertEqual(entries[0]["user_id"], 102)
+            await r.set_teacher_hidden(tid, True)
+            all_rows, all_total = await r.admin_teacher_list(0, 10)
+            self.assertEqual(all_total, 2)
+            self.assertTrue(next(x for x in all_rows if x["id"] == tid)["hidden"])
+            found, found_total = await r.admin_teacher_list(0, 10, "Иванов")
+            self.assertEqual(found_total, 1)
+            self.assertEqual(found[0]["id"], tid)
+            await db.close()
+        run(go())
+
 if __name__ == "__main__":
     unittest.main()
