@@ -392,9 +392,9 @@ async def deliver_side_effects(app: App, chat_id: int, out: Out) -> None:
                 if not photo_id:
                     log.warning("Пропущено фото-вложение: вместо file_id получен неподдерживаемый объект %s", type(file_id).__name__)
                     return
-                await app.bot.send_photo(chat_id, photo_id, caption=(caption or None))
+                await app.bot.send_photo(chat_id, photo_id, caption=(caption or None), parse_mode="HTML")
             else:
-                await app.bot.send_document(chat_id, file_id, caption=(caption or None))
+                await app.bot.send_document(chat_id, file_id, caption=(caption or None), parse_mode="HTML")
         except TelegramAPIError:
             log.exception("Не удалось отправить вложение задания")
     if out.file:
@@ -902,7 +902,7 @@ def build_router(app: App) -> Router:
     async def private_text(message: Message) -> None:
         if message.from_user is None or not _claim_private_message(app, message):
             return
-        out = await run_process(app, message.from_user, text=message.text or "")
+        out = await run_process(app, message.from_user, text=message.text or "", text_html=message.html_text or message.text or "")
         await render(app, message.chat.id, out)
         await deliver_side_effects(app, message.chat.id, out)
         await safe_delete(message)
