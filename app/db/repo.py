@@ -1203,15 +1203,42 @@ class Repo:
             "VALUES (?, ?, ?, ?, ?, ?, ?, 'wait')", chat_id, message_id, user_id, text[:300], intent, now_ts(), due_at)
 
     async def pending_for_chat(self, chat_id: int) -> list[dict]:
-        return await self.db.fetchall("SELECT * FROM pending_questions WHERE chat_id = ? AND status = 'wait'", chat_id)
+        # Учитываем и короткую фазу отправки: иначе новый вопрос может пройти
+        # параллельно с уже взятым в работу таким же вопросом.
+        return await self.db.fetchall(
+            "SELECT * FROM pending_questions WHERE chat_id = ? AND status IN ('wait', 'sending') ORDER BY created_at",
+            chat_id)
 
     async def pending_due(self, now: int) -> list[dict]:
+        # sending с истёкшей арендой — восстановление после перезапуска во время отправки.
         return await self.db.fetchall(
-            "SELECT * FROM pending_questions WHERE status = 'wait' AND due_at <= ? ORDER BY due_at LIMIT 50", now)
+            "SELECT * FROM pending_questions WHERE status IN ('wait', 'sending') AND due_at <= ? "
+            "ORDER BY due_at LIMIT 50", now)
+
+    async def claim_pending(self, pid: int, now: int) -> bool:
+        # Атомарная аренда на 5 минут защищает от двойной отправки и позволяет
+        # автоматически повторить задачу, если процесс завершился посреди отправки.
+        n = await self.db.execute(
+            "UPDATE pending_questions SET status = 'sending', due_at = ? WHERE id = ? "
+            "AND ((status = 'wait' AND due_at <= ?) OR (status = 'sending' AND due_at <= ?))",
+            now + 300, pid, now, now, volatile=True)
+        return n > 0
+
+    async def finish_pending(self, pid: int, delivered: bool, retry_at: int | None = None) -> bool:
+        if delivered:
+            n = await self.db.execute(
+                "UPDATE pending_questions SET status = 'sent' WHERE id = ? AND status = 'sending'",
+                pid, volatile=True)
+        else:
+            n = await self.db.execute(
+                "UPDATE pending_questions SET status = 'wait', due_at = ? WHERE id = ? AND status = 'sending'",
+                retry_at if retry_at is not None else now_ts() + 60, pid, volatile=True)
+        return n > 0
 
     async def set_pending_status(self, pid: int, status: str) -> bool:
-        n = await self.db.execute("UPDATE pending_questions SET status = ? WHERE id = ? AND status = 'wait'", status, pid,
-                                  volatile=True)
+        n = await self.db.execute(
+            "UPDATE pending_questions SET status = ? WHERE id = ? AND status IN ('wait', 'sending')",
+            status, pid, volatile=True)
         return n > 0
 
     async def purge_pending(self) -> None:
