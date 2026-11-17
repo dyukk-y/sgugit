@@ -65,6 +65,11 @@ class QuestionService:
         # Проверка лимита и дублей вместе с INSERT должна быть последовательной:
         # два сообщения могут прийти почти одновременно.
         async with self._chat_locks[chat_id]:
+            current_chat = await self.repo.get_chat(chat_id)
+            if (not current_chat or not current_chat.get("active")
+                    or current_chat.get("smart_mode") != "active"
+                    or current_chat.get("group_id") != gid):
+                return False
             pend = await self.repo.pending_for_chat(chat_id)
             if len(pend) >= MAX_PENDING_PER_CHAT:
                 return False
@@ -78,7 +83,7 @@ class QuestionService:
                 except (ValueError, KeyError, TypeError):
                     continue
             now = now_ts if now_ts is not None else tu.now_ts()
-            wait = max(1, int(chat.get("wait_min") or 60))
+            wait = max(1, int(current_chat.get("wait_min") or 60))
             await self.repo.add_pending(chat_id, message_id, user_id, text, intent_to_json(intent), now + wait * 60)
             return True
 
