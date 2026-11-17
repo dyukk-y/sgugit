@@ -62,13 +62,13 @@ async def _admin_rating_list_screen(ctx: Ctx, page: int = 0, sort: str = "rating
              f"Порог показа средней оценки: <b>{min_votes}</b> голосов",
              f"Преподавателей: <b>{total}</b>",
              "Список включает и скрытых преподавателей."]
-    kb: Kb = [[Btn("🙈 Скрыть раздел у всех" if enabled else "👁 Показать раздел", "ad:rte")],
+    kb: Kb = [[Btn("🙈 Скрыть раздел у всех" if enabled else "👁 Показать раздел", f"ad:rte:{sort}:{page}")],
               [Btn("🔎 Найти преподавателя", f"ad:rts:{sort}:{page}"),
                Btn("↕️ Сортировка: " + ("по имени" if sort == "name" else "по рейтингу"),
                    f"ad:rt:{'rating' if sort == 'name' else 'name'}:0")]]
     if ctx.is_super:
         kb.extend([
-            [Btn("🔒 Оценивать только своих: " + ("вкл" if own_only else "выкл"), "ad:rto")],
+            [Btn("🔒 Оценивать только своих: " + ("вкл" if own_only else "выкл"), f"ad:rto:{sort}:{page}")],
             [Btn(f"⚙️ Порог средней: {min_votes} голосов", f"ad:rtv:{sort}:{page}")],
         ])
     for row in rows:
@@ -834,14 +834,18 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         new = "0" if repo.flag("rating_enabled") else "1"
         await repo.set_setting("rating_enabled", new)
         await repo.audit(ctx.uid, "rating_toggle", new)
-        return Out(screen=await _admin_rating_list_screen(ctx))
+        sort = arg if arg in ("name", "rating") else "rating"
+        page = int(arg2) if arg2.isdigit() else 0
+        return Out(screen=await _admin_rating_list_screen(ctx, page, sort))
     if act == "rto":
         if not _need(ctx, sup=True):
             return _deny()
         new = "0" if repo.flag("rate_only_own") else "1"
         await repo.set_setting("rate_only_own", new)
         await repo.audit(ctx.uid, "setting", f"rate_only_own={new}")
-        return Out(screen=await _admin_rating_list_screen(ctx))
+        sort = arg if arg in ("name", "rating") else "rating"
+        page = int(arg2) if arg2.isdigit() else 0
+        return Out(screen=await _admin_rating_list_screen(ctx, page, sort))
     if act == "rtv":
         if not _need(ctx, sup=True):
             return _deny()
