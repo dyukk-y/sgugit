@@ -1089,7 +1089,7 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             out.notify_media = [(uid, data["media_file_id"], data.get("media_type", "photo"), caption, markup)
                                 for uid in recipients]
         else:
-            out.notify = [(uid, Screen(body, markup)) for uid in recipients]
+            out.notify = [(uid, Screen(body, markup, html_content=True)) for uid in recipients]
         return out
 
     # ---- редактор текстов интерфейса ----
@@ -1322,7 +1322,7 @@ async def _broadcast_preview(ctx: Ctx, data: dict) -> Out:
                f"которые получат пользователи.</i>\n\n{shown_body}")
     if data.get("buttons"):
         preview += f"\n\nКнопок: <b>{len(data['buttons'])}/8</b>"
-    out = Out(screen=Screen(preview, buttons), state="ad:bc_confirm", state_data=data)
+    out = Out(screen=Screen(preview, buttons, html_content=True), state="ad:bc_confirm", state_data=data)
     if data.get("media_file_id"):
         caption = body if body else None
         out.media = (data["media_file_id"], data.get("media_type", "photo"), caption)
