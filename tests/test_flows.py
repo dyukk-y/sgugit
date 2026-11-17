@@ -279,7 +279,7 @@ class T(unittest.TestCase):
             s = await Sim().setup()
             await s.register(202)
             out = await s.do(202, command="start")
-            self.assertIn("s:n", datas(out))
+            self.assertNotIn("s:n", datas(out))
             self.assertIn("Дальше", texts(out))
             self.assertIn("Привет!", texts(out))
             self.assertIn("👥 <b>ИС-11</b>", texts(out))
@@ -291,6 +291,7 @@ class T(unittest.TestCase):
             self.assertNotIn("Привет!", texts(out))
             self.assertIn("👥 <b>ИС-11</b>", texts(out))
             self.assertIn("Дальше", texts(out))
+            self.assertNotIn("s:n", datas(out))
 
             # Явная команда /menu может повторно показать короткое вступление.
             out = await s.do(202, command="menu")
