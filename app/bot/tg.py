@@ -182,7 +182,7 @@ class Sender:
             await asyncio.sleep(1.0 / self.rate)
 
     async def _send(self, chat_id: int, screen: Screen) -> None:
-        text = screen.text[:MAX_TEXT]
+        text = screen.text if screen.html_content else screen.text[:MAX_TEXT]
         markup = to_markup(screen.kb) if chat_id > 0 else None
         try:
             if screen.rich:
@@ -280,7 +280,7 @@ async def safe_delete(message: Message | None) -> None:
 
 
 async def _edit(app: App, chat_id: int, message_id: int, scr: Screen) -> bool:
-    text = scr.text[:MAX_TEXT]
+    text = scr.text if scr.html_content else scr.text[:MAX_TEXT]
     markup = to_markup(scr.kb)
     if scr.rich:
         try:
@@ -318,20 +318,21 @@ async def render(app: App, chat_id: int, out: Out, source: Message | None = None
         app.anchors[chat_id] = target
         return
     old = app.anchors.get(chat_id)
+    text = scr.text if scr.html_content else scr.text[:MAX_TEXT]
     try:
         if scr.rich:
             try:
                 msg = await app.bot.send_rich_message(
-                    chat_id=chat_id, rich_message=InputRichMessage(html=schedule_rich_html(scr.text)),
+                    chat_id=chat_id, rich_message=InputRichMessage(html=schedule_rich_html(text)),
                     reply_markup=to_markup(scr.kb))
             except TelegramAPIError as e:
                 log.debug("Rich send недоступен, используем обычный текст: %s", e)
-                msg = await app.bot.send_message(chat_id, scr.text[:MAX_TEXT], reply_markup=to_markup(scr.kb))
+                msg = await app.bot.send_message(chat_id, text, reply_markup=to_markup(scr.kb))
         else:
-            msg = await app.bot.send_message(chat_id, scr.text[:MAX_TEXT], reply_markup=to_markup(scr.kb))
+            msg = await app.bot.send_message(chat_id, text, reply_markup=to_markup(scr.kb))
     except TelegramBadRequest as e:
         if _is(e, "can't parse entities"):
-            msg = await app.bot.send_message(chat_id, strip_tags(scr.text)[:MAX_TEXT], reply_markup=to_markup(scr.kb),
+            msg = await app.bot.send_message(chat_id, strip_tags(text)[:MAX_TEXT], reply_markup=to_markup(scr.kb),
                                              parse_mode=None)
         else:
             raise
