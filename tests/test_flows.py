@@ -130,7 +130,7 @@ class T(unittest.TestCase):
         async def go():
             s = await Sim().setup()
             out = await s.do(100, command="start"); self.assertIn("группу", texts(out))
-            out = await s.do(100, text="ис 11"); self.assertIn("r:g:", " ".join(datas(out)))
+            out = await s.do(100, text="ис 11"); self.assertIn("r:g:", " ".join(d for d in datas(out) if d))
             gd = [d for d in datas(out) if d.startswith("r:g:")][0]
             out = await s.do(100, callback=gd)
             self.assertNotIn("r:redo", datas(out))
