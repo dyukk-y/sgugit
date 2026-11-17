@@ -89,8 +89,8 @@ async def _admin_teacher_card(ctx: Ctx, tid: int, sort: str = "rating", page: in
     t = await ctx.repo.get_teacher(tid)
     if not t:
         return Out(toast="Преподаватель не найден", alert=True)
-    entries, rating_count = await ctx.repo.admin_teacher_rating_entries(tid, 0, 1)
-    reviews, review_count = await ctx.repo.admin_teacher_reviews(tid, 0, 1)
+    _, rating_count = await ctx.repo.admin_teacher_rating_entries(tid, 0, 1)
+    _, review_count = await ctx.repo.admin_teacher_reviews(tid, 0, 1)
     summaries = await ctx.repo.teacher_rating_score_summary(tid)
     criteria = {item["key"]: item["label"] for item in await ctx.repo.teacher_rating_criteria(t["norm"])}
     avg = f"{t['avg']:.2f}/5" if t["avg"] is not None else "—"
