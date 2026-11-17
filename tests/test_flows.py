@@ -281,9 +281,30 @@ class T(unittest.TestCase):
             out = await s.do(202, command="start")
             self.assertIn("s:n", datas(out))
             self.assertIn("Дальше", texts(out))
+            self.assertIn("Привет!", texts(out))
+            self.assertIn("👥 <b>ИС-11</b>", texts(out))
+            self.assertIn("Сегодня", texts(out))
+            self.assertTrue(out.screen.rich)
+
+            # Возврат кнопкой «Меню» показывает только рабочую сводку, без приветствия.
+            out = await s.do(202, callback="m:home")
+            self.assertNotIn("Привет!", texts(out))
+            self.assertIn("👥 <b>ИС-11</b>", texts(out))
+            self.assertIn("Дальше", texts(out))
+
+            # Явная команда /menu может повторно показать короткое вступление.
+            out = await s.do(202, command="menu")
+            self.assertIn("Привет!", texts(out))
 
             group = (await s.repo.search_groups("ИС-11"))[0]
             gid = group["id"]
+            today_hw = await s.repo.add_hw(gid, "История", "2026-10-14", "Подготовить конспект", "2026-10-14", 202, "approved")
+            out = await s.do(202, callback="m:home")
+            self.assertNotIn("Привет!", texts(out))
+            self.assertIn("Задания на сегодня", texts(out))
+            self.assertIn("Подготовить конспект", texts(out))
+            self.assertIn(f"h:l:0", datas(out))
+
             overdue = await s.repo.add_hw(gid, "Математика", None, "Просрочено", "2026-10-13", 202, "approved")
             future = await s.repo.add_hw(gid, "Физика", None, "Скоро", "2026-10-15", 202, "approved")
             await s.repo.toggle_hw_done(202, future)

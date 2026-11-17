@@ -25,40 +25,82 @@ async def _show_add_group_button(ctx: Ctx) -> bool:
     return added is None
 
 
-async def main_menu(ctx: Ctx) -> Screen:
+async def main_menu(ctx: Ctx, show_intro: bool = False) -> Screen:
     if ctx.role == "teacher":
         return await logic_teacher.menu(ctx)
+
     show_add_group = await _show_add_group_button(ctx)
     group = await ctx.group()
-    head = (ctx.repo.setting("interface_main_text") or "<b>Привет! Я бот СГУГиТ 👋</b>\n📅 Расписание на день и неделю\n🎓 Типы занятий и время пар\n📝 Задания группы · 👨‍🏫 Поиск преподавателей\n🔔 Напоминания — настройте под себя\n\n<b>Главное меню</b>") + (f"\n👥 Группа: {fm.esc(group['name'])}" if group else "")
+    lines: list[str] = []
+    if show_intro:
+        intro = (ctx.repo.setting("interface_main_text") or
+                 "<b>Привет! Я бот СГУГиТ 👋</b>\nРасписание, задания и напоминания — всё в одном месте.")
+        lines.extend([intro, ""])
+
+    if group:
+        lines.append(f"👥 <b>{fm.esc(group['name'])}</b> · <b>Главное меню</b>")
+    else:
+        lines.append("<b>Главное меню</b>")
+
+    day_name = tu.DAYS_SHORT[ctx.today.weekday()]
+    lines.append(f"📅 <b>Сегодня · {day_name}, {tu.fmt_date(ctx.today, weekday=False)}</b>")
+
+    lessons_today = []
+    next_lesson = ""
+    if group:
+        lessons_today = await ctx.repo.lessons_day(int(group["id"]), tu.iso(ctx.today), ctx.user.get("subgroup"))
+        active_today = [lesson for lesson in lessons_today if not lesson.get("cancelled")]
+        if active_today:
+            lines.append(f"План на день: <b>{len(active_today)} "
+                         f"{'пара' if len(active_today) == 1 else 'пары' if len(active_today) < 5 else 'пар'}</b>")
+        else:
+            lines.append("Сегодня занятий нет 🎉")
+        next_lesson = await ls.next_lesson_text(
+            ctx, int(group["id"]), ctx.user.get("subgroup"), ensure=False)
+        if next_lesson == "Ближайших занятий в расписании не нашёл.":
+            next_lesson = ""
+        if next_lesson:
+            lines.extend(["", next_lesson])
+        elif not active_today:
+            lines.append("Ближайших занятий пока нет.")
+        elif not next_lesson:
+            lines.append("На сегодня пары закончились. Хорошего отдыха! 🌿")
+
+        if ctx.verified or ctx.is_admin:
+            hw_rows, hw_total = await ctx.repo.hw_today_summary(int(group["id"]), tu.iso(ctx.today), 4)
+            if hw_total:
+                done = await ctx.repo.hw_done_set(ctx.uid, [int(row["id"]) for row in hw_rows])
+                lines.extend(["", f"📝 <b>Задания на сегодня · {hw_total}</b>"])
+                for row in hw_rows:
+                    mark = "✅" if int(row["id"]) in done else "▫️"
+                    task = fm.esc(row["text"])
+                    if len(task) > 105:
+                        task = fm.esc(row["text"][:102]) + "…"
+                    lines.append(f"{mark} <b>{fm.esc(row['subject'])}</b> — {task}")
+                if hw_total > len(hw_rows):
+                    lines.append(f"<i>И ещё {hw_total - len(hw_rows)}. Откройте раздел «Задания».</i>")
+            else:
+                lines.extend(["", "📝 <b>Заданий на сегодня нет</b>"])
+    else:
+        lines.append("Выберите учебную группу, чтобы увидеть расписание и задания.")
+
     if ctx.repo.flag("maintenance"):
-        head += "\n⚠️ Идут технические работы."
+        lines.extend(["", "⚠️ Идут технические работы."])
 
     sponsor = Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
                   url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")
-    next_lesson = ""
-    if group:
-        next_lesson = await ls.next_lesson_text(ctx, int(group["id"]), ctx.user.get("subgroup"), ensure=False)
-        if next_lesson == "Ближайших занятий в расписании не нашёл.":
-            next_lesson = ""
     rows: Kb = [
         [Btn("📅 Расписание", "s:d:today"), Btn("⏭ Ближайшая пара", "s:n")],
         [Btn("📝 Задания", "h:l:0"), Btn("🔔 Уведомления", "me:ntf")],
         [Btn("👥 Другая группа", "me:other")],
         [Btn("🔎 Найти преподавателя", "me:findt")],
     ]
-    if next_lesson:
-        head += "\n\n" + next_lesson
     if ctx.repo.flag("rating_enabled"):
         rows[3].append(Btn("⭐ Оценить преподавателя", "t:l:m:0"))
     if show_add_group:
         rows.append([Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")])
-    # Настройки и спонсор всегда стоят рядом; длинные кнопки на мобильном
-    # автоматически разнесёт to_markup, если они не помещаются в один ряд.
     rows.append([Btn("⚙️ Настройки", "me:menu"), sponsor])
-
-    return Screen(head, rows)
-
+    return Screen("\n".join(lines), rows, rich=True)
 
 async def start(ctx: Ctx) -> Out:
     await ctx.repo.update_user(ctx.uid, private_started=1)
@@ -69,7 +111,7 @@ async def start(ctx: Ctx) -> Out:
         ctx.user["role"] = "student"
     ctx.user["private_started"] = 1
     if ctx.user.get("group_id"):
-        return Out(screen=await main_menu(ctx), clear_state=True)
+        return Out(screen=await main_menu(ctx, show_intro=True), clear_state=True)
     welcome_rows: Kb = []
     if await _show_add_group_button(ctx):
         welcome_rows.append([Btn("➕ В чат", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")])

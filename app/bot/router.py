@@ -233,7 +233,7 @@ async def handle_command(ctx: Ctx, name: str, args: str = "") -> Out | None:
     if not ctx.registered and not ctx.is_admin:
         return await logic_user.start(ctx)
     if name in ("menu", "home"):
-        return Out(screen=await logic_user.main_menu(ctx), clear_state=True) if ctx.registered else await logic_user.start(ctx)
+        return Out(screen=await logic_user.main_menu(ctx, show_intro=True), clear_state=True) if ctx.registered else await logic_user.start(ctx)
     if name == "ping" and ctx.is_admin:
         return Out(screen=Screen(f"🏓 Бот отвечает. Ваша роль: {ctx.role}. Время: {ctx.now:%d.%m.%Y %H:%M}."), clear_state=True)
     if name == "admin":
