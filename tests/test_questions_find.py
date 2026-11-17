@@ -100,6 +100,18 @@ class T(unittest.TestCase):
             self.assertEqual(await qs.mark_answers(-9, 21, "у меня 2 пары", None), 0)
             self.assertEqual(await qs.mark_answers(-9, 21, "в 215", None), 1)
             self.assertEqual(await qs.due_answers(t0 + 99999, NOW), [])
+            # Одновременные одинаковые вопросы не создают дубли.
+            chat2 = await r.upsert_chat(-10, "ИС-11 второй", g, 1)
+            await r.update_chat(-10, smart_mode="active")
+            chat2 = await r.get_chat(-10)
+            results = await asyncio.gather(
+                qs.consider(chat2, 31, 301, "какие пары завтра?", t0, NOW),
+                qs.consider(chat2, 32, 302, "какие пары завтра?", t0, NOW),
+            )
+            self.assertEqual(sum(results), 1)
+            self.assertEqual(len(await r.pending_for_chat(-10)), 1)
+            await r.cancel_pending_for_chat(-10)
+            self.assertEqual(len(await r.pending_for_chat(-10)), 0)
             # режим mention/keywords вопросы не копит
             await r.update_chat(-9, smart_mode="mention"); chat = await r.get_chat(-9)
             self.assertFalse(await qs.consider(chat, 30, 300, "какие пары завтра?", t0, NOW))
