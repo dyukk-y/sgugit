@@ -970,6 +970,17 @@ class Repo:
         return await self.db.fetchall(
             "SELECT * FROM homework WHERE group_id = ? AND status = 'approved' AND lesson_day = ? ORDER BY id", gid, day)
 
+    async def hw_today_summary(self, gid: int, day: str, limit: int = 4) -> tuple[list[dict], int]:
+        """Задания, привязанные к сегодняшним парам или имеющие срок сегодня."""
+        where = ("group_id = ? AND status = 'approved' "
+                 "AND (lesson_day = ? OR due_day = ?)")
+        total = int(await self.db.scalar(f"SELECT COUNT(*) FROM homework WHERE {where}", gid, day, day) or 0)
+        rows = await self.db.fetchall(
+            f"SELECT * FROM homework WHERE {where} "
+            "ORDER BY CASE WHEN due_day = ? THEN 0 ELSE 1 END, id LIMIT ?",
+            gid, day, day, day, max(1, min(int(limit), 10)))
+        return rows, total
+
     async def hw_counts_for_day(self, gid: int, day: str) -> dict[str, int]:
         out: dict[str, int] = {}
         for h in await self.hw_for_day(gid, day):
