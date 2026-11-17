@@ -46,8 +46,8 @@ def _user_label(u: dict) -> str:
 
 
 def _rating_author(row: dict) -> str:
-    return str(row.get("fio") or row.get("tg_name") or
-               (("@" + row["username"]) if row.get("username") else row.get("user_id") or row.get("uid") or "неизвестен"))
+    return str(("@" + row["username"]) if row.get("username") else
+               row.get("tg_name") or row.get("user_id") or row.get("uid") or "неизвестен")
 
 
 async def _admin_rating_list_screen(ctx: Ctx, page: int = 0, sort: str = "rating") -> Screen:
