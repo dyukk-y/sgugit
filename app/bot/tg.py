@@ -984,10 +984,10 @@ def build_router(app: App) -> Router:
             return
         if approved:
             action_text = "отменено" if change["action"] == "cancel" else ("перенесено" if change["action"] == "move" else "добавлено")
-            text = (f"✅ Изменение подтверждено: занятие «{fm.esc(change['subject'])}» "
+            text = (f"✅ Предложение одобрено администрацией: занятие «{fm.esc(change['subject'])}» "
                     f"{tu.fmt_date(tu.parse_iso(change['day']))}, пара №{change['lesson_num']} — {action_text}.\n"
-                    f"<i>По информации от {fm.esc(change['author_label'])}.</i> "
-                    "Оно учтено в расписании группы.")
+                    f"<i>Источник: {fm.esc(change['author_label'])}.</i> "
+                    "Решение зафиксировано. Само расписание на сайте СГУГиТ автоматически не изменяется.")
         else:
             text = "Изменение отклонено. Расписание не менялось."
         try:
