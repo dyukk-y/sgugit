@@ -924,7 +924,7 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             "Удалить только этот ответ на отзыв?",
             [[Btn("🗑 Да, удалить", f"ad:rrpd:{tid}:{review_id}:{reply_id}:{page}:y"),
               Btn("Отмена", f"ad:rrp:{tid}:{review_id}:{page}")]]))
-    if act == "rrpd" and len(parts) >= 7 and all(parts[i].isdigit() for i in (1, 2, 3, 4)):
+    if act == "rrpd" and len(parts) >= 6 and all(parts[i].isdigit() for i in (1, 2, 3, 4)):
         if not _need(ctx, "teachers"):
             return _deny()
         tid, review_id, reply_id = int(parts[1]), int(parts[2]), int(parts[3])
@@ -1266,8 +1266,12 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
         if not found:
             return Out(screen=Screen("Не нашёл преподавателей. Попробуйте другую фамилию.", [nav(f"ad:rt:{sort}:{page}")]),
                        state="ad:teacher_search", state_data=data)
-        kb = [[Btn(f"{t['name'][:25]} · {'🙈' if t['hidden'] else ('⭐ ' + (f\"{t['avg']:.1f}\" if t['avg'] is not None else '—'))}",
-                   f"ad:rtc:{t['id']}:{sort}:{page}")] for t in found]
+        kb = []
+        for t in found:
+            rating = f"⭐ {t['avg']:.1f}" if t["avg"] is not None else "нет оценок"
+            status = "🙈 " if t["hidden"] else ""
+            kb.append([Btn(f"{status}{t['name'][:24]} · {rating}",
+                           f"ad:rtc:{t['id']}:{sort}:{page}")])
         kb.append(nav(f"ad:rt:{sort}:{page}"))
         return Out(screen=Screen(f"Найдено преподавателей: {total}. Выберите нужного:", kb), clear_state=True)
     if state == "ad:bc_group" and ctx.can("broadcast"):
