@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime
 
 from app import timeutil as tu
@@ -13,12 +14,12 @@ from app.services.nlu import Intent, detect_intent, find_subject, looks_like_que
 
 WAIT_INTENTS = {"day", "first", "last", "count", "room", "teacher", "find_teacher", "when_subject", "subject_day", "next",
                 "exam", "week", "hw"}
-ANSWER_SIGNAL = __import__("re").compile(
-    r"\\b(?:да|нет|будет|будут|не будет|не состоится|состоится|отменили|отменят|перенесли|перенесут|"
-    r"заменили|заменят)\\b|\\b(?:ауд(?:итория)?|каб(?:инет)?)\\.?\\s*\\d+\\b|"
-    r"\\bв\\s+\\d{1,4}(?:[:.]\\d{2})?\\b|\\b\\d{1,2}[:.]\\d{2}\\b|"
-    r"\\b(?:первая|вторая|третья|четвертая|четвёртая|пятая|шестая)\\s+пара\\b",
-    __import__("re").IGNORECASE,
+ANSWER_SIGNAL = re.compile(
+    r"\b(?:да|нет|будет|будут|не будет|не состоится|состоится|отменили|отменят|перенесли|перенесут|"
+    r"заменили|заменят)\b|\b(?:ауд(?:итория)?|каб(?:инет)?)\.?\s*\d+\b|"
+    r"\bв\s+\d{1,4}(?:[:.]\d{2})?\b|\b\d{1,2}[:.]\d{2}\b|"
+    r"\b(?:первая|вторая|третья|четвертая|четвёртая|пятая|шестая)\s+пара\b",
+    re.IGNORECASE,
 )
 MAX_PENDING_PER_CHAT = 5
 
