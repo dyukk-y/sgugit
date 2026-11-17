@@ -1310,13 +1310,18 @@ async def _broadcast_preview(ctx: Ctx, data: dict) -> Out:
         [Btn("💬 Кнопка поддержки", "ad:bcb:support"), Btn("⭐ Кнопка рейтинга", "ad:bcb:rating")],
         [Btn(f"✅ Отправить ({count})", "ad:bcy"), Btn("❌ Отмена", "ad:bc")],
     ])
+    shown_body = ("📷 Фото и подпись будут отправлены одним сообщением; ниже — клавиатура получателей."
+                  if data.get("media_file_id") else body)
     preview = (f"<b>👁 Предпросмотр рассылки</b> · {count} получателей\n"
                f"{media}<i>Ниже показано сообщение в том же HTML-формате и с теми же кнопками, "
-               f"которые получат пользователи.</i>\n\n{body}")
+               f"которые получат пользователи.</i>\n\n{shown_body}")
     if data.get("buttons"):
         preview += f"\n\nКнопок: <b>{len(data['buttons'])}/8</b>"
-    return Out(screen=Screen(preview[:3900], buttons),
-               state="ad:bc_confirm", state_data=data)
+    out = Out(screen=Screen(preview, buttons), state="ad:bc_confirm", state_data=data)
+    if data.get("media_file_id"):
+        caption = body[:900] if body else None
+        out.media = (data["media_file_id"], data.get("media_type", "photo"), caption)
+    return out
 
 
 async def _recipients(ctx: Ctx, data: dict) -> list[int]:
