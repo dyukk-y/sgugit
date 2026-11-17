@@ -552,10 +552,14 @@ class AntiSpamMiddleware(BaseMiddleware):
 
         q.append(now)
         if len(self.events) > 20000:
-            # Очистка ограничивает расход памяти на очень больших ботах.
+            # Очистка всех связанных индексов ограничивает память при большом числе чатов.
             self.events.clear()
             self.repeats.clear()
             self.warned_at.clear()
+            self.strike_at.clear()
+            self.muted_until.clear()
+            self.strikes.clear()
+            self.last_signature.clear()
         return await handler(event, data)
 
     async def _ack(self, event, key, now: float, remaining: float, warn: bool = False) -> None:
