@@ -90,13 +90,13 @@ async def main_menu(ctx: Ctx, show_intro: bool = False) -> Screen:
     sponsor = Btn(ctx.repo.setting("sponsor_button_title") or "💎 Спонсор",
                   url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")
     rows: Kb = [
-        [Btn("📅 Расписание", "s:d:today"), Btn("⏭ Ближайшая пара", "s:n")],
+        [Btn("📅 Расписание", "s:d:today")],
         [Btn("📝 Задания", "h:l:0"), Btn("🔔 Уведомления", "me:ntf")],
         [Btn("👥 Другая группа", "me:other")],
         [Btn("🔎 Найти преподавателя", "me:findt")],
     ]
     if ctx.repo.flag("rating_enabled"):
-        rows[3].append(Btn("⭐ Оценить преподавателя", "t:l:m:0"))
+        rows.append([Btn("⭐ Оценить преподавателя", "t:l:m:0")])
     if show_add_group:
         rows.append([Btn("➕ Добавить в группу", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")])
     rows.append([Btn("⚙️ Настройки", "me:menu"), sponsor])
