@@ -89,9 +89,15 @@ class T(unittest.TestCase):
             res = await qs.due_answers(t0 + 3600 + 5, NOW)
             self.assertEqual(len(res), 1); p, scr = res[0]
             self.assertEqual(p["message_id"], 100); self.assertIn("Пока никто не ответил", scr.text); self.assertIn("215", scr.text); self.assertIn("Крылов А. А.", scr.text)
-            self.assertEqual(await qs.due_answers(t0 + 9999, NOW), [])                          # повторно не отвечает
-            # ответ человека снимает вопрос
+            # Вопрос взят в работу, но повторно не выдаётся до истечения аренды.
+            self.assertEqual(await qs.due_answers(t0 + 3705, NOW), [])
+            recovered = await qs.due_answers(t0 + 3906, NOW)  # восстановление после условного падения процесса
+            self.assertEqual(len(recovered), 1)
+            self.assertTrue(await r.finish_pending(p["id"], True))
+            self.assertEqual(await qs.due_answers(t0 + 9999, NOW), [])  # успешно доставленный ответ не дублируется
+            # Посторонняя реплика с числом не должна снимать общий вопрос.
             self.assertTrue(await qs.consider(chat, 20, 200, "где завтра первая пара?", t0, NOW))
+            self.assertEqual(await qs.mark_answers(-9, 21, "у меня 2 пары", None), 0)
             self.assertEqual(await qs.mark_answers(-9, 21, "в 215", None), 1)
             self.assertEqual(await qs.due_answers(t0 + 99999, NOW), [])
             # режим mention/keywords вопросы не копит
