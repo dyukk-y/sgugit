@@ -1032,6 +1032,7 @@ def build_router(app: App) -> Router:
             chat = await app.repo.get_chat(event.chat.id)
             if chat:
                 await app.repo.update_chat(event.chat.id, active=0)
+                await app.repo.cancel_pending_for_chat(event.chat.id)
                 detail = f"chat_id={event.chat.id};title={(event.chat.title or chat.get('title') or 'Без названия')[:80]};by={event.from_user.id if event.from_user else 'unknown'}"
                 try:
                     await app.repo.db.execute(
