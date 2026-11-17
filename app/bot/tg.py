@@ -1231,6 +1231,22 @@ def build_router(app: App) -> Router:
         if not chat or not chat.get("group_id"):
             return
 
+        text = message.text
+        mention = re.compile(rf"(?<![\\w@])@{re.escape(app.username)}(?![\\w])", re.IGNORECASE)
+        addressed = bool(mention.search(text))
+        rt = message.reply_to_message
+        if rt is not None and rt.from_user is not None and rt.from_user.id == app.bot.id:
+            addressed = True
+        if app.repo.flag("group_require_start"):
+            user_row = await app.repo.get_user(message.from_user.id)
+            if not user_row or not user_row.get("private_started"):
+                if addressed:
+                    link = f"https://t.me/{app.username}?start=group_access"
+                    await _reply_group(app, message,
+                        "Чтобы задавать вопросы боту в группе, сначала откройте его в личных сообщениях и нажмите /start.\\n"
+                        f"👉 <a href=\\\"{link}\\\">Запустить бота</a>", chat)
+                return
+
         # Домашние задания распознаются независимо от режима умных ответов.
         # Запись создаётся только при явном маркере задания и совпадении предмета с расписанием группы.
         captured = await capture_group_assignment(
@@ -1252,19 +1268,6 @@ def build_router(app: App) -> Router:
         # Explicit schedule cancellations/moves are analyzed independently of smart replies.
         # Ordinary Q&A remains disabled when smart_mode is off.
 
-        mention = re.compile(rf"(?<![\w@])@{re.escape(app.username)}(?![\w])", re.IGNORECASE)
-        text = message.text
-        addressed = bool(mention.search(text))
-        rt = message.reply_to_message
-        if rt is not None and rt.from_user is not None and rt.from_user.id == app.bot.id:
-            addressed = True
-        user_row = await app.repo.get_user(message.from_user.id)
-        if addressed and app.repo.flag("group_require_start") and (not user_row or not user_row.get("private_started")):
-            link = f"https://t.me/{app.username}?start=group_access"
-            await _reply_group(app, message,
-                "Чтобы задавать вопросы боту в группе, сначала откройте его в личных сообщениях и нажмите /start.\n"
-                f"👉 <a href=\"{link}\">Запустить бота</a>", chat)
-            return
         active = chat["smart_mode"] == "active" and app.questions is not None
         if active:  # ответ человека может закрыть ожидающий вопрос
             await app.questions.mark_answers(message.chat.id, message.from_user.id, text,
