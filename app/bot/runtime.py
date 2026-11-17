@@ -13,7 +13,8 @@ from app.db.repo import Repo
 async def process(repo: Repo, cfg: Settings, uid: int, username: str | None, name: str | None, *,
                   callback: str | None = None, text: str | None = None, command: str | None = None,
                   args: str = "", document: tuple[str, bytes] | None = None, attachment_file_id: str | None = None,
-                  attachment_kind: str | None = None, attachment_caption: str = "",
+                  attachment_kind: str | None = None, attachment_caption: str = "", attachment_caption_html: str | None = None,
+                  text_html: str | None = None,
                   services: dict[str, Any] | None = None, bot_username: str = "bot",
                   now: datetime | None = None) -> Out:
     user = await repo.touch_user(uid, username, name)
@@ -34,9 +35,9 @@ async def process(repo: Repo, cfg: Settings, uid: int, username: str | None, nam
     elif document is not None:
         out = await router.handle_document(ctx, document[0], document[1], attachment_file_id)
     elif attachment_file_id and attachment_kind == "photo":
-        out = await router.handle_photo(ctx, attachment_file_id, attachment_caption)
+        out = await router.handle_photo(ctx, attachment_file_id, attachment_caption, attachment_caption_html)
     elif text is not None:
-        out = await router.handle_text(ctx, text)
+        out = await router.handle_text(ctx, text, text_html)
     else:
         out = Out()
     if out is None:
