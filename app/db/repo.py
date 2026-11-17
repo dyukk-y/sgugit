@@ -643,8 +643,8 @@ class Repo:
             where += " AND t.norm LIKE ?"
             params.append("%" + q + "%")
         total = int(await self.db.scalar(f"SELECT COUNT(*) FROM teachers t WHERE {where}", *params) or 0)
-        order = ("t.name COLLATE NOCASE ASC" if sort == "name" else
-                 "CASE WHEN r.avg IS NULL THEN 1 ELSE 0 END, r.avg DESC, COALESCE(r.cnt, 0) DESC, t.name COLLATE NOCASE ASC")
+        order = ("t.name ASC" if sort == "name" else
+                 "CASE WHEN r.avg IS NULL THEN 1 ELSE 0 END, r.avg DESC, COALESCE(r.cnt, 0) DESC, t.name ASC")
         rows = await self.db.fetchall(
             "SELECT t.id, t.name, t.hidden, COALESCE(r.cnt, 0) AS cnt, r.avg, "
             "COALESCE(s.score_users, 0) AS score_users, COALESCE(s.score_count, 0) AS score_count, "
