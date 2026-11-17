@@ -321,9 +321,32 @@ class T(unittest.TestCase):
             out = await s.do(100, callback="t:l:m:0"); self.assertIn("недоступен", out.toast)
             out = await s.do(100, command="menu"); self.assertNotIn("t:l:m:0", datas(out))
             await s.do(1, callback="ad:rte")
-            out = await s.do(1, callback=f"ad:rth:{tid}"); self.assertIn("скрыт", texts(out))
+            out = await s.do(1, callback="ad:rt")
+            self.assertIn("Иванов", texts(out))
+            self.assertIn(f"ad:rtc:{tid}:rating:0", datas(out))
+            out = await s.do(1, callback=f"ad:rtc:{tid}:rating:0")
+            self.assertIn("Оценки по видам занятий", texts(out))
+            self.assertIn("4.00/5", texts(out))
+            out = await s.do(1, callback=f"ad:rae:{tid}:0")
+            self.assertIn("ID <code>100</code>", texts(out))
+            await s.do(1, callback=f"ad:radc:{tid}:100:0")
+            out = await s.do(1, callback=f"ad:radel:{tid}:100:0:y")
+            self.assertIn("Оценка удалена", out.toast)
+            self.assertIsNone(await s.repo.my_rating(100, tid))
+            out = await s.do(1, callback=f"ad:rrp:{tid}:{review_id}:0")
+            self.assertIn("Согласен", texts(out))
+            reply_id = (await s.repo.admin_teacher_review_replies(review_id, tid))[0]["id"]
+            await s.do(1, callback=f"ad:rrpc:{tid}:{review_id}:{reply_id}:0")
+            out = await s.do(1, callback=f"ad:rrpd:{tid}:{review_id}:{reply_id}:0:y")
+            self.assertIn("Ответ удалён", out.toast)
+            await s.do(1, callback=f"ad:rrdc:{tid}:{review_id}:0")
+            out = await s.do(1, callback=f"ad:rrdel:{tid}:{review_id}:0:y")
+            self.assertIn("Отзыв и связанные данные удалены", out.toast)
+            self.assertEqual(await s.repo.admin_teacher_reviews(tid, 0, 5), ([], 0))
+            self.assertEqual(await s.repo.db.scalar("SELECT COUNT(*) FROM teacher_rating_comments WHERE teacher_id = ?", tid), 0)
             out = await s.do(100, callback=f"t:v:{tid}:m:0"); self.assertTrue(out.toast)
-            out = await s.do(1, callback=f"ad:rtr:{tid}:y"); self.assertIn("Удалено", texts(out))
+            out = await s.do(1, callback=f"ad:rtr:{tid}:y")
+            self.assertIn("отключён", (out.toast or "").lower())
             await s.db.close()
         run(go())
 
@@ -405,8 +428,10 @@ class T(unittest.TestCase):
             out = await s.do(100, callback="hd:ml")
             self.assertIn("отключ", (out.toast or "").lower())
             # экспорт
-            for kind in ("users", "ratings", "homework"):
+            for kind in ("users", "homework"):
                 out = await s.do(1, callback=f"ad:ex:{kind}"); self.assertTrue(out.file[1][:2] == b"PK")
+            out = await s.do(1, callback="ad:ex:ratings")
+            self.assertIsNone(out.file)  # рейтинг управляется только через раздел «Рейтинг»
             # бэкап и восстановление
             out = await s.do(1, callback="ad:bkn"); name, blob, _ = out.file; self.assertTrue(name.endswith(".json.gz"))
             await s.do(1, callback="ad:bkr"); out = await s.do(1, document=("b.json.gz", b"junk")); self.assertIn("не похож", texts(out))
