@@ -81,9 +81,16 @@ async def apply(repo: Repo, chat: dict, user: dict | None, act: str) -> str | No
     if act == "grp":
         if not user or not user.get("group_id"):
             return "Сначала зарегистрируйтесь в боте и выберите группу"
-        await repo.update_chat(cid, group_id=user["group_id"])
+        if chat.get("group_id") != user["group_id"]:
+            await repo.update_chat(cid, group_id=user["group_id"])
+            # Ожидающие вопросы относятся к прежней группе и не должны получить
+            # ответ уже по расписанию другой группы.
+            await repo.cancel_pending_for_chat(cid)
     elif act == "sm":
-        await repo.update_chat(cid, smart_mode=_next(SMART_MODES, chat["smart_mode"]))
+        mode = _next(SMART_MODES, chat["smart_mode"])
+        await repo.update_chat(cid, smart_mode=mode)
+        if mode != "active":
+            await repo.cancel_pending_for_chat(cid)
     elif act == "wt":
         await repo.update_chat(cid, wait_min=_next(WAIT_VALUES, chat.get("wait_min", 60)))
     elif act == "ad":
