@@ -274,6 +274,47 @@ class T(unittest.TestCase):
             await s.db.close()
         run(go())
 
+    def test_admin_can_restrict_homework_creation_without_banning_account(self):
+        async def go():
+            s = await Sim().setup()
+            await s.register(100)
+            out = await s.do(1, callback="ad:hw")
+            self.assertIn("статистика", texts(out).lower())
+            self.assertNotIn("на проверке", texts(out).lower())
+            self.assertIn("ad:hwfind", datas(out))
+            out = await s.do(1, callback="ad:hwfind")
+            self.assertEqual(out.state, "ad:hw_user_search")
+            out = await s.do(1, text="Смирнова Анна")
+            self.assertIn("Создание заданий: разрешено", texts(out))
+            self.assertIn("ad:hwb:100", datas(out))
+
+            out = await s.do(1, callback="ad:hwb:100")
+            self.assertIn("Создание заданий: запрещено", texts(out))
+            user = await s.repo.get_user(100)
+            self.assertEqual(user["hw_blocked"], 1)
+            self.assertEqual(user["banned"], 0)
+
+            blocked = await s.do(100, callback="h:add:0")
+            self.assertIn("запретила", texts(blocked).lower())
+            blocked = await s.do(100, text="дз математика №15-20 к пятнице")
+            self.assertIn("запретила", texts(blocked).lower())
+
+            out = await s.do(1, callback="ad:hwblocked:0")
+            self.assertIn("User100", texts(out))
+            self.assertIn("ad:hwuser:100", datas(out))
+            out = await s.do(1, callback="ad:hwuser:100")
+            self.assertIn("ad:hwb:100", datas(out))
+
+            await s.do(1, callback="ad:hwb:100")
+            draft = await s.do(100, text="дз математика №15-20 к пятнице")
+            self.assertIn("h:save", datas(draft))
+            await s.do(1, callback="ad:hwb:100")
+            blocked = await s.do(100, callback="h:save")
+            self.assertIn("запретила", texts(blocked).lower())
+            self.assertEqual(await s.repo.count("homework", "author_id = ?", 100), 0)
+            await s.db.close()
+        run(go())
+
     def test_teachers_rating(self):
         async def go():
             s = await Sim().setup(); await s.register(100); await s.register(101, "Орлова Ольга Игоревна")
