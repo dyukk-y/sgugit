@@ -38,7 +38,7 @@ async def main_menu(ctx: Ctx) -> Screen:
                   url=ctx.repo.setting("sponsor_button_url") or "https://t.me/theyasha_bot?start=ref_6702947726")
     next_lesson = ""
     if group:
-        next_lesson = await ls.next_lesson_text(ctx, int(group["id"]), ctx.user.get("subgroup"))
+        next_lesson = await ls.next_lesson_text(ctx, int(group["id"]), ctx.user.get("subgroup"), ensure=False)
         if next_lesson == "Ближайших занятий в расписании не нашёл.":
             next_lesson = ""
     rows: Kb = [
