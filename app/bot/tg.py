@@ -1524,6 +1524,14 @@ async def answer_due_questions(app: App) -> int:
             await app.repo.finish_pending(p["id"], False, retry_at)
             log.warning("Лимит Telegram в чате %s; повтор вопроса отложен", p["chat_id"])
             continue
+        except TelegramBadRequest as e:
+            if _is(e, "chat not found", "bot was kicked", "bot is not a member", "peer_id_invalid"):
+                await app.repo.update_chat(p["chat_id"], active=0)
+                await app.repo.finish_pending(p["id"], True)
+            else:
+                await app.repo.finish_pending(p["id"], False, tu.now_ts() + 60)
+                log.warning("Временная ошибка ответа в чате %s; повторим позже: %s", p["chat_id"], e)
+            continue
         except TelegramAPIError as e:
             await app.repo.finish_pending(p["id"], False, tu.now_ts() + 60)
             log.warning("Ответ на вопрос в чате %s не отправлен; повторим позже: %s", p["chat_id"], e)
