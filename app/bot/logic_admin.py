@@ -1312,7 +1312,12 @@ async def _broadcast_preview(ctx: Ctx, data: dict) -> Out:
     ])
     shown_body = ("📷 Фото и подпись будут отправлены одним сообщением; ниже — клавиатура получателей."
                   if data.get("media_file_id") else body)
-    preview = (f"<b>👁 Предпросмотр рассылки</b> · {count} получателей\n"
+    if data.get("aud") == "grp":
+        group = await ctx.repo.get_group(int(data.get("gid") or 0))
+        audience = f"Группа: {fm.esc(group['name'])}" if group else "Группа не найдена"
+    else:
+        audience = "Аудитория: все пользователи"
+    preview = (f"<b>👁 Предпросмотр рассылки</b>\n{audience}\nПолучателей: <b>{count}</b>\n"
                f"{media}<i>Ниже показано сообщение в том же HTML-формате и с теми же кнопками, "
                f"которые получат пользователи.</i>\n\n{shown_body}")
     if data.get("buttons"):
