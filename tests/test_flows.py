@@ -274,6 +274,34 @@ class T(unittest.TestCase):
             await s.db.close()
         run(go())
 
+    def test_main_menu_shows_next_lesson_and_homework_filters(self):
+        async def go():
+            s = await Sim().setup()
+            await s.register(202)
+            out = await s.do(202, command="start")
+            self.assertIn("Ближайшая пара", " ".join(datas(out)))
+            self.assertIn("Дальше", texts(out))
+
+            group = await s.repo.get_group("ИС-11")
+            gid = group["id"]
+            overdue = await s.repo.add_hw(gid, "Математика", None, "Просрочено", "2026-10-13", 202, "approved")
+            future = await s.repo.add_hw(gid, "Физика", None, "Скоро", "2026-10-15", 202, "approved")
+            await s.repo.toggle_hw_done(202, future)
+
+            out = await s.do(202, callback="h:l:0")
+            self.assertIn("Просрочено и не отмечено выполненным: <b>1</b>", texts(out))
+            self.assertIn("просрочено", texts(out).lower())
+            self.assertIn("h:l:0:done", datas(out))
+            self.assertIn("h:l:0:all", datas(out))
+            self.assertIn(f"h:v:{overdue}:active", datas(out))
+
+            out = await s.do(202, callback=f"h:v:{future}:done")
+            self.assertIn(f"h:l:0:done", datas(out))
+            out = await s.do(202, callback=f"h:dn:{future}:done")
+            self.assertIn(f"h:l:0:done", datas(out))
+            await s.db.close()
+        run(go())
+
     def test_admin_can_restrict_homework_creation_without_banning_account(self):
         async def go():
             s = await Sim().setup()
