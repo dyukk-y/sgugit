@@ -29,11 +29,16 @@ def _can_see(ctx: Ctx, hw: dict) -> bool:
     return hw["status"] == "approved" or (hw["status"] == "pending" and hw["author_id"] == ctx.uid)
 
 
-def _due_label(hw: dict) -> str:
-    return f"до {tu.fmt_dm(date.fromisoformat(hw['due_day']))}" if hw.get("due_day") else "без срока"
+def _due_label(hw: dict, today: date | None = None) -> str:
+    if not hw.get("due_day"):
+        return "без срока"
+    due = date.fromisoformat(hw["due_day"])
+    if today and due < today:
+        return f"просрочено · {tu.fmt_dm(due)}"
+    return f"до {tu.fmt_dm(due)}"
 
 
-async def list_screen(ctx: Ctx, page: int = 0) -> Screen:
+async def list_screen(ctx: Ctx, page: int = 0, mode: str = "active") -> Screen:
     gid = ctx.user.get("group_id")
     if not gid:
         return Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]])
@@ -43,18 +48,37 @@ async def list_screen(ctx: Ctx, page: int = 0) -> Screen:
                           [[Btn("👤 Профиль", "me:prof")], [home_btn()]])
         return Screen("Чтобы открыть этот раздел, укажите ФИО и дождитесь подтверждения. Для расписания ФИО не требуется.",
                       [[Btn("✍️ Указать ФИО", "r:redo")], [home_btn()]])
-    rows, total = await ctx.repo.list_hw(gid, tu.iso(ctx.today), page * SIZE, SIZE)
+    if mode not in ("active", "done", "all"):
+        mode = "active"
+    rows, total = await ctx.repo.list_hw(gid, tu.iso(ctx.today), page * SIZE, SIZE, ctx.uid, mode)
     done = await ctx.repo.hw_done_set(ctx.uid, [r["id"] for r in rows])
-    kb: Kb = []
+    counts = await ctx.repo.hw_list_counts(gid, ctx.uid, tu.iso(ctx.today))
+    kb: Kb = [
+        [Btn(f"⏳ К выполнению · {counts['active']}", "h:l:0:active"),
+         Btn(f"✅ Выполнено · {counts['done']}", "h:l:0:done")],
+        [Btn(f"📋 Все · {counts['total']}", "h:l:0:all")],
+    ]
     lines = ["<b>Задания группы</b>"]
+    if counts["overdue"]:
+        lines.append(f"⚠️ Просрочено и не отмечено выполненным: <b>{counts['overdue']}</b>")
     if not rows:
-        lines.append("\nПока заданий нет.")
+        empty = {"active": "Все задания выполнены 🎉", "done": "Пока нет выполненных заданий.",
+                 "all": "Пока заданий нет."}[mode]
+        lines.append("\\n" + empty)
     for r in rows:
-        mark = "✅ " if r["id"] in done else ""
-        kb.append([Btn(f"{mark}{r['subject'][:22]} · {_due_label(r)}", f"h:v:{r['id']}")])
+        is_done = r["id"] in done
+        overdue = bool(r.get("due_day") and r["due_day"] < tu.iso(ctx.today) and not is_done)
+        mark = "⚠️ " if overdue else ("✅ " if is_done else "⏳ ")
+        kb.append([Btn(f"{mark}{r['subject'][:18]} · {_due_label(r, ctx.today)}", f"h:v:{r['id']}")])
     if total > SIZE:
-        from app.bot.core import pager
-        kb.append(pager("h:l", page, total, SIZE))
+        pages = (total + SIZE - 1) // SIZE
+        page_row: list[Btn] = []
+        if page > 0:
+            page_row.append(Btn("◀", f"h:l:{page - 1}:{mode}"))
+        page_row.append(Btn(f"{page + 1}/{pages}", "noop"))
+        if page + 1 < pages:
+            page_row.append(Btn("▶", f"h:l:{page + 1}:{mode}"))
+        kb.append(page_row)
     row = []
     if ctx.verified:
         row.append(Btn("➕ Добавить", "h:add:0"))
@@ -109,7 +133,7 @@ async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0") -> Out:
         return Out(screen=prompt)
     if not _can_see(ctx, hw):
         return Out(toast="Задание недоступно", alert=True)
-    lines = [f"📚 <b>{fm.esc(hw['subject'])}</b>", f"Срок: {_due_label(hw)}"]
+    lines = [f"📚 <b>{fm.esc(hw['subject'])}</b>", f"Срок: {_due_label(hw, ctx.today)}"]
     if hw.get("lesson_day"):
         lines.append(f"К паре: {tu.fmt_date(tu.parse_iso(hw['lesson_day']))}")
     if ctx.repo.flag("hw_show_author"):
@@ -340,7 +364,8 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
         return Out(screen=prompt)
     if act == "l":
         page = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-        return Out(screen=await list_screen(ctx, page), clear_state=True)
+        mode = parts[2] if len(parts) > 2 else "active"
+        return Out(screen=await list_screen(ctx, page, mode), clear_state=True)
     if act == "d" and len(parts) > 1:
         return Out(screen=await day_list_screen(ctx, parts[1]))
     if act == "v" and len(parts) > 1 and parts[1].isdigit():
