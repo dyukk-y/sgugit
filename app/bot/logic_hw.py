@@ -64,7 +64,7 @@ async def list_screen(ctx: Ctx, page: int = 0, mode: str = "active") -> Screen:
     if not rows:
         empty = {"active": "Все задания выполнены 🎉", "done": "Пока нет выполненных заданий.",
                  "all": "Пока заданий нет."}[mode]
-        lines.append("\\n" + empty)
+        lines.append("\n" + empty)
     for r in rows:
         is_done = r["id"] in done
         overdue = bool(r.get("due_day") and r["due_day"] < tu.iso(ctx.today) and not is_done)
@@ -106,7 +106,7 @@ async def day_list_screen(ctx: Ctx, day: str) -> Screen:
     kb: Kb = []
     for r in rows:
         txt = r["text"] if len(r["text"]) <= 120 else r["text"][:117] + "…"
-        lines.append(f"• <b>{fm.esc(r['subject'])}</b> ({_due_label(r)}): {fm.esc(txt)}")
+        lines.append(f"• <b>{fm.esc(r['subject'])}</b> ({_due_label(r, ctx.today)}): {fm.esc(txt)}")
         kb.append([Btn(f"{r['subject'][:22]} · открыть", f"h:v:{r['id']}")])
     if not rows:
         lines.append("\nПока ничего нет.")
@@ -143,18 +143,18 @@ async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0:active") -> Out:
     if hw.get("media_file_id"):
         lines.append("\n📎 Прикреплено: " + fm.esc("фото" if hw.get("media_type") == "photo" else (hw.get("media_name") or "файл")))
     kb: Kb = []
+    back_mode = back.split(":")[-1] if back.split(":")[-1] in ("active", "done", "all") else "active"
     if hw["status"] == "pending":
         lines.insert(1, "⏳ <i>Старое задание ещё не опубликовано</i>")
         if can_moderate(ctx, hw):
             kb.append([Btn("✅ Одобрить", f"h:ok:{hid}"), Btn("❌ Отклонить", f"h:no:{hid}")])
     elif hw["status"] == "approved":
         done = await ctx.repo.hw_done_set(ctx.uid, [hid])
-        mode = back.split(":")[-1] if back.split(":")[-1] in ("active", "done", "all") else "active"
-        kb.append([Btn("↩ Не сделано" if hid in done else "✅ Сделано", f"h:dn:{hid}:{mode}")])
+        kb.append([Btn("↩ Не сделано" if hid in done else "✅ Сделано", f"h:dn:{hid}:{back_mode}")])
     if hw["author_id"] == ctx.uid or can_moderate(ctx, hw):
         kb.append([Btn("✏️ Текст", f"h:edit:{hid}"), Btn("📚 Предмет", f"h:editfield:{hid}:subject")])
         kb.append([Btn("📅 Срок", f"h:editfield:{hid}:due"), Btn("📎 Вложение", f"h:editfield:{hid}:media")])
-        kb.append([Btn("🗑 Удалить", f"h:del:{hid}")])
+        kb.append([Btn("🗑 Удалить", f"h:del:{hid}:n:{back_mode}")])
     kb.append(nav(back))
     out = Out(screen=Screen("\n".join(lines), kb))
     if hw.get("media_file_id"):
