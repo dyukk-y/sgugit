@@ -489,7 +489,8 @@ class AntiSpamMiddleware(BaseMiddleware):
         chat_type = getattr(chat, "type", "private")
         scope = "callback" if isinstance(event, CallbackQuery) else (
             "group" if chat_type in ("group", "supergroup") else "private")
-        key = (user.id, scope)
+        # Лимиты групп изолированы: флуд в одной группе не замедляет человека в другой.
+        key = (user.id, f"group:{chat.id}" if scope == "group" and chat is not None else scope)
         now = time.monotonic()
 
         # Пропускаем события во время временного ограничения.
@@ -1071,7 +1072,7 @@ def build_router(app: App) -> Router:
                         "💬 Ответьте на сообщение бота или упомяните его и задайте вопрос обычными словами: "
                         "«какие завтра пары?», «что у нас на неделе?», «какая следующая пара?».\n\n"
                         "⚙️ Для управления чатом нажмите единственную кнопку под этим сообщением — откроется личный бот, а в нём панель настроек. "
-                        "Команды /today, /tomorrow, /week, /next и /hw отвечают лично вызвавшему участнику.\n"
+                        "Команды /today, /tomorrow, /week, /next и /hw позволяют быстро запросить данные прямо в чате.\n"
                         "🔧 В панели можно включить вечернюю сводку, закреп и автоматическую очистку вопросов. "
                         "Для закрепа нужно право «Закреплять сообщения», а для удаления команд участников — «Удалять сообщения».\n\n"
                         "ℹ️ В стандартном режиме Telegram бот видит команды, упоминания и ответы на его сообщения. "
@@ -1231,20 +1232,24 @@ def build_router(app: App) -> Router:
             Ctx(app.repo, app.cfg, {"id": message.from_user.id, "group_id": None,
                                     "subgroup": None, "role": "student"}),
             chat["group_id"], message.text, message.from_user.id)
-        if captured and not captured.get("duplicate"):
-            due = (f" · срок {tu.fmt_date(tu.parse_iso(captured['due_day']))}"
-                   if captured.get("due_day") else "")
-            lesson = (f" · к паре {tu.fmt_date(tu.parse_iso(captured['lesson_day']))}"
-                      if captured.get("lesson_day") else "")
-            await _reply_group(app, message,
-                f"📝 Записал задание по предмету <b>{fm.esc(captured['subject'])}</b>{due}{lesson}. "
-                "Оно появится в разделе «Задания» и рядом с соответствующей парой.", chat)
+        if captured:
+            if not captured.get("duplicate"):
+                due = (f" · срок {tu.fmt_date(tu.parse_iso(captured['due_day']))}"
+                       if captured.get("due_day") else "")
+                lesson = (f" · к паре {tu.fmt_date(tu.parse_iso(captured['lesson_day']))}"
+                          if captured.get("lesson_day") else "")
+                await _reply_group(app, message,
+                    f"📝 Записал задание по предмету <b>{fm.esc(captured['subject'])}</b>{due}{lesson}. "
+                    "Оно появится в разделе «Задания» и рядом с соответствующей парой.", chat)
+            # Одно сообщение не должно одновременно создавать задание и запускать
+            # распознавание вопроса/изменения расписания.
+            return
         # Explicit schedule cancellations/moves are analyzed independently of smart replies.
         # Ordinary Q&A remains disabled when smart_mode is off.
 
-        mention = f"@{app.username.lower()}"
+        mention = re.compile(rf"(?<![\w@])@{re.escape(app.username)}(?![\w])", re.IGNORECASE)
         text = message.text
-        addressed = mention in text.lower()
+        addressed = bool(mention.search(text))
         rt = message.reply_to_message
         if rt is not None and rt.from_user is not None and rt.from_user.id == app.bot.id:
             addressed = True
@@ -1491,7 +1496,7 @@ async def _chat_settings_action(app: App, cb: CallbackQuery) -> None:
 
 
 async def answer_due_questions(app: App) -> int:
-    """Отвечает на вопросы, на которые люди не ответили за отведённое время (вызывается фоновой задачей)."""
+    """Отвечает на вопросы; помечает доставку только после успешного ответа Telegram."""
     if app.questions is None:
         return 0
     sent_count = 0
@@ -1508,10 +1513,18 @@ async def answer_due_questions(app: App) -> int:
                                                   parse_mode=None)
         except TelegramForbiddenError:
             await app.repo.update_chat(p["chat_id"], active=0)
+            await app.repo.finish_pending(p["id"], True)
+            continue
+        except TelegramRetryAfter as e:
+            retry_at = tu.now_ts() + max(60, int(float(e.retry_after)) + 5)
+            await app.repo.finish_pending(p["id"], False, retry_at)
+            log.warning("Лимит Telegram в чате %s; повтор вопроса отложен", p["chat_id"])
             continue
         except TelegramAPIError as e:
-            log.warning("Ответ на вопрос в чате %s не отправлен: %s", p["chat_id"], e)
+            await app.repo.finish_pending(p["id"], False, tu.now_ts() + 60)
+            log.warning("Ответ на вопрос в чате %s не отправлен; повторим позже: %s", p["chat_id"], e)
             continue
+        await app.repo.finish_pending(p["id"], True)
         sent_count += 1
         minutes = (chat or {}).get("autodelete_min", 0)
         if minutes:
