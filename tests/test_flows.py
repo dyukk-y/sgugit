@@ -285,6 +285,7 @@ class T(unittest.TestCase):
             self.assertIn("👥 <b>ИС-11</b>", texts(out))
             self.assertIn("Сегодня", texts(out))
             self.assertTrue(out.screen.rich)
+            self.assertEqual(datas(out)[:6], ["s:d:today", "h:l:0", "me:ntf", "me:other", "me:findt", "t:l:m:0"])
 
             # Возврат кнопкой «Меню» показывает только рабочую сводку, без приветствия.
             out = await s.do(202, callback="m:home")
