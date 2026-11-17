@@ -212,8 +212,12 @@ class T(unittest.TestCase):
             self.assertEqual(await tg.answer_due_questions(app), 1)
             pending = await repo.db.fetchone("SELECT * FROM pending_questions WHERE message_id = 23")
             self.assertEqual(pending["status"], "sent")
+            # При удалении бота не должны ожить старые ожидающие вопросы после повторного добавления.
+            await gtext(msg(bot, 56, "какие пары завтра?", chat_id=-100, ctype="supergroup", mid=24))
+            self.assertEqual(len(await repo.pending_for_chat(-100)), 1)
             # бот удалён из чата
             await member(ev(50, "member", "kicked")); self.assertEqual((await repo.get_chat(-100))["active"], 0)
+            self.assertEqual(len(await repo.pending_for_chat(-100)), 0)
             await db.close()
         asyncio.run(go())
 
