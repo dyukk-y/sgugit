@@ -390,11 +390,13 @@ class Repo:
     async def get_group_schedule_change(self, change_id: int) -> dict | None:
         return await self.db.fetchone("SELECT * FROM group_schedule_changes WHERE id = ?", change_id)
 
-    async def decide_group_schedule_change(self, change_id: int, author_id: int, approve: bool) -> bool:
-        status = "applied" if approve else "rejected"
+    async def decide_group_schedule_change(self, change_id: int, decided_by: int, approve: bool) -> bool:
+        """Atomically records an administrator's decision; proposer and reviewer are different users."""
+        status = "approved" if approve else "rejected"
         n = await self.db.execute(
-            "UPDATE group_schedule_changes SET status = ?, decided_at = ? WHERE id = ? AND author_id = ? AND status = 'pending'",
-            status, now_ts(), change_id, author_id)
+            "UPDATE group_schedule_changes SET status = ?, decided_at = ? "
+            "WHERE id = ? AND status = 'pending'",
+            status, now_ts(), change_id, volatile=True)
         return n > 0
 
     async def get_lesson(self, lid: int) -> dict | None:
