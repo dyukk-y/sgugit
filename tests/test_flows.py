@@ -279,18 +279,20 @@ class T(unittest.TestCase):
             s = await Sim().setup()
             await s.register(202)
             out = await s.do(202, command="start")
-            self.assertIn("s:n", datas(out))
+            self.assertNotIn("s:n", datas(out))
             self.assertIn("Дальше", texts(out))
             self.assertIn("Привет!", texts(out))
             self.assertIn("👥 <b>ИС-11</b>", texts(out))
             self.assertIn("Сегодня", texts(out))
             self.assertTrue(out.screen.rich)
+            self.assertEqual(datas(out)[:6], ["s:d:today", "h:l:0", "me:ntf", "me:other", "me:findt", "t:l:m:0"])
 
             # Возврат кнопкой «Меню» показывает только рабочую сводку, без приветствия.
             out = await s.do(202, callback="m:home")
             self.assertNotIn("Привет!", texts(out))
             self.assertIn("👥 <b>ИС-11</b>", texts(out))
             self.assertIn("Дальше", texts(out))
+            self.assertNotIn("s:n", datas(out))
 
             # Явная команда /menu может повторно показать короткое вступление.
             out = await s.do(202, command="menu")
