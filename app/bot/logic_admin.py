@@ -1321,7 +1321,8 @@ async def _broadcast_preview(ctx: Ctx, data: dict) -> Out:
                f"{media}<i>Ниже показано сообщение в том же HTML-формате и с теми же кнопками, "
                f"которые получат пользователи.</i>\n\n{shown_body}")
     if data.get("buttons"):
-        preview += f"\n\nКнопок: <b>{len(data['buttons'])}/8</b>"
+        labels = "\n".join(f"• {fm.esc(str(item.get('text') or '')[:32])}" for item in data["buttons"][:8])
+        preview += f"\n\n<b>Кнопки для получателей · {len(data['buttons'])}/8</b>\n{labels}"
     out = Out(screen=Screen(preview, buttons, html_content=True), state="ad:bc_confirm", state_data=data)
     if data.get("media_file_id"):
         caption = body if body else None
