@@ -353,6 +353,7 @@ class T(unittest.TestCase):
             self.assertIn("Отзыв и связанные данные удалены", out.toast)
             self.assertEqual(await s.repo.admin_teacher_reviews(tid, 0, 5), ([], 0))
             self.assertEqual(await s.repo.db.scalar("SELECT COUNT(*) FROM teacher_rating_comments WHERE teacher_id = ?", tid), 0)
+            await s.do(1, callback=f"ad:rth:{tid}:rating:0")
             out = await s.do(100, callback=f"t:v:{tid}:m:0"); self.assertTrue(out.toast)
             out = await s.do(1, callback=f"ad:rtr:{tid}:y")
             self.assertIn("отключён", (out.toast or "").lower())
