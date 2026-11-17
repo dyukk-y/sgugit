@@ -87,7 +87,7 @@ def _gid(s: str) -> int | None:
     return int(s) if s.isdigit() else None
 
 
-async def handle_text(ctx: Ctx, text: str) -> Out:
+async def handle_text(ctx: Ctx, text: str, text_html: str | None = None) -> Out:
     """Текст в личном чате: ввод для текущего шага или вопрос обычными словами."""
     if ctx.user.get("banned") and not ctx.is_admin:
         state, state_data = await ctx.repo.get_state(ctx.uid)
@@ -117,7 +117,7 @@ async def handle_text(ctx: Ctx, text: str) -> Out:
         if prefix == "t":
             return await logic_teachers.on_text(ctx, state, data, text)
         if prefix == "ad":
-            return await logic_admin.on_text(ctx, state, data, text)
+            return await logic_admin.on_text(ctx, state, data, text, text_html=text_html)
     if ctx.role == "teacher":
         return Out(screen=await logic_teacher.menu(ctx), clear_state=True)
     if not ctx.registered:
@@ -173,7 +173,7 @@ async def handle_document(ctx: Ctx, filename: str, blob: bytes, file_id: str | N
     return Out()
 
 
-async def handle_photo(ctx: Ctx, file_id: str, caption: str = "") -> Out:
+async def handle_photo(ctx: Ctx, file_id: str, caption: str = "", caption_html: str | None = None) -> Out:
     if ctx.user.get("banned") and not ctx.is_admin:
         return _banned(ctx)
     if not ctx.registered and not ctx.is_admin:
@@ -191,10 +191,8 @@ async def handle_photo(ctx: Ctx, file_id: str, caption: str = "") -> Out:
         data.update(media_file_id=file_id, media_type="photo")
         if caption.strip():
             data["text"] = caption.strip()[:900]
-            n = len(await logic_admin._recipients(ctx, data))
-            return Out(screen=Screen(f"<b>Предпросмотр рассылки с фото</b>\n\n{fm.esc(caption[:900])}\n\nПолучателей: {n}",
-                                     [[Btn(f"✅ Отправить ({n})", "ad:bcy"), Btn("❌ Отмена", "ad:bc")]]),
-                       state="ad:bc_confirm", state_data=data)
+            data["html_text"] = (caption_html or fm.esc(data["text"]))[:4000]
+            return await logic_admin._broadcast_preview(ctx, data)
         return Out(screen=Screen("📷 Фото добавлено к рассылке. Теперь отправьте текст подписи или нажмите «Отправить без текста».",
                                  [[Btn("📤 Отправить без текста", "ad:bcp"), Btn("❌ Отмена", "ad:bc")]]),
                    state="ad:bc_text", state_data=data)
