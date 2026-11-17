@@ -668,7 +668,7 @@ class Repo:
             "SELECT COUNT(*) FROM (SELECT user_id FROM ratings WHERE teacher_id = ? "
             "UNION SELECT user_id FROM teacher_rating_scores WHERE teacher_id = ?) x", tid, tid) or 0)
         rows = await self.db.fetchall(
-            "SELECT x.user_id, u.username, u.tg_name, u.fio, r.stars, "
+            "SELECT x.user_id, u.username, u.tg_name, r.stars, "
             "COALESCE(s.score_count, 0) AS score_count, s.score_avg, "
             "COALESCE(r.updated_at, s.last_updated, 0) AS updated_at "
             "FROM (SELECT user_id FROM ratings WHERE teacher_id = ? "
@@ -701,7 +701,7 @@ class Repo:
         total = int(await self.db.scalar(
             "SELECT COUNT(*) FROM teacher_reviews WHERE teacher_id = ? AND comment <> ''", tid) or 0)
         rows = await self.db.fetchall(
-            "SELECT r.id, r.user_id, r.comment, r.created_at, u.username, u.tg_name, u.fio, "
+            "SELECT r.id, r.user_id, r.comment, r.created_at, u.username, u.tg_name, "
             "(SELECT COUNT(*) FROM teacher_review_replies p WHERE p.review_id = r.id) AS reply_count "
             "FROM teacher_reviews r LEFT JOIN users u ON u.id = r.user_id "
             "WHERE r.teacher_id = ? AND r.comment <> '' ORDER BY r.created_at DESC, r.id DESC LIMIT ? OFFSET ?",
@@ -710,7 +710,7 @@ class Repo:
 
     async def admin_teacher_review_replies(self, review_id: int, tid: int) -> list[dict]:
         return await self.db.fetchall(
-            "SELECT p.id, p.user_id, p.reply, p.created_at, u.username, u.tg_name, u.fio "
+            "SELECT p.id, p.user_id, p.reply, p.created_at, u.username, u.tg_name "
             "FROM teacher_review_replies p JOIN teacher_reviews r ON r.id = p.review_id "
             "LEFT JOIN users u ON u.id = p.user_id "
             "WHERE p.review_id = ? AND r.teacher_id = ? ORDER BY p.created_at ASC, p.id ASC",
