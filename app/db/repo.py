@@ -35,7 +35,7 @@ DEFAULT_SETTINGS = {
     "notify_changes": "1",       # глобальный выключатель рассылки «изменения в расписании» (личка и чаты)
 }
 
-USER_COLS = {"username", "tg_name", "group_id", "fio", "fio_status", "role", "admin_perms", "head_blocked", "banned",
+USER_COLS = {"username", "tg_name", "group_id", "fio", "fio_status", "role", "admin_perms", "head_blocked", "hw_blocked", "banned",
              "bot_blocked", "subgroup", "n_enabled", "fio_submitted_at", "private_started", "n_evening", "n_evening_time", "n_before", "n_changes", "last_seen"}
 CHAT_COLS = {"title", "group_id", "smart_mode", "autodelete_min", "evening_on", "evening_time", "added_by", "active",
              "wait_min", "changes_on", "pin_on", "notifications_on", "cleanup_on", "private_questions"}
@@ -898,6 +898,34 @@ class Repo:
 
     async def hw_today_count(self, uid: int) -> int:
         return await self.count("homework", "author_id = ? AND created_at >= ?", uid, now_ts() - 86400)
+
+    async def hw_creation_blocked(self, uid: int) -> bool:
+        value = await self.db.scalar("SELECT hw_blocked FROM users WHERE id = ?", uid)
+        return bool(value or 0)
+
+    async def admin_homework_stats(self) -> dict[str, int]:
+        now = now_ts()
+        week_start = now - 7 * 86400
+        return {
+            "published": await self.count("homework", "status = 'approved'"),
+            "last_day": await self.count("homework", "status = 'approved' AND created_at >= ?", now - 86400),
+            "last_week": await self.count("homework", "status = 'approved' AND created_at >= ?", week_start),
+            "authors_week": int(await self.db.scalar(
+                "SELECT COUNT(DISTINCT author_id) FROM homework WHERE status = 'approved' AND created_at >= ?",
+                week_start) or 0),
+            "blocked_students": await self.count("users", "role = 'student' AND hw_blocked = 1"),
+            "legacy_pending": await self.count("homework", "status = 'pending'"),
+        }
+
+    async def blocked_hw_users(self, limit: int = 10, offset: int = 0) -> tuple[list[dict], int]:
+        total = await self.count("users", "role = 'student' AND hw_blocked = 1")
+        rows = await self.db.fetchall(
+            "SELECT u.id, u.fio, u.tg_name, u.username, g.name AS group_name "
+            "FROM users u LEFT JOIN groups g ON g.id = u.group_id "
+            "WHERE u.role = 'student' AND u.hw_blocked = 1 "
+            "ORDER BY COALESCE(u.fio, u.tg_name, u.username, ''), u.id LIMIT ? OFFSET ?",
+            limit, offset)
+        return rows, total
 
     async def get_hw(self, hid: int) -> dict | None:
         return await self.db.fetchone("SELECT * FROM homework WHERE id = ?", hid)
