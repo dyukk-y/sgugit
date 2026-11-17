@@ -13,8 +13,13 @@ from app.services.nlu import Intent, detect_intent, find_subject, looks_like_que
 
 WAIT_INTENTS = {"day", "first", "last", "count", "room", "teacher", "find_teacher", "when_subject", "subject_day", "next",
                 "exam", "week", "hw"}
-ANSWER_WORDS = ("будет", "будут", "не будет", "нет", "да ", "отмен", "перенес", "перенос", "заменя", "замена", "ауд", "каб",
-                "состоится", "в ", "пара", "пары", "первая", "вторая", "третья")
+ANSWER_SIGNAL = __import__("re").compile(
+    r"\\b(?:да|нет|будет|будут|не будет|не состоится|состоится|отменили|отменят|перенесли|перенесут|"
+    r"заменили|заменят)\\b|\\b(?:ауд(?:итория)?|каб(?:инет)?)\\.?\\s*\\d+\\b|"
+    r"\\bв\\s+\\d{1,4}(?:[:.]\\d{2})?\\b|\\b\\d{1,2}[:.]\\d{2}\\b|"
+    r"\\b(?:первая|вторая|третья|четвертая|четвёртая|пятая|шестая)\\s+пара\\b",
+    __import__("re").IGNORECASE,
+)
 MAX_PENDING_PER_CHAT = 5
 
 
@@ -70,47 +75,68 @@ class QuestionService:
         return True
 
     async def mark_answers(self, chat_id: int, user_id: int, text: str, reply_to_id: int | None) -> int:
-        """Сообщение человека может быть ответом на ожидающий вопрос. Возвращает число снятых вопросов."""
+        """Снимает вопрос по явному ответу на него, не принимая любое сообщение за ответ."""
         pend = await self.repo.pending_for_chat(chat_id)
-        if not pend:
+        if not pend or not text or len(text) > 300 or "?" in text or looks_like_question(text):
             return 0
         n = 0
         catalog = await self.repo.subject_catalog()
         t = norm(text)
+        has_signal = bool(ANSWER_SIGNAL.search(text))
+        mentioned_subject = find_subject(text, catalog)
+        schedule_intents = {"day", "week", "first", "last", "count", "next", "exam", "hw"}
         for p in pend:
             if p["user_id"] == user_id:
                 continue
             answered = reply_to_id is not None and reply_to_id == p["message_id"]
-            if not answered and text and len(text) <= 300 and "?" not in text:
+            if not answered:
                 try:
-                    subj = intent_from_json(p["intent"]).subject
-                except (ValueError, KeyError):
-                    subj = None
-                has_signal = any(ch.isdigit() for ch in t) or any(w in f" {t} " for w in ANSWER_WORDS)
-                subj_hit = bool(subj) and find_subject(text, [(subj.lower(), subj)] + [c for c in catalog if c[1] == subj]) == subj
-                answered = has_signal and (subj_hit or not subj)
+                    intent = intent_from_json(p["intent"])
+                except (ValueError, KeyError, TypeError):
+                    continue
+                if intent.subject:
+                    subject_hit = find_subject(
+                        text, [(intent.subject.lower(), intent.subject)] +
+                        [item for item in catalog if item[1] == intent.subject]
+                    ) == intent.subject
+                    # Для вопроса о конкретном предмете нужен именно этот предмет;
+                    # короткое название предмета тоже считается ответом.
+                    answered = subject_hit and (has_signal or len(t.split()) <= 3)
+                    # Ответ без названия предмета принимаем только когда вопрос в чате один.
+                    if not answered and len(pend) == 1:
+                        answered = has_signal
+                else:
+                    # Для общих вопросов не закрываем сразу все ожидания сообщением «да»
+                    # или случайным числом. Нужен единственный ожидающий вопрос и явный сигнал,
+                    # либо упоминание предмета в ответе на единственный вопрос о расписании.
+                    answered = len(pend) == 1 and (
+                        has_signal or (bool(mentioned_subject) and intent.name in schedule_intents)
+                    )
             if answered and await self.repo.set_pending_status(p["id"], "answered"):
                 n += 1
         return n
 
     async def due_answers(self, now_ts: int | None = None, now_dt: datetime | None = None) -> list[tuple[dict, Screen]]:
-        """Вопросы, на которые за отведённое время никто не ответил: готовые ответы бота."""
+        """Арендует просроченные вопросы и подготавливает ответы; завершение — после Telegram API."""
         now = now_ts if now_ts is not None else tu.now_ts()
         out: list[tuple[dict, Screen]] = []
         for p in await self.repo.pending_due(now):
-            if not await self.repo.set_pending_status(p["id"], "sent"):
+            if not await self.repo.claim_pending(p["id"], now):
                 continue
             chat = await self.repo.get_chat(p["chat_id"])
             if not chat or not chat.get("active") or not chat.get("group_id"):
+                await self.repo.finish_pending(p["id"], True)
                 continue
             try:
                 intent = intent_from_json(p["intent"])
-            except (ValueError, KeyError):
+            except (ValueError, KeyError, TypeError):
+                await self.repo.finish_pending(p["id"], True)
                 continue
             ctx = Ctx(self.repo, self.cfg, _dummy_user(p["user_id"]), now=now_dt)
             screen = await ls.answer_intent(ctx, intent, chat["group_id"], None, allow_kb=False)
             if screen is None:
+                await self.repo.finish_pending(p["id"], True)
                 continue
-            screen.text = "🤖 Пока никто не ответил, отвечаю по расписанию:\n\n" + screen.text
+            screen.text = "🤖 Пока никто не ответил, отвечаю по расписанию:\\n\\n" + screen.text
             out.append((p, screen))
         return out
