@@ -120,7 +120,7 @@ async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0") -> Out:
         lines.append("\n📎 Прикреплено: " + fm.esc("фото" if hw.get("media_type") == "photo" else (hw.get("media_name") or "файл")))
     kb: Kb = []
     if hw["status"] == "pending":
-        lines.insert(1, "⏳ <i>Ждёт одобрения старосты</i>")
+        lines.insert(1, "⏳ <i>Старое задание ещё не опубликовано</i>")
         if can_moderate(ctx, hw):
             kb.append([Btn("✅ Одобрить", f"h:ok:{hid}"), Btn("❌ Отклонить", f"h:no:{hid}")])
     elif hw["status"] == "approved":
@@ -319,20 +319,6 @@ async def on_text_hw(ctx: Ctx, state: str, data: dict, text: str) -> Out:
     return Out(screen=await list_screen(ctx), clear_state=True)
 
 
-async def _notify_moderators(ctx: Ctx, gid: int, hid: int, data: dict) -> list[tuple[int, Screen]]:
-    heads = [u["id"] for u in await ctx.repo.heads_of_group(gid)]
-    if not heads:
-        for a in await ctx.repo.users_with_role("admin"):
-            if "homework" in (a.get("admin_perms") or "").split(","):
-                heads.append(a["id"])
-    g = await ctx.group()
-    due = f"до {tu.fmt_dm(date.fromisoformat(data['due']))}" if data.get("due") else "без срока"
-    text = (f"📝 <b>Новое задание на проверку</b> · {fm.esc(g['name']) if g else ''}\n"
-            f"От: {fm.esc(short_name(ctx.user.get('fio')))}\n📚 {fm.esc(data['subject'])} · {due}\n\n{fm.esc(data['text'])}")
-    kb = [[Btn("✅ Одобрить", f"h:ok:{hid}"), Btn("❌ Отклонить", f"h:no:{hid}")]]
-    return [(h, Screen(text, kb)) for h in heads if h != ctx.uid]
-
-
 async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
     act = parts[0] if parts else "l"
     repo = ctx.repo
@@ -409,27 +395,6 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
                                                            Btn("Отмена", f"h:v:{hid}")]]))
     if act in ("ok", "no", "q"):
         return Out(toast="Проверка заданий администрацией отключена", alert=True)
-    if act in ("ok", "no") and len(parts) > 1 and parts[1].isdigit():
-        hid = int(parts[1])
-        hw = await repo.get_hw(hid)
-        if not hw or not can_moderate(ctx, hw):
-            return Out(toast="Нет прав", alert=True)
-        if hw["status"] != "pending":
-            return Out(toast="Уже обработано", alert=True)
-        new = "approved" if act == "ok" else "rejected"
-        await repo.set_hw_status(hid, new, ctx.uid)
-        await repo.audit(ctx.uid, f"hw_{new}", str(hid))
-        out = Out(screen=await queue_screen(ctx, 0) if ctx.is_admin else Screen("Готово.", [nav("m:home")]),
-                  toast="Одобрено ✅" if act == "ok" else "Отклонено")
-        verdict = "одобрено ✅" if act == "ok" else "отклонено ❌"
-        out.notify = [(hw["author_id"], Screen(f"Ваше задание по предмету «{fm.esc(hw['subject'])}» {verdict}."))] \
-            if hw["author_id"] != ctx.uid else []
-        return out
-    if act == "q":
-        if not (ctx.is_super or (ctx.role == "admin" and ctx.can("homework"))):
-            return Out(toast="Очередь заданий доступна администраторам", alert=True)
-        page = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-        return Out(screen=await queue_screen(ctx, page))
     if act == "add":
         return await start_add(ctx, parts[1] if len(parts) > 1 else "0")
     if act == "sub" and len(parts) > 1 and parts[1].isdigit():
@@ -461,18 +426,3 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
         return Out(screen=Screen("✅ Задание опубликовано и уже доступно группе.", [[Btn("📝 Задания", "h:l:0"), home_btn()]]), clear_state=True)
     return Out(toast="Неизвестное действие")
 
-
-async def queue_screen(ctx: Ctx, page: int) -> Screen:
-    gid = ctx.user.get("group_id")
-    rows, total = await ctx.repo.pending_hw(gid, SIZE, page * SIZE)
-    lines = [f"<b>На проверке: {total}</b>"]
-    kb: Kb = []
-    if not rows:
-        lines.append("\nНовых заданий нет.")
-    for r in rows:
-        kb.append([Btn(f"{r['subject'][:18]}: {r['text'][:24]}", f"h:v:{r['id']}")])
-    if total > SIZE:
-        from app.bot.core import pager
-        kb.append(pager("h:q", page, total, SIZE))
-    kb.append(nav("ad:hw:0" if ctx.is_admin else "m:home"))
-    return Screen("\n".join(lines), kb)
