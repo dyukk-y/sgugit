@@ -38,12 +38,12 @@ async def main_menu(ctx: Ctx, show_intro: bool = False) -> Screen:
         lines.extend([intro, ""])
 
     if group:
-        lines.append(f"👥 <b>{fm.esc(group['name'])}</b>")
+        lines.append(f"👥 <b>{fm.esc(group['name'])}</b> · <b>Главное меню</b>")
     else:
         lines.append("<b>Главное меню</b>")
 
-    day_name = tu.DAYS_FULL[ctx.today.weekday()]
-    lines.append(f"📅 <b>Сегодня · {day_name}, {tu.fmt_date(ctx.today)}</b>")
+    day_name = tu.DAYS_SHORT[ctx.today.weekday()]
+    lines.append(f"📅 <b>Сегодня · {day_name}, {tu.fmt_date(ctx.today, weekday=False)}</b>")
 
     lessons_today = []
     next_lesson = ""
