@@ -10,7 +10,7 @@ from app.db.repo import Repo
 
 ALL_PERMS = ("users", "schedule", "homework", "teachers", "broadcast", "stats")
 PERM_LABELS = {"users": "Пользователи", "schedule": "Расписание",
-               "homework": "Задания", "teachers": "Рейтинг", "broadcast": "Рассылки", "stats": "Статистика"}
+               "homework": "Задания: статистика и ограничения", "teachers": "Рейтинг", "broadcast": "Рассылки", "stats": "Статистика"}
 PAGE = 6
 
 
