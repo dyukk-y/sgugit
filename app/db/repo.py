@@ -1235,6 +1235,11 @@ class Repo:
                 retry_at if retry_at is not None else now_ts() + 60, pid, volatile=True)
         return n > 0
 
+    async def cancel_pending_for_chat(self, chat_id: int) -> int:
+        return await self.db.execute(
+            "UPDATE pending_questions SET status = 'cancelled' WHERE chat_id = ? AND status IN ('wait', 'sending')",
+            chat_id, volatile=True)
+
     async def set_pending_status(self, pid: int, status: str) -> bool:
         n = await self.db.execute(
             "UPDATE pending_questions SET status = ? WHERE id = ? AND status IN ('wait', 'sending')",
