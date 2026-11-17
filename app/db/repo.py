@@ -930,12 +930,38 @@ class Repo:
     async def get_hw(self, hid: int) -> dict | None:
         return await self.db.fetchone("SELECT * FROM homework WHERE id = ?", hid)
 
-    async def list_hw(self, gid: int, today_iso: str, offset: int, limit: int) -> tuple[list[dict], int]:
-        cond = "group_id = ? AND status = 'approved' AND (due_day IS NULL OR due_day >= ?)"
-        total = int(await self.db.scalar(f"SELECT COUNT(*) FROM homework WHERE {cond}", gid, today_iso) or 0)
+    async def hw_list_counts(self, gid: int, uid: int, today_iso: str) -> dict[str, int]:
+        row = await self.db.fetchone(
+            """SELECT COUNT(*) AS total,
+               COUNT(CASE WHEN EXISTS (
+                   SELECT 1 FROM hw_done d WHERE d.user_id = ? AND d.hw_id = h.id
+               ) THEN 1 END) AS done,
+               COUNT(CASE WHEN NOT EXISTS (
+                   SELECT 1 FROM hw_done d WHERE d.user_id = ? AND d.hw_id = h.id
+               ) THEN 1 END) AS active,
+               COUNT(CASE WHEN h.due_day IS NOT NULL AND h.due_day < ? AND NOT EXISTS (
+                   SELECT 1 FROM hw_done d WHERE d.user_id = ? AND d.hw_id = h.id
+               ) THEN 1 END) AS overdue
+               FROM homework h WHERE h.group_id = ? AND h.status = 'approved'""",
+            uid, uid, today_iso, uid, gid)
+        return {key: int((row or {}).get(key) or 0) for key in ("total", "done", "active", "overdue")}
+
+    async def list_hw(self, gid: int, today_iso: str, offset: int, limit: int,
+                      uid: int | None = None, mode: str = "all") -> tuple[list[dict], int]:
+        cond = "h.group_id = ? AND h.status = 'approved'"
+        params: list[Any] = [gid]
+        if uid is not None and mode == "active":
+            cond += " AND NOT EXISTS (SELECT 1 FROM hw_done d WHERE d.user_id = ? AND d.hw_id = h.id)"
+            params.append(uid)
+        elif uid is not None and mode == "done":
+            cond += " AND EXISTS (SELECT 1 FROM hw_done d WHERE d.user_id = ? AND d.hw_id = h.id)"
+            params.append(uid)
+        total = int(await self.db.scalar(f"SELECT COUNT(*) FROM homework h WHERE {cond}", *params) or 0)
         rows = await self.db.fetchall(
-            f"SELECT * FROM homework WHERE {cond} ORDER BY CASE WHEN due_day IS NULL THEN 1 ELSE 0 END, due_day, id "
-            "LIMIT ? OFFSET ?", gid, today_iso, limit, offset)
+            f"SELECT h.* FROM homework h WHERE {cond} "
+            "ORDER BY CASE WHEN h.due_day IS NOT NULL AND h.due_day < ? THEN 0 "
+            "WHEN h.due_day IS NULL THEN 2 ELSE 1 END, h.due_day, h.id LIMIT ? OFFSET ?",
+            *params, today_iso, limit, offset)
         return rows, total
 
     async def hw_for_day(self, gid: int, day: str) -> list[dict]:
