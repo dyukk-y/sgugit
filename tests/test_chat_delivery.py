@@ -28,7 +28,7 @@ class GroupQuestionDeliveryTests(unittest.TestCase):
             db, repo = await setup()
             group = (await repo.search_groups("ис11"))[0]
             chat = await repo.upsert_chat(-900, "ИС-11", group["id"], 1)
-            await repo.update_chat(-900, smart_mode="active", wait_min=1)
+            await repo.update_chat(-900, smart_mode="active", wait_min=1, autodelete_min=0)
             chat = await repo.get_chat(-900)
             questions = QuestionService(repo, CFG)
             self.assertTrue(await questions.consider(
