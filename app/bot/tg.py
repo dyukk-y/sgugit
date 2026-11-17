@@ -1232,7 +1232,7 @@ def build_router(app: App) -> Router:
             return
 
         text = message.text
-        mention = re.compile(rf"(?<![\\w@])@{re.escape(app.username)}(?![\\w])", re.IGNORECASE)
+        mention = re.compile(rf"(?<![\w@])@{re.escape(app.username)}(?![\w])", re.IGNORECASE)
         addressed = bool(mention.search(text))
         rt = message.reply_to_message
         if rt is not None and rt.from_user is not None and rt.from_user.id == app.bot.id:
@@ -1243,8 +1243,8 @@ def build_router(app: App) -> Router:
                 if addressed:
                     link = f"https://t.me/{app.username}?start=group_access"
                     await _reply_group(app, message,
-                        "Чтобы задавать вопросы боту в группе, сначала откройте его в личных сообщениях и нажмите /start.\\n"
-                        f"👉 <a href=\\\"{link}\\\">Запустить бота</a>", chat)
+                        "Чтобы задавать вопросы боту в группе, сначала откройте его в личных сообщениях и нажмите /start.\n"
+                        f'👉 <a href="{link}">Запустить бота</a>', chat)
                 return
 
         # Домашние задания распознаются независимо от режима умных ответов.
