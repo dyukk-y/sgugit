@@ -69,7 +69,7 @@ async def list_screen(ctx: Ctx, page: int = 0, mode: str = "active") -> Screen:
         is_done = r["id"] in done
         overdue = bool(r.get("due_day") and r["due_day"] < tu.iso(ctx.today) and not is_done)
         mark = "⚠️ " if overdue else ("✅ " if is_done else "⏳ ")
-        kb.append([Btn(f"{mark}{r['subject'][:18]} · {_due_label(r, ctx.today)}", f"h:v:{r['id']}")])
+        kb.append([Btn(f"{mark}{r['subject'][:18]} · {_due_label(r, ctx.today)}", f"h:v:{r['id']}:{mode}")])
     if total > SIZE:
         pages = (total + SIZE - 1) // SIZE
         page_row: list[Btn] = []
@@ -116,7 +116,7 @@ async def day_list_screen(ctx: Ctx, day: str) -> Screen:
     return Screen("\n".join(lines), kb)
 
 
-async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0") -> Out:
+async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0:active") -> Out:
     hw = await ctx.repo.get_hw(hid)
     if not hw:
         return Out(toast="Задание недоступно", alert=True)
@@ -149,7 +149,8 @@ async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0") -> Out:
             kb.append([Btn("✅ Одобрить", f"h:ok:{hid}"), Btn("❌ Отклонить", f"h:no:{hid}")])
     elif hw["status"] == "approved":
         done = await ctx.repo.hw_done_set(ctx.uid, [hid])
-        kb.append([Btn("↩ Не сделано" if hid in done else "✅ Сделано", f"h:dn:{hid}")])
+        mode = back.split(":")[-1] if back.split(":")[-1] in ("active", "done", "all") else "active"
+        kb.append([Btn("↩ Не сделано" if hid in done else "✅ Сделано", f"h:dn:{hid}:{mode}")])
     if hw["author_id"] == ctx.uid or can_moderate(ctx, hw):
         kb.append([Btn("✏️ Текст", f"h:edit:{hid}"), Btn("📚 Предмет", f"h:editfield:{hid}:subject")])
         kb.append([Btn("📅 Срок", f"h:editfield:{hid}:due"), Btn("📎 Вложение", f"h:editfield:{hid}:media")])
@@ -369,14 +370,16 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
     if act == "d" and len(parts) > 1:
         return Out(screen=await day_list_screen(ctx, parts[1]))
     if act == "v" and len(parts) > 1 and parts[1].isdigit():
-        return await view_screen(ctx, int(parts[1]))
+        mode = parts[2] if len(parts) > 2 and parts[2] in ("active", "done", "all") else "active"
+        return await view_screen(ctx, int(parts[1]), f"h:l:0:{mode}")
     if act == "dn" and len(parts) > 1 and parts[1].isdigit():
         hid = int(parts[1])
+        mode = parts[2] if len(parts) > 2 and parts[2] in ("active", "done", "all") else "active"
         hw = await repo.get_hw(hid)
         if not hw or hw["group_id"] != gid or hw["status"] != "approved":
             return Out(toast="Задание недоступно", alert=True)
         await repo.toggle_hw_done(ctx.uid, hid)
-        out = await view_screen(ctx, hid)
+        out = await view_screen(ctx, hid, f"h:l:0:{mode}")
         out.toast = "Отмечено"
         return out
     if act == "editfield" and len(parts) > 2 and parts[1].isdigit():
@@ -412,12 +415,13 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
         hw = await repo.get_hw(hid)
         if not hw or not (hw["author_id"] == ctx.uid or can_moderate(ctx, hw)):
             return Out(toast="Нет прав", alert=True)
+        mode = parts[3] if len(parts) > 3 and parts[3] in ("active", "done", "all") else "active"
         if len(parts) > 2 and parts[2] == "y":
             await repo.set_hw_status(hid, "deleted", ctx.uid)
             await repo.audit(ctx.uid, "hw_delete", str(hid))
-            return Out(screen=await list_screen(ctx), toast="Удалено")
-        return Out(screen=Screen("Удалить это задание?", [[Btn("Да, удалить", f"h:del:{hid}:y"),
-                                                           Btn("Отмена", f"h:v:{hid}")]]))
+            return Out(screen=await list_screen(ctx, 0, mode), toast="Удалено")
+        return Out(screen=Screen("Удалить это задание?", [[Btn("Да, удалить", f"h:del:{hid}:y:{mode}"),
+                                                           Btn("Отмена", f"h:v:{hid}:{mode}")]]))
     if act in ("ok", "no", "q"):
         return Out(toast="Проверка заданий администрацией отключена", alert=True)
     if act == "add":
