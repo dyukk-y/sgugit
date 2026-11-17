@@ -282,7 +282,7 @@ class T(unittest.TestCase):
             self.assertIn("Ближайшая пара", " ".join(datas(out)))
             self.assertIn("Дальше", texts(out))
 
-            group = await s.repo.get_group("ИС-11")
+            group = (await s.repo.search_groups("ИС-11"))[0]
             gid = group["id"]
             overdue = await s.repo.add_hw(gid, "Математика", None, "Просрочено", "2026-10-13", 202, "approved")
             future = await s.repo.add_hw(gid, "Физика", None, "Скоро", "2026-10-15", 202, "approved")
