@@ -1339,9 +1339,9 @@ def build_router(app: App) -> Router:
         now = time.monotonic()
         if now - app.last_group_answer.get(key, 0) < 20:
             return  # антифлуд: одинаковый ответ в чат не чаще раза в 20 секунд
-        app.last_group_answer[key] = now
-        if len(app.last_group_answer) > 5000:
-            app.last_group_answer.clear()
+        app.last_group_answer[key] = now  # временная отметка защищает и от параллельных одинаковых запросов
+        while len(app.last_group_answer) > 5000:
+            app.last_group_answer.pop(next(iter(app.last_group_answer)), None)
         cleanup_day = None
         if chat.get("cleanup_on", 0) and re.search(r"\bзавтра\b", request_text.casefold()) and (
                 "расписание" in scr.text.casefold() or "📅" in scr.text):
@@ -1353,7 +1353,10 @@ def build_router(app: App) -> Router:
                 if sent:
                     await _schedule_group_cleanup(app, message.chat.id, message.message_id, sent.message_id, delete_at)
                     return
-        await _reply_group(app, message, scr.text, chat, rich=scr.rich)
+        sent = await _reply_group(app, message, scr.text, chat, rich=scr.rich)
+        if sent is None and app.last_group_answer.get(key) == now:
+            # Не блокируем повторный запрос после временной ошибки Telegram.
+            app.last_group_answer.pop(key, None)
 
     return r
 
