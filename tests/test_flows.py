@@ -279,7 +279,7 @@ class T(unittest.TestCase):
             s = await Sim().setup()
             await s.register(202)
             out = await s.do(202, command="start")
-            self.assertIn("Ближайшая пара", " ".join(datas(out)))
+            self.assertIn("Ближайшая пара", " ".join(d for d in datas(out) if d))
             self.assertIn("Дальше", texts(out))
 
             group = (await s.repo.search_groups("ИС-11"))[0]
