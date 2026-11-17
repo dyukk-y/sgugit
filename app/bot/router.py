@@ -122,7 +122,7 @@ async def handle_text(ctx: Ctx, text: str, text_html: str | None = None) -> Out:
         if prefix == "t":
             return await logic_teachers.on_text(ctx, state, data, text)
         if prefix == "ad":
-            return await logic_admin.on_text(ctx, state, data, text, text_html=text_html)
+            return await logic_admin.on_text(ctx, state, data, text, html_text=text_html)
     if ctx.role == "teacher":
         return Out(screen=await logic_teacher.menu(ctx), clear_state=True)
     if not ctx.registered:
