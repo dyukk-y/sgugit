@@ -136,11 +136,11 @@ class T(unittest.TestCase):
             self.assertEqual(active_total, 1)
             self.assertEqual([x["id"] for x in active], [old])
 
-            done, done_total = await r.list_hw(group["id"], today, 0, 5, 101, "done")
+            done, done_total = await r.list_hw(group["id"], today_iso, 0, 5, 101, "done")
             self.assertEqual(done_total, 1)
             self.assertEqual([x["id"] for x in done], [future])
 
-            all_rows, all_total = await r.list_hw(group["id"], today, 0, 5, 101, "all")
+            all_rows, all_total = await r.list_hw(group["id"], today_iso, 0, 5, 101, "all")
             self.assertEqual(all_total, 2)
             self.assertEqual({x["id"] for x in all_rows}, {old, future})
             await db.close()
