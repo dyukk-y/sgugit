@@ -122,17 +122,17 @@ class T(unittest.TestCase):
             db, r = await mk()
             group = await r.get_or_create_group("ИС-11")
             await r.ensure_user(101)
-            today = iso(today())
+            today_iso = iso(today())
             overdue_day = iso(today() - timedelta(days=2))
             future_day = iso(today() + timedelta(days=2))
             old = await r.add_hw(group["id"], "Математика", None, "Просроченное задание", overdue_day, 101, "approved")
             future = await r.add_hw(group["id"], "Физика", None, "Будущее задание", future_day, 101, "approved")
             self.assertTrue(await r.toggle_hw_done(101, future))
 
-            counts = await r.hw_list_counts(group["id"], 101, today)
+            counts = await r.hw_list_counts(group["id"], 101, today_iso)
             self.assertEqual(counts, {"total": 2, "done": 1, "active": 1, "overdue": 1})
 
-            active, active_total = await r.list_hw(group["id"], today, 0, 5, 101, "active")
+            active, active_total = await r.list_hw(group["id"], today_iso, 0, 5, 101, "active")
             self.assertEqual(active_total, 1)
             self.assertEqual([x["id"] for x in active], [old])
 
