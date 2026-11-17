@@ -392,7 +392,7 @@ class Repo:
 
     async def decide_group_schedule_change(self, change_id: int, decided_by: int, approve: bool) -> bool:
         """Atomically records an administrator's decision; proposer and reviewer are different users."""
-        status = "approved" if approve else "rejected"
+        status = "applied" if approve else "rejected"
         n = await self.db.execute(
             "UPDATE group_schedule_changes SET status = ?, decided_at = ? "
             "WHERE id = ? AND status = 'pending'",
