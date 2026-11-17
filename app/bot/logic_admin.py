@@ -1040,11 +1040,32 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         state, data = await repo.get_state(ctx.uid)
         if state != "ad:bc_text" or not data.get("media_file_id"):
             return Out(toast="Фото-черновик не найден", alert=True)
-        n = len(await _recipients(ctx, data))
         data["text"] = ""
-        return Out(screen=Screen(f"<b>Предпросмотр рассылки</b>\n\n📷 Фото без подписи\nПолучателей: {n}",
-                                 [[Btn(f"✅ Отправить ({n})", "ad:bcy"), Btn("❌ Отмена", "ad:bc")]]),
-                   state="ad:bc_confirm", state_data=data)
+        data["html_text"] = ""
+        data.setdefault("buttons", [])
+        return await _broadcast_preview(ctx, data)
+    if act == "bcb":
+        if not _need(ctx, "broadcast"):
+            return _deny()
+        state, data = await repo.get_state(ctx.uid)
+        if state != "ad:bc_confirm":
+            return Out(toast="Сначала подготовьте текст рассылки", alert=True)
+        buttons = list(data.get("buttons") or [])
+        if arg == "url":
+            if len(buttons) >= 8:
+                return Out(toast="Достигнут лимит в 8 кнопок", alert=True)
+            return Out(screen=Screen("Отправьте строку в формате: <code>Название кнопки | https://ссылка</code>"),
+                       state="ad:bc_button", state_data=data)
+        if arg not in ("support", "rating"):
+            return Out(toast="Неизвестный тип кнопки", alert=True)
+        if len(buttons) >= 8:
+            return Out(toast="Достигнут лимит в 8 кнопок", alert=True)
+        if any(item.get("action") == arg for item in buttons):
+            return Out(toast="Такая кнопка уже добавлена", alert=True)
+        buttons.append({"text": "💬 Обратиться к админу" if arg == "support" else "⭐ Рейтинг преподавателей",
+                        "action": arg})
+        data["buttons"] = buttons
+        return await _broadcast_preview(ctx, data)
 
     if act == "bcy":
         if not _need(ctx, "broadcast"):
@@ -1053,15 +1074,22 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         if state != "ad:bc_confirm" or (not data.get("text") and not data.get("media_file_id")):
             return Out(toast="Черновик устарел", alert=True)
         recipients = await _recipients(ctx, data)
-        text = "📣 " + fm.esc(data.get("text", ""))
-        await repo.audit(ctx.uid, "broadcast", f"{data.get('aud')}:{len(recipients)}")
-        out = Out(screen=Screen(f"Рассылка поставлена в очередь: получателей {len(recipients)}.", [nav("ad:menu")]),
+        if not recipients:
+            return Out(screen=Screen("В выбранной аудитории пока нет доступных получателей.", [nav("ad:bc")]),
+                       state="ad:bc_confirm", state_data=data)
+        body = str(data.get("html_text") or fm.esc(data.get("text", "")))
+        if not body and not data.get("media_file_id"):
+            return Out(toast="Пустую рассылку отправить нельзя", alert=True)
+        markup = _broadcast_markup(data)
+        await repo.audit(ctx.uid, "broadcast", f"{data.get('aud')}:{len(recipients)}:buttons={len(data.get('buttons') or [])}")
+        out = Out(screen=Screen(f"Рассылка принята в очередь: {len(recipients)} получателей. Доставка будет идти постепенно.", [nav("ad:menu")]),
                   clear_state=True)
         if data.get("media_file_id"):
-            caption = text[:900] if text.strip() else "📣 Сообщение от администрации"
-            out.notify_media = [(uid, data["media_file_id"], data.get("media_type", "photo"), caption) for uid in recipients]
+            caption = body[:900] if body.strip() else "Сообщение от администрации"
+            out.notify_media = [(uid, data["media_file_id"], data.get("media_type", "photo"), caption, markup)
+                                for uid in recipients]
         else:
-            out.notify = [(uid, Screen(text)) for uid in recipients]
+            out.notify = [(uid, Screen(body, markup)) for uid in recipients]
         return out
 
     # ---- редактор текстов интерфейса ----
@@ -1257,6 +1285,40 @@ async def _admin_card(ctx: Ctx, uid: int) -> Out:
                              "админами всегда только у вас.", kb))
 
 
+def _broadcast_markup(data: dict) -> Kb | None:
+    rows: Kb = []
+    for item in data.get("buttons", [])[:8]:
+        label = str(item.get("text") or "")[:32]
+        if item.get("url"):
+            rows.append([Btn(label, url=str(item["url"]))])
+        elif item.get("action") == "support":
+            rows.append([Btn(label, "bc:support")])
+        elif item.get("action") == "rating":
+            rows.append([Btn(label, "bc:rating")])
+    return rows or None
+
+
+async def _broadcast_preview(ctx: Ctx, data: dict) -> Out:
+    count = len(await _recipients(ctx, data))
+    body = str(data.get("html_text") or fm.esc(data.get("text", "")))
+    if not body and not data.get("media_file_id"):
+        body = "<i>Сообщение без текста</i>"
+    media = "📷 Вложение будет отправлено вместе с подписью.\n\n" if data.get("media_file_id") else ""
+    buttons = _broadcast_markup(data) or []
+    buttons.extend([
+        [Btn("➕ Добавить URL-кнопку", "ad:bcb:url")],
+        [Btn("💬 Кнопка поддержки", "ad:bcb:support"), Btn("⭐ Кнопка рейтинга", "ad:bcb:rating")],
+        [Btn(f"✅ Отправить ({count})", "ad:bcy"), Btn("❌ Отмена", "ad:bc")],
+    ])
+    preview = (f"<b>👁 Предпросмотр рассылки</b> · {count} получателей\n"
+               f"{media}<i>Ниже показано сообщение в том же HTML-формате и с теми же кнопками, "
+               f"которые получат пользователи.</i>\n\n{body}")
+    if data.get("buttons"):
+        preview += f"\n\nКнопок: <b>{len(data['buttons'])}/8</b>"
+    return Out(screen=Screen(preview[:3900], buttons),
+               state="ad:bc_confirm", state_data=data)
+
+
 async def _recipients(ctx: Ctx, data: dict) -> list[int]:
     repo = ctx.repo
     aud = data.get("aud")
@@ -1269,7 +1331,7 @@ async def _recipients(ctx: Ctx, data: dict) -> list[int]:
 
 
 # ---------------- ввод текста ----------------
-async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
+async def on_text(ctx: Ctx, state: str, data: dict, text: str, *, html_text: str | None = None) -> Out:
     if not ctx.is_admin:
         return _deny()
     repo = ctx.repo
@@ -1379,16 +1441,27 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
         if not groups:
             return Out(screen=Screen("Группа не найдена.", [nav("ad:bc")]), state="ad:bc_group", state_data={})
         return Out(screen=Screen(f"Группа {fm.esc(groups[0]['name'])}. Напишите текст рассылки."),
-                   state="ad:bc_text", state_data={"aud": "grp", "gid": groups[0]["id"]})
+                   state="ad:bc_text", state_data={"aud": "grp", "gid": groups[0]["id"], "buttons": []})
+    if state == "ad:bc_button" and ctx.can("broadcast"):
+        parts = text.split("|", 1)
+        if len(parts) != 2:
+            return Out(screen=Screen("Формат: <code>Название кнопки | https://ссылка</code>"), state=state, state_data=data)
+        label, url = parts[0].strip(), parts[1].strip()
+        if not label or len(label) > 32 or not url.startswith(("https://", "http://", "tg://")):
+            return Out(screen=Screen("Название — 1–32 символа, ссылка должна начинаться с https://, http:// или tg://."),
+                       state=state, state_data=data)
+        buttons = list(data.get("buttons") or [])
+        if len(buttons) >= 8:
+            return Out(screen=Screen("Максимум 8 кнопок."), state="ad:bc_confirm", state_data=data)
+        buttons.append({"text": label, "url": url})
+        data["buttons"] = buttons
+        return await _broadcast_preview(ctx, data)
     if state == "ad:bc_text" and ctx.can("broadcast"):
         if len(text) > 3000:
             return Out(screen=Screen("Слишком длинно (максимум 3000 символов)."), state="ad:bc_text", state_data=data)
-        new = dict(data, text=text)
-        n = len(await _recipients(ctx, new))
-        kb = [[Btn(f"✅ Отправить ({n})", "ad:bcy"), Btn("❌ Отмена", "ad:bc")]]
-        preview = ("📷 Фото будет приложено.\n" if new.get("media_file_id") else "")
-        return Out(screen=Screen(f"<b>Предпросмотр</b>\n\n{preview}📣 {fm.esc(text)}\n\nПолучателей: {n}", kb),
-                   state="ad:bc_confirm", state_data=new)
+        new = dict(data, text=text, html_text=(html_text or fm.esc(text))[:12000])
+        new.setdefault("buttons", [])
+        return await _broadcast_preview(ctx, new)
     if state == "ad:uitext_val" and ctx.is_super:
         key = data.get("key")
         if key not in ("welcome_text", "unknown_text", "hw_intro_text"):
