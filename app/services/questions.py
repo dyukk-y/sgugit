@@ -138,6 +138,6 @@ class QuestionService:
             if screen is None:
                 await self.repo.finish_pending(p["id"], True)
                 continue
-            screen.text = "🤖 Пока никто не ответил, отвечаю по расписанию:\\n\\n" + screen.text
+            screen.text = "🤖 Пока никто не ответил, отвечаю по расписанию:\n\n" + screen.text
             out.append((p, screen))
         return out
