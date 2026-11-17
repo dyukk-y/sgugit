@@ -890,7 +890,7 @@ def build_router(app: App) -> Router:
         out = await run_process(app, message.from_user, command=name, args=args)
         if out.screen is None and not out.file and not out.notify and not out.notify_timed and not out.toast:
             # неизвестная или скрытая команда (например, /admin у обычного студента): как обычный текст
-            out = await run_process(app, message.from_user, text=message.text or "")
+            out = await run_process(app, message.from_user, text=message.text or "", text_html=message.html_text or message.text or "")
         # Сначала гарантированно показываем ответ, и только потом удаляем /start или другую команду.
         await render(app, message.chat.id, out)
         await deliver_side_effects(app, message.chat.id, out)
@@ -916,7 +916,8 @@ def build_router(app: App) -> Router:
             await safe_delete(message)
             return
         out = await run_process(app, message.from_user, attachment_file_id=message.photo[-1].file_id,
-                                attachment_kind="photo", attachment_caption=message.caption or "")
+                                attachment_kind="photo", attachment_caption=message.caption or "",
+                                attachment_caption_html=message.html_caption or message.caption or "")
         await render(app, message.chat.id, out)
         await deliver_side_effects(app, message.chat.id, out)
         await safe_delete(message)
