@@ -39,6 +39,7 @@ async def handle_callback(ctx: Ctx, data: str) -> Out:
     block = _maintenance(ctx)
     if block:
         return block
+    parts = data.split(":")
     if parts[0] == "bc" and len(parts) > 1 and parts[1] == "support":
         return await logic_user.on_cb_me(ctx, ["fb"])
     if not ctx.registered and not ctx.is_admin:
@@ -48,7 +49,6 @@ async def handle_callback(ctx: Ctx, data: str) -> Out:
             return await logic_user.start(ctx)
     if data == "noop":
         return Out()
-    parts = data.split(":")
     head, rest = parts[0], parts[1:]
     if head == "m":
         return Out(screen=await logic_user.main_menu(ctx), clear_state=True)
