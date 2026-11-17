@@ -12,6 +12,11 @@ class T(unittest.TestCase):
             chat = await r.upsert_chat(-7, "Чат", None, 5)
             u5 = await r.ensure_user(5); u6 = await r.ensure_user(6)
             self.assertTrue(lc.can_manage(u5, chat, 1)); self.assertFalse(lc.can_manage(u6, chat, 1)); self.assertTrue(lc.can_manage(u6, chat, 1, tg_admin=True))
+            # Предложить изменение расписания может любой, но подтверждать — только управляющий чатом.
+            self.assertFalse(lc.can_manage(u6, chat, 1))
+            self.assertTrue(lc.can_manage(u5, chat, 1))
+            self.assertTrue(lc.can_manage(None, chat, 1, tg_admin=True))
+            self.assertFalse(lc.can_manage(None, chat, 1, tg_admin=False))
             self.assertIn("не привязана", (await lc.screen(r, chat)).text)
             self.assertIn("зарегистрируйтесь", await lc.apply(r, chat, u5, "grp"))
             await r.update_user(5, group_id=g["id"]); u5 = await r.get_user(5)
