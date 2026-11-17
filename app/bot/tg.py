@@ -969,8 +969,13 @@ def build_router(app: App) -> Router:
         if not change or change["chat_id"] != msg.chat.id:
             await _safe_answer(cb, "Изменение не найдено или уже обработано", True)
             return
-        if int(change["author_id"]) != cb.from_user.id:
-            await _safe_answer(cb, "Подтвердить изменение может только его автор", True)
+        # Предложить изменение может любой участник, но применять его к общему
+        # расписанию должны только администраторы/добавивший бота.
+        chat = await app.repo.get_chat(msg.chat.id)
+        user = await app.repo.get_user(cb.from_user.id)
+        tg_admin = await _is_tg_admin(app, msg.chat.id, cb.from_user.id)
+        if not chat or not logic_chat.can_manage(user, chat, app.cfg.superadmin_id, tg_admin):
+            await _safe_answer(cb, "Подтвердить изменение могут только администраторы чата", True)
             return
         approved = parts[1] == "ok"
         changed = await app.repo.decide_group_schedule_change(change_id, cb.from_user.id, approved)
