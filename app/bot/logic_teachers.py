@@ -96,8 +96,6 @@ async def card(ctx: Ctx, tid: int, mode: str = "m", page: int = 0) -> Out:
             lines.append("\n<i>В расписании пока нет видов занятий для оценки.</i>")
     else:
         lines.append("\n<i>Оценки доступны после подтверждения ФИО.</i>")
-    if ctx.is_admin:
-        kb.append([Btn("🔐 Авторы комментариев (админ)", f"t:admincomments:{tid}:{mode}:{page}")])
     kb.append(nav(f"t:l:{mode}:{page}"))
     return Out(screen=Screen("\n".join(lines), kb))
 
@@ -249,42 +247,6 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         return Out(screen=Screen("Напишите короткий комментарий (до 600 символов). Не указывайте личные данные.", 
                                  [[Btn("Пропустить", f"t:skipcomment:{tid}:{mode}:{page}")]]),
                    state="t:comment", state_data={"tid": tid, "mode": mode, "page": page})
-    if act == "admincomments" and len(parts) >= 2 and parts[1].isdigit():
-        if not ctx.is_admin:
-            return Out(toast="Недостаточно прав", alert=True)
-        tid = int(parts[1])
-        rows = await ctx.repo.admin_teacher_review_details(tid)
-        lines = ["<b>Отзывы, ответы и авторы (только администрация)</b>"]
-        seen_reviews = set()
-        kb: Kb = []
-        for row in rows:
-            if row["review_id"] not in seen_reviews:
-                who = ("@" + row["review_username"]) if row.get("review_username") else (row.get("review_tg_name") or str(row["review_user_id"]))
-                block = f"\n<b>Отзыв · {fm.esc(str(who))} · ID <code>{row['review_user_id']}</code></b>\n{fm.esc(row['comment'])}"
-                if len("\n".join(lines + [block])) > 3300:
-                    break
-                lines.append(block)
-                kb.append([Btn("🗑 Удалить отзыв", "t:admindel:" + str(tid) + ":" + str(row["review_id"]))])
-                seen_reviews.add(row["review_id"])
-            if row.get("reply"):
-                who = ("@" + row["reply_username"]) if row.get("reply_username") else (row.get("reply_tg_name") or str(row["reply_user_id"]))
-                reply_line = f"↳ <b>Ответ · {fm.esc(str(who))} · ID <code>{row['reply_user_id']}</code></b>\n{fm.esc(row['reply'])}"
-                if len("\n".join(lines + [reply_line])) <= 3500:
-                    lines.append(reply_line)
-        if not rows:
-            lines.append("\nОтзывов пока нет.")
-        kb.append(nav(f"t:v:{tid}:m:0"))
-        return Out(screen=Screen("\n".join(lines)[:3800], kb))
-    if act == "admindel" and len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
-        if not ctx.is_admin:
-            return Out(toast="Недостаточно прав", alert=True)
-        tid, review_id = int(parts[1]), int(parts[2])
-        deleted = await ctx.repo.delete_teacher_review(review_id, tid)
-        if deleted:
-            await ctx.repo.audit(ctx.uid, "teacher_review_delete", f"{review_id}:{tid}")
-        out = await on_cb(ctx, ["admincomments", str(tid)])
-        out.toast = "Отзыв удалён" if deleted else "Отзыв уже удалён"
-        return out
     if act == "skipcomment" and len(parts) >= 2 and parts[1].isdigit():
         tid = int(parts[1]); mode = parts[2] if len(parts) > 2 else "m"
         page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
