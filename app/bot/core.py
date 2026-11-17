@@ -29,6 +29,7 @@ class Screen:
     text: str
     kb: Kb | None = None
     rich: bool = False
+    html_content: bool = False  # HTML source may be longer than the rendered Telegram text
 
 
 @dataclass
