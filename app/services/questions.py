@@ -1,8 +1,10 @@
 """Вопросы в групповых чатах: бот выжидает, не ответил ли кто-то из людей, и если нет, отвечает сам по расписанию."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+from collections import defaultdict
 from datetime import date, datetime
 
 from app import timeutil as tu
@@ -47,6 +49,7 @@ def signature(i: Intent) -> str:
 class QuestionService:
     def __init__(self, repo: Repo, cfg: Settings):
         self.repo, self.cfg = repo, cfg
+        self._chat_locks: defaultdict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 
     async def consider(self, chat: dict, user_id: int, message_id: int, text: str, now_ts: int | None = None,
                        now_dt: datetime | None = None) -> bool:
@@ -58,22 +61,26 @@ class QuestionService:
         intent = detect_intent(text, ctx.today, await self.repo.subject_catalog(), await self.repo.known_surnames())
         if intent is None or intent.name not in WAIT_INTENTS:
             return False
-        pend = await self.repo.pending_for_chat(chat["chat_id"])
-        if len(pend) >= MAX_PENDING_PER_CHAT:
-            return False
-        sig = signature(intent)
-        for p in pend:
-            if p["user_id"] == user_id:
-                return False  # один ожидающий вопрос от человека
-            try:
-                if signature(intent_from_json(p["intent"])) == sig:
-                    return False  # такой же вопрос уже ждёт ответа
-            except (ValueError, KeyError):
-                continue
-        now = now_ts if now_ts is not None else tu.now_ts()
-        wait = max(1, int(chat.get("wait_min") or 60))
-        await self.repo.add_pending(chat["chat_id"], message_id, user_id, text, intent_to_json(intent), now + wait * 60)
-        return True
+        chat_id = int(chat["chat_id"])
+        # Проверка лимита и дублей вместе с INSERT должна быть последовательной:
+        # два сообщения могут прийти почти одновременно.
+        async with self._chat_locks[chat_id]:
+            pend = await self.repo.pending_for_chat(chat_id)
+            if len(pend) >= MAX_PENDING_PER_CHAT:
+                return False
+            sig = signature(intent)
+            for p in pend:
+                if p["user_id"] == user_id:
+                    return False  # один ожидающий вопрос от человека
+                try:
+                    if signature(intent_from_json(p["intent"])) == sig:
+                        return False  # такой же вопрос уже ждёт ответа
+                except (ValueError, KeyError, TypeError):
+                    continue
+            now = now_ts if now_ts is not None else tu.now_ts()
+            wait = max(1, int(chat.get("wait_min") or 60))
+            await self.repo.add_pending(chat_id, message_id, user_id, text, intent_to_json(intent), now + wait * 60)
+            return True
 
     async def mark_answers(self, chat_id: int, user_id: int, text: str, reply_to_id: int | None) -> int:
         """Снимает вопрос по явному ответу на него, не принимая любое сообщение за ответ."""
@@ -125,7 +132,8 @@ class QuestionService:
             if not await self.repo.claim_pending(p["id"], now):
                 continue
             chat = await self.repo.get_chat(p["chat_id"])
-            if not chat or not chat.get("active") or not chat.get("group_id"):
+            if (not chat or not chat.get("active") or not chat.get("group_id")
+                    or chat.get("smart_mode") != "active"):
                 await self.repo.finish_pending(p["id"], True)
                 continue
             try:
