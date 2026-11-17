@@ -32,12 +32,15 @@ def _maintenance(ctx: Ctx) -> Out | None:
 async def handle_callback(ctx: Ctx, data: str) -> Out:
     if ctx.user.get("banned") and not ctx.is_admin:
         parts = data.split(":")
-        support_action = parts[0] == "me" and len(parts) > 1 and parts[1] in ("fb", "fbnew", "ticket", "ticketreply")
+        support_action = ((parts[0] == "me" and len(parts) > 1 and parts[1] in ("fb", "fbnew", "ticket", "ticketreply"))
+                          or (parts[0] == "bc" and len(parts) > 1 and parts[1] == "support"))
         if not support_action:
             return _banned(ctx)
     block = _maintenance(ctx)
     if block:
         return block
+    if parts[0] == "bc" and len(parts) > 1 and parts[1] == "support":
+        return await logic_user.on_cb_me(ctx, ["fb"])
     if not ctx.registered and not ctx.is_admin:
         # До регистрации доступны только шаги регистрации студента или преподавателя.
         allowed = data.startswith("r:") or data == "p:register" or data.startswith("p:choose:")
@@ -53,6 +56,8 @@ async def handle_callback(ctx: Ctx, data: str) -> Out:
         return await logic_teacher.on_cb(ctx, rest)
     if head == "ad":
         return await logic_admin.on_cb(ctx, rest)
+    if head == "bc" and rest and rest[0] == "rating":
+        return await logic_teachers.on_cb(ctx, ["l", "m", "0"])
     if head == "r":
         return await logic_user.on_cb_register(ctx, rest)
     if head == "me":
