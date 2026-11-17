@@ -196,7 +196,7 @@ async def handle_photo(ctx: Ctx, file_id: str, caption: str = "", caption_html: 
         data.update(media_file_id=file_id, media_type="photo")
         if caption.strip():
             data["text"] = caption.strip()[:900]
-            data["html_text"] = (caption_html or fm.esc(data["text"]))[:4000]
+            data["html_text"] = caption_html or fm.esc(data["text"])
             return await logic_admin._broadcast_preview(ctx, data)
         return Out(screen=Screen("📷 Фото добавлено к рассылке. Теперь отправьте текст подписи или нажмите «Отправить без текста».",
                                  [[Btn("📤 Отправить без текста", "ad:bcp"), Btn("❌ Отмена", "ad:bc")]]),
