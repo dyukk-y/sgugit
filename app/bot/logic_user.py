@@ -111,7 +111,7 @@ async def start(ctx: Ctx) -> Out:
         ctx.user["role"] = "student"
     ctx.user["private_started"] = 1
     if ctx.user.get("group_id"):
-        return Out(screen=await main_menu(ctx), clear_state=True)
+        return Out(screen=await main_menu(ctx, show_intro=True), clear_state=True)
     welcome_rows: Kb = []
     if await _show_add_group_button(ctx):
         welcome_rows.append([Btn("➕ В чат", url=f"https://t.me/{ctx.bot_username}?startgroup&admin=pin_messages+delete_messages")])
