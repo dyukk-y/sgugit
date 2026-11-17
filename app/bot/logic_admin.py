@@ -186,7 +186,6 @@ async def _admin_review_replies_screen(ctx: Ctx, tid: int, review_id: int, page:
 async def menu_screen(ctx: Ctx) -> Screen:
     rows: Kb = []
     pend_fio = await ctx.repo.count("users", "fio_status = 'pending'") if ctx.can("users") else 0
-    pend_hw = await ctx.repo.count("homework", "status = 'pending'") if ctx.can("homework") else 0
     unread = int(await ctx.repo.db.scalar(
         "SELECT COUNT(*) FROM support_messages WHERE sender_role = 'user' AND seen = 0") or 0) if ctx.is_admin else 0
 
@@ -201,7 +200,7 @@ async def menu_screen(ctx: Ctx) -> Screen:
          Btn(f"💬 Диалоги · {unread}", "ad:msg:0"))
     pair(Btn(f"🛡 ФИО · {pend_fio}", "ad:fq:0") if ctx.can("users") else None,
          Btn("🗓 Расписание", "ad:sch") if ctx.can("schedule") else None)
-    pair(Btn(f"📝 Задания · {pend_hw}", "ad:hw:0") if ctx.can("homework") else None,
+    pair(Btn("📝 Задания", "ad:hw") if ctx.can("homework") else None,
          Btn("⭐ Рейтинг", "ad:rt") if ctx.can("teachers") else None)
     pair(Btn("📣 Рассылка", "ad:bc") if ctx.can("broadcast") else None,
          Btn("🧰 Инструменты", "ad:tools") if ctx.is_super or ctx.can("users") else None)
@@ -431,6 +430,8 @@ async def user_card(ctx: Ctx, uid: int) -> Out:
              f"ФИО: {u['fio_status']}", f"Роль: {role}",
              f"Бан: {'да 🚫' if u['banned'] else 'нет'}",
              f"Регистрация: {reg} · активность: {seen}"]
+    if u["role"] == "student":
+        lines.append(f"Создание заданий: {'запрещено 🚫' if u.get('hw_blocked') else 'разрешено ✅'}")
     kb: Kb = []
     if u["fio_status"] == "pending" and u.get("fio") and not (is_target_super and not ctx.is_super):
         chk = validate_fio(u["fio"], *await ctx.repo.stoplists(), ctx=await ctx.repo.fio_context())
@@ -446,6 +447,9 @@ async def user_card(ctx: Ctx, uid: int) -> Out:
     protected = is_target_super or (u["role"] == "admin" and not ctx.is_super) or uid == ctx.uid
     if ctx.can("users") and not protected:
         kb.append([Btn("✅ Разбанить" if u["banned"] else "🚫 Забанить", f"ad:ub:{uid}")])
+    if ctx.can("homework") and not protected and u["role"] == "student":
+        label = "🔓 Разрешить создавать задания" if u.get("hw_blocked") else "🚫 Запретить создавать задания"
+        kb.append([Btn(label, f"ad:hwb:{uid}")])
     if ctx.can("users"):
         if u["fio_status"] == "pending":
             kb.append([Btn("✅ Подтвердить ФИО", f"ad:ufo:{uid}:ok"), Btn("🔄 Сбросить ФИО", f"ad:ufo:{uid}:reset")])
@@ -619,7 +623,7 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         text = (f"<b>Статистика</b>\nПользователей: {s['users']} (подтверждено ФИО: {s['verified']}, на проверке: {s['pending']})\n"
                 f"Активных за сутки: {s['dau']} · за неделю: {s['wau']}\nАдмины: {s['admins']}\n"
                 f"Группы: {s['groups']} · занятий в базе: {s['lessons']}\nПреподавателей: {s['teachers']} · оценок: {s['ratings']}\n"
-                f"Заданий: {s['hw']} (на проверке: {s['hw_pending']})\nЗаблокировано: {s['banned']}\n\n<b>Аналитика за 7 дней</b>\nПопулярные события: {fm.esc(popular)}\nВопросы без ответа: {unanswered} · ориентировочная доля: {ratio:.1f}%\n"
+                f"Опубликовано заданий: {s['hw']}\nЗаблокировано аккаунтов: {s['banned']}\n\n<b>Аналитика за 7 дней</b>\nПопулярные события: {fm.esc(popular)}\nВопросы без ответа: {unanswered} · ориентировочная доля: {ratio:.1f}%\n"
                 f"Синхронизация расписания: {last_s}")
         return Out(screen=Screen(text, [nav("ad:menu")]))
 
@@ -631,6 +635,52 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
             return await user_card(ctx, int(arg))
         return Out(screen=Screen("Введите @username, Telegram ID или часть ФИО.", [nav("ad:menu")]),
                    state="ad:user_search", state_data={})
+    if act == "hwfind":
+        if not _need(ctx, "homework"):
+            return _deny()
+        return Out(screen=Screen("Введите @username, Telegram ID или часть ФИО студента, которому нужно изменить доступ к созданию заданий.", [nav("ad:hw")]),
+                   state="ad:hw_user_search", state_data={})
+    if act == "hwuser" and arg.isdigit():
+        if not _need(ctx, "homework"):
+            return _deny()
+        u = await repo.get_user(int(arg))
+        if not u:
+            return Out(toast="Пользователь не найден", alert=True)
+        return await user_card(ctx, int(arg))
+    if act == "hwblocked":
+        if not _need(ctx, "homework"):
+            return _deny()
+        page = int(arg) if arg.isdigit() else 0
+        rows, total = await repo.blocked_hw_users(PAGE, page * PAGE)
+        lines = ["<b>🚫 Студенты без права создавать задания</b>", f"Всего: <b>{total}</b>"]
+        kb: Kb = []
+        for row in rows:
+            who = row.get("tg_name") or (f"@{row['username']}" if row.get("username") else "без имени")
+            group = row.get("group_name") or "без группы"
+            lines.append(f"\n{fm.esc(who[:28])} · {fm.esc(group[:18])} · ID <code>{row['id']}</code>")
+            kb.append([Btn(f"Открыть · {who[:22]}", f"ad:hwuser:{row['id']}")])
+        if not rows:
+            lines.append("\nНет студентов с ограничением.")
+        page_buttons = pager("ad:hwblocked", page, total, PAGE)
+        if page_buttons:
+            kb.append(page_buttons)
+        kb.append(nav("ad:hw"))
+        return Out(screen=Screen("\n".join(lines)[:3800], kb))
+    if act == "hwb" and arg.isdigit():
+        if not _need(ctx, "homework"):
+            return _deny()
+        uid = int(arg)
+        u = await repo.get_user(uid)
+        if not u or u.get("role") != "student" or uid in (ctx.cfg.superadmin_id, ctx.uid):
+            return _deny()
+        blocked = not bool(u.get("hw_blocked"))
+        await repo.update_user(uid, hw_blocked=1 if blocked else 0)
+        await repo.audit(ctx.uid, "hw_create_block" if blocked else "hw_create_unblock", str(uid))
+        out = await user_card(ctx, uid)
+        message = ("🚫 Администрация запретила вам создавать новые задания. Уже опубликованные задания остаются доступными группе."
+                   if blocked else "✅ Вам снова разрешено создавать задания.")
+        out.notify = [(uid, Screen(message))]
+        return out
     if act == "ub" and arg.isdigit():
         if not _need(ctx, "users"):
             return _deny()
@@ -810,16 +860,21 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
     if act == "hw":
         if not _need(ctx, "homework"):
             return _deny()
-        page = int(arg) if arg.isdigit() else 0
-        rows, total = await repo.pending_hw(None, PAGE, page * PAGE)
-        kb = []
-        for r in rows:
-            g = await repo.get_group(r["group_id"])
-            kb.append([Btn(f"{g['name'] if g else ''} · {r['subject'][:14]}: {r['text'][:14]}", f"h:v:{r['id']}")])
-        if total > PAGE:
-            kb.append(pager("ad:hw", page, total, PAGE))
-        kb.append(nav("ad:menu"))
-        return Out(screen=Screen(f"<b>Задания на проверке: {total}</b>" + ("" if rows else "\nОчередь пуста."), kb))
+        stats = await repo.admin_homework_stats()
+        lines = [
+            "<b>📝 Задания · статистика</b>",
+            f"Опубликовано всего: <b>{stats['published']}</b>",
+            f"За последние 24 часа: <b>{stats['last_day']}</b>",
+            f"За 7 дней: <b>{stats['last_week']}</b>",
+            f"Студентов публиковали за 7 дней: <b>{stats['authors_week']}</b>",
+            f"Ограничено студентов: <b>{stats['blocked_students']}</b>",
+        ]
+        if stats["legacy_pending"]:
+            lines.append(f"Старых неопубликованных заданий: <b>{stats['legacy_pending']}</b>")
+        kb = [[Btn("🔎 Найти студента", "ad:hwfind")],
+              [Btn(f"🚫 Ограниченные студенты · {stats['blocked_students']}", "ad:hwblocked:0")],
+              nav("ad:menu")]
+        return Out(screen=Screen("\n".join(lines), kb))
 
     # ---- рейтинг преподавателей: единая точка управления ----
     if act == "rt":
