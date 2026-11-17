@@ -14,18 +14,14 @@ from app.services.fio import describe_reasons, short_name, validate_fio
 PAGE = 6
 DEFAULT_ADMIN_PERMS = ("users", "homework", "teachers", "stats")
 BOOL_SETTINGS = {
-    "rating_enabled": "Раздел «Преподаватели»",
     "hw_show_author": "Показывать автора задания",
     "maintenance": "Режим техработ",
     "fio_need_known_surname": "Автоподтверждение ФИО только для известных фамилий",
-    "rate_only_own": "Оценивать только своих преподавателей",
     "sync_enabled": "Автосинхронизация расписания",
     "notify_changes": "Рассылать «изменения в расписании»",
     "group_require_start": "В группе требовать запуск бота в личке",
 }
 INT_SETTINGS = {
-    "rate_cooldown_days": "Менять оценку не чаще (дней)",
-    "min_votes": "Оценок для показа средней",
     "hw_daily_limit": "Заданий в сутки от одного студента",
     "fio_auto_delay_min": "Автопроверка ФИО через (мин)",
 }
@@ -58,14 +54,23 @@ async def _admin_rating_list_screen(ctx: Ctx, page: int = 0, sort: str = "rating
     sort = sort if sort in ("name", "rating") else "rating"
     rows, total = await ctx.repo.admin_teacher_list(page * PAGE, PAGE, sort=sort)
     enabled = ctx.repo.flag("rating_enabled")
+    own_only = ctx.repo.flag("rate_only_own")
+    min_votes = ctx.repo.int_setting("min_votes") or 5
     lines = ["<b>⭐ Рейтинг преподавателей</b>",
              f"Раздел для студентов: {'включён' if enabled else 'скрыт'}",
+             f"Оценивать можно: {'только своих преподавателей' if own_only else 'всех преподавателей'}",
+             f"Порог показа средней оценки: <b>{min_votes}</b> голосов",
              f"Преподавателей: <b>{total}</b>",
              "Список включает и скрытых преподавателей."]
     kb: Kb = [[Btn("🙈 Скрыть раздел у всех" if enabled else "👁 Показать раздел", "ad:rte")],
               [Btn("🔎 Найти преподавателя", f"ad:rts:{sort}:{page}"),
                Btn("↕️ Сортировка: " + ("по имени" if sort == "name" else "по рейтингу"),
                    f"ad:rt:{'rating' if sort == 'name' else 'name'}:0")]]
+    if ctx.is_super:
+        kb.extend([
+            [Btn("🔒 Оценивать только своих: " + ("вкл" if own_only else "выкл"), "ad:rto")],
+            [Btn(f"⚙️ Порог средней: {min_votes} голосов", f"ad:rtv:{sort}:{page}")],
+        ])
     for row in rows:
         avg = f"{row['avg']:.2f}/5" if row["avg"] is not None else "нет оценок"
         status = "🙈 " if row["hidden"] else ""
@@ -829,7 +834,23 @@ async def on_cb(ctx: Ctx, parts: list[str]) -> Out:
         new = "0" if repo.flag("rating_enabled") else "1"
         await repo.set_setting("rating_enabled", new)
         await repo.audit(ctx.uid, "rating_toggle", new)
-        return await on_cb(ctx, ["rt"])
+        return Out(screen=await _admin_rating_list_screen(ctx))
+    if act == "rto":
+        if not _need(ctx, sup=True):
+            return _deny()
+        new = "0" if repo.flag("rate_only_own") else "1"
+        await repo.set_setting("rate_only_own", new)
+        await repo.audit(ctx.uid, "setting", f"rate_only_own={new}")
+        return Out(screen=await _admin_rating_list_screen(ctx))
+    if act == "rtv":
+        if not _need(ctx, sup=True):
+            return _deny()
+        sort = arg if arg in ("name", "rating") else "rating"
+        page = int(arg2) if arg2.isdigit() else 0
+        return Out(screen=Screen(
+            f"Сколько оценок нужно для показа средней оценки преподавателя? Сейчас: {repo.int_setting('min_votes') or 5}. Введите число от 1 до 365.",
+            [nav(f"ad:rt:{sort}:{page}")]),
+            state="ad:rating_min_votes", state_data={"sort": sort, "page": page})
     if act == "rts":
         if not _need(ctx, "teachers"):
             return _deny()
@@ -1156,6 +1177,8 @@ def _settings_screen(ctx: Ctx) -> Screen:
     for key, label in BOOL_SETTINGS.items():
         kb.append([Btn(f"{'✅' if ctx.repo.flag(key) else '⬜'} {label}", f"ad:st:{key}")])
     for key, label in INT_SETTINGS.items():
+        if key == "min_votes":
+            continue
         kb.append([Btn(f"{label}: {ctx.repo.setting(key)}", f"ad:sv:{key}")])
     kb.append([Btn("📝 Редактор текстов интерфейса", "ad:uitext")])
     kb.append(nav("ad:menu"))
@@ -1259,6 +1282,16 @@ async def on_text(ctx: Ctx, state: str, data: dict, text: str) -> Out:
         await repo.set_setting("parity_anchor", d)
         await repo.audit(ctx.uid, "parity_anchor", d)
         return Out(screen=Screen(f"Готово: неделя с {d} нечётная.", [nav("ad:sch")]), clear_state=True)
+    if state == "ad:rating_min_votes" and ctx.is_super:
+        value = text.strip()
+        if not value.isdigit() or not 1 <= int(value) <= 365:
+            return Out(screen=Screen("Введите целое число от 1 до 365.", [nav("ad:rt")]),
+                       state=state, state_data=data)
+        await repo.set_setting("min_votes", str(int(value)))
+        await repo.audit(ctx.uid, "setting", f"min_votes={int(value)}")
+        sort = data.get("sort", "rating") if data.get("sort") in ("name", "rating") else "rating"
+        page = int(data.get("page", 0) or 0)
+        return Out(screen=await _admin_rating_list_screen(ctx, page, sort), clear_state=True)
     if state == "ad:teacher_search" and ctx.can("teachers"):
         sort = data.get("sort", "rating") if data.get("sort") in ("name", "rating") else "rating"
         page = int(data.get("page", 0) or 0)
