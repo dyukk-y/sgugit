@@ -635,6 +635,99 @@ class Repo:
             "ON CONFLICT (user_id, teacher_id, criterion) DO UPDATE SET stars = excluded.stars, updated_at = excluded.updated_at",
             uid, tid, criterion, stars, now_ts())
 
+    async def admin_teacher_list(self, offset: int = 0, limit: int = 6, query: str = "", sort: str = "rating") -> tuple[list[dict], int]:
+        """Полный административный список, включая скрытых преподавателей."""
+        q = teacher_key(query or "")
+        where, params = "1 = 1", []
+        if q:
+            where += " AND t.norm LIKE ?"
+            params.append("%" + q + "%")
+        total = int(await self.db.scalar(f"SELECT COUNT(*) FROM teachers t WHERE {where}", *params) or 0)
+        order = ("t.name COLLATE NOCASE ASC" if sort == "name" else
+                 "CASE WHEN r.avg IS NULL THEN 1 ELSE 0 END, r.avg DESC, COALESCE(r.cnt, 0) DESC, t.name COLLATE NOCASE ASC")
+        rows = await self.db.fetchall(
+            "SELECT t.id, t.name, t.hidden, COALESCE(r.cnt, 0) AS cnt, r.avg, "
+            "COALESCE(s.score_users, 0) AS score_users, COALESCE(s.score_count, 0) AS score_count, "
+            "COALESCE(v.review_count, 0) AS review_count "
+            "FROM teachers t "
+            "LEFT JOIN (SELECT teacher_id, COUNT(*) AS cnt, AVG(stars) AS avg FROM ratings GROUP BY teacher_id) r "
+            "ON r.teacher_id = t.id "
+            "LEFT JOIN (SELECT teacher_id, COUNT(DISTINCT user_id) AS score_users, COUNT(*) AS score_count "
+            "FROM teacher_rating_scores GROUP BY teacher_id) s ON s.teacher_id = t.id "
+            "LEFT JOIN (SELECT teacher_id, COUNT(*) AS review_count FROM teacher_reviews "
+            "WHERE comment <> '' GROUP BY teacher_id) v ON v.teacher_id = t.id "
+            f"WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+            *params, max(1, min(50, limit)), max(0, offset))
+        for row in rows:
+            row["avg"] = float(row["avg"]) if row["avg"] is not None else None
+        return rows, total
+
+    async def admin_teacher_rating_entries(self, tid: int, offset: int = 0, limit: int = 6) -> tuple[list[dict], int]:
+        """Одна строка на студента: общая оценка и число сохранённых критериев."""
+        total = int(await self.db.scalar(
+            "SELECT COUNT(*) FROM (SELECT user_id FROM ratings WHERE teacher_id = ? "
+            "UNION SELECT user_id FROM teacher_rating_scores WHERE teacher_id = ?) x", tid, tid) or 0)
+        rows = await self.db.fetchall(
+            "SELECT x.user_id, u.username, u.tg_name, u.fio, r.stars, "
+            "COALESCE(s.score_count, 0) AS score_count, s.score_avg, "
+            "COALESCE(r.updated_at, s.last_updated, 0) AS updated_at "
+            "FROM (SELECT user_id FROM ratings WHERE teacher_id = ? "
+            "UNION SELECT user_id FROM teacher_rating_scores WHERE teacher_id = ?) x "
+            "LEFT JOIN users u ON u.id = x.user_id "
+            "LEFT JOIN ratings r ON r.user_id = x.user_id AND r.teacher_id = ? "
+            "LEFT JOIN (SELECT user_id, COUNT(*) AS score_count, AVG(stars) AS score_avg, "
+            "MAX(updated_at) AS last_updated FROM teacher_rating_scores WHERE teacher_id = ? GROUP BY user_id) s "
+            "ON s.user_id = x.user_id "
+            "ORDER BY COALESCE(r.updated_at, s.last_updated, 0) DESC, x.user_id "
+            "LIMIT ? OFFSET ?", tid, tid, tid, tid, max(1, min(50, limit)), max(0, offset))
+        for row in rows:
+            row["score_avg"] = float(row["score_avg"]) if row["score_avg"] is not None else None
+        return rows, total
+
+    async def delete_teacher_rating(self, uid: int, tid: int) -> bool:
+        """Удалить одну оценку студента целиком: общий балл и все критерии преподавателя."""
+        async with self.db.tx() as tx:
+            exists = await tx.fetchone(
+                "SELECT user_id FROM ratings WHERE user_id = ? AND teacher_id = ? "
+                "UNION SELECT user_id FROM teacher_rating_scores WHERE user_id = ? AND teacher_id = ?",
+                (uid, tid, uid, tid))
+            if not exists:
+                return False
+            await tx.execute("DELETE FROM ratings WHERE user_id = ? AND teacher_id = ?", (uid, tid))
+            await tx.execute("DELETE FROM teacher_rating_scores WHERE user_id = ? AND teacher_id = ?", (uid, tid))
+        return True
+
+    async def admin_teacher_reviews(self, tid: int, offset: int = 0, limit: int = 5) -> tuple[list[dict], int]:
+        total = int(await self.db.scalar(
+            "SELECT COUNT(*) FROM teacher_reviews WHERE teacher_id = ? AND comment <> ''", tid) or 0)
+        rows = await self.db.fetchall(
+            "SELECT r.id, r.user_id, r.comment, r.created_at, u.username, u.tg_name, u.fio, "
+            "(SELECT COUNT(*) FROM teacher_review_replies p WHERE p.review_id = r.id) AS reply_count "
+            "FROM teacher_reviews r LEFT JOIN users u ON u.id = r.user_id "
+            "WHERE r.teacher_id = ? AND r.comment <> '' ORDER BY r.created_at DESC, r.id DESC LIMIT ? OFFSET ?",
+            tid, max(1, min(20, limit)), max(0, offset))
+        return rows, total
+
+    async def admin_teacher_review_replies(self, review_id: int, tid: int) -> list[dict]:
+        return await self.db.fetchall(
+            "SELECT p.id, p.user_id, p.reply, p.created_at, u.username, u.tg_name, u.fio "
+            "FROM teacher_review_replies p JOIN teacher_reviews r ON r.id = p.review_id "
+            "LEFT JOIN users u ON u.id = p.user_id "
+            "WHERE p.review_id = ? AND r.teacher_id = ? ORDER BY p.created_at ASC, p.id ASC",
+            review_id, tid)
+
+    async def delete_teacher_review_reply(self, reply_id: int, review_id: int, tid: int) -> bool:
+        async with self.db.tx() as tx:
+            row = await tx.fetchone(
+                "SELECT p.id FROM teacher_review_replies p JOIN teacher_reviews r ON r.id = p.review_id "
+                "WHERE p.id = ? AND p.review_id = ? AND r.teacher_id = ?",
+                (reply_id, review_id, tid))
+            if not row:
+                return False
+            await tx.execute("DELETE FROM teacher_review_replies WHERE id = ? AND review_id = ?",
+                             (reply_id, review_id))
+        return True
+
     async def teacher_rating_score_summary(self, tid: int) -> list[dict]:
         return await self.db.fetchall(
             "SELECT criterion, AVG(stars) AS avg, COUNT(*) AS cnt FROM teacher_rating_scores "
@@ -696,8 +789,12 @@ class Repo:
             row = await t.fetchone("SELECT id FROM teacher_reviews WHERE id = ? AND teacher_id = ?", (review_id, tid))
             if not row:
                 return False
+            review = await t.fetchone(
+                "SELECT user_id FROM teacher_reviews WHERE id = ? AND teacher_id = ?", (review_id, tid))
             await t.execute("DELETE FROM teacher_review_reactions WHERE review_id = ?", (review_id,))
             await t.execute("DELETE FROM teacher_review_replies WHERE review_id = ?", (review_id,))
+            await t.execute("DELETE FROM teacher_rating_comments WHERE user_id = ? AND teacher_id = ?",
+                            (review["user_id"], tid))
             await t.execute("DELETE FROM teacher_reviews WHERE id = ? AND teacher_id = ?", (review_id, tid))
         return True
 
