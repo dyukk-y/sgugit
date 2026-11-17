@@ -32,12 +32,16 @@ def _maintenance(ctx: Ctx) -> Out | None:
 async def handle_callback(ctx: Ctx, data: str) -> Out:
     if ctx.user.get("banned") and not ctx.is_admin:
         parts = data.split(":")
-        support_action = parts[0] == "me" and len(parts) > 1 and parts[1] in ("fb", "fbnew", "ticket", "ticketreply")
+        support_action = ((parts[0] == "me" and len(parts) > 1 and parts[1] in ("fb", "fbnew", "ticket", "ticketreply"))
+                          or (parts[0] == "bc" and len(parts) > 1 and parts[1] == "support"))
         if not support_action:
             return _banned(ctx)
     block = _maintenance(ctx)
     if block:
         return block
+    parts = data.split(":")
+    if parts[0] == "bc" and len(parts) > 1 and parts[1] == "support":
+        return await logic_user.on_cb_me(ctx, ["fb"])
     if not ctx.registered and not ctx.is_admin:
         # До регистрации доступны только шаги регистрации студента или преподавателя.
         allowed = data.startswith("r:") or data == "p:register" or data.startswith("p:choose:")
@@ -45,7 +49,6 @@ async def handle_callback(ctx: Ctx, data: str) -> Out:
             return await logic_user.start(ctx)
     if data == "noop":
         return Out()
-    parts = data.split(":")
     head, rest = parts[0], parts[1:]
     if head == "m":
         return Out(screen=await logic_user.main_menu(ctx), clear_state=True)
@@ -53,6 +56,8 @@ async def handle_callback(ctx: Ctx, data: str) -> Out:
         return await logic_teacher.on_cb(ctx, rest)
     if head == "ad":
         return await logic_admin.on_cb(ctx, rest)
+    if head == "bc" and rest and rest[0] == "rating":
+        return await logic_teachers.on_cb(ctx, ["l", "m", "0"])
     if head == "r":
         return await logic_user.on_cb_register(ctx, rest)
     if head == "me":
@@ -87,7 +92,7 @@ def _gid(s: str) -> int | None:
     return int(s) if s.isdigit() else None
 
 
-async def handle_text(ctx: Ctx, text: str) -> Out:
+async def handle_text(ctx: Ctx, text: str, text_html: str | None = None) -> Out:
     """Текст в личном чате: ввод для текущего шага или вопрос обычными словами."""
     if ctx.user.get("banned") and not ctx.is_admin:
         state, state_data = await ctx.repo.get_state(ctx.uid)
@@ -117,7 +122,7 @@ async def handle_text(ctx: Ctx, text: str) -> Out:
         if prefix == "t":
             return await logic_teachers.on_text(ctx, state, data, text)
         if prefix == "ad":
-            return await logic_admin.on_text(ctx, state, data, text)
+            return await logic_admin.on_text(ctx, state, data, text, html_text=text_html)
     if ctx.role == "teacher":
         return Out(screen=await logic_teacher.menu(ctx), clear_state=True)
     if not ctx.registered:
@@ -173,7 +178,7 @@ async def handle_document(ctx: Ctx, filename: str, blob: bytes, file_id: str | N
     return Out()
 
 
-async def handle_photo(ctx: Ctx, file_id: str, caption: str = "") -> Out:
+async def handle_photo(ctx: Ctx, file_id: str, caption: str = "", caption_html: str | None = None) -> Out:
     if ctx.user.get("banned") and not ctx.is_admin:
         return _banned(ctx)
     if not ctx.registered and not ctx.is_admin:
@@ -191,10 +196,8 @@ async def handle_photo(ctx: Ctx, file_id: str, caption: str = "") -> Out:
         data.update(media_file_id=file_id, media_type="photo")
         if caption.strip():
             data["text"] = caption.strip()[:900]
-            n = len(await logic_admin._recipients(ctx, data))
-            return Out(screen=Screen(f"<b>Предпросмотр рассылки с фото</b>\n\n{fm.esc(caption[:900])}\n\nПолучателей: {n}",
-                                     [[Btn(f"✅ Отправить ({n})", "ad:bcy"), Btn("❌ Отмена", "ad:bc")]]),
-                       state="ad:bc_confirm", state_data=data)
+            data["html_text"] = caption_html or fm.esc(data["text"])
+            return await logic_admin._broadcast_preview(ctx, data)
         return Out(screen=Screen("📷 Фото добавлено к рассылке. Теперь отправьте текст подписи или нажмите «Отправить без текста».",
                                  [[Btn("📤 Отправить без текста", "ad:bcp"), Btn("❌ Отмена", "ad:bc")]]),
                    state="ad:bc_text", state_data=data)

@@ -182,7 +182,7 @@ class Sender:
             await asyncio.sleep(1.0 / self.rate)
 
     async def _send(self, chat_id: int, screen: Screen) -> None:
-        text = screen.text[:MAX_TEXT]
+        text = screen.text if screen.html_content else screen.text[:MAX_TEXT]
         markup = to_markup(screen.kb) if chat_id > 0 else None
         try:
             if screen.rich:
@@ -280,7 +280,7 @@ async def safe_delete(message: Message | None) -> None:
 
 
 async def _edit(app: App, chat_id: int, message_id: int, scr: Screen) -> bool:
-    text = scr.text[:MAX_TEXT]
+    text = scr.text if scr.html_content else scr.text[:MAX_TEXT]
     markup = to_markup(scr.kb)
     if scr.rich:
         try:
@@ -318,20 +318,21 @@ async def render(app: App, chat_id: int, out: Out, source: Message | None = None
         app.anchors[chat_id] = target
         return
     old = app.anchors.get(chat_id)
+    text = scr.text if scr.html_content else scr.text[:MAX_TEXT]
     try:
         if scr.rich:
             try:
                 msg = await app.bot.send_rich_message(
-                    chat_id=chat_id, rich_message=InputRichMessage(html=schedule_rich_html(scr.text)),
+                    chat_id=chat_id, rich_message=InputRichMessage(html=schedule_rich_html(text)),
                     reply_markup=to_markup(scr.kb))
             except TelegramAPIError as e:
                 log.debug("Rich send недоступен, используем обычный текст: %s", e)
-                msg = await app.bot.send_message(chat_id, scr.text[:MAX_TEXT], reply_markup=to_markup(scr.kb))
+                msg = await app.bot.send_message(chat_id, text, reply_markup=to_markup(scr.kb))
         else:
-            msg = await app.bot.send_message(chat_id, scr.text[:MAX_TEXT], reply_markup=to_markup(scr.kb))
+            msg = await app.bot.send_message(chat_id, text, reply_markup=to_markup(scr.kb))
     except TelegramBadRequest as e:
         if _is(e, "can't parse entities"):
-            msg = await app.bot.send_message(chat_id, strip_tags(scr.text)[:MAX_TEXT], reply_markup=to_markup(scr.kb),
+            msg = await app.bot.send_message(chat_id, strip_tags(text)[:MAX_TEXT], reply_markup=to_markup(scr.kb),
                                              parse_mode=None)
         else:
             raise
@@ -369,16 +370,18 @@ async def deliver_side_effects(app: App, chat_id: int, out: Out) -> None:
         await app.repo.db.execute(
             "INSERT INTO scheduled_deletions (chat_id, message_id, delete_at) VALUES (?, ?, ?)",
             uid, msg.message_id, tu.now_ts() + max(60, int(delay)))
-    for uid, file_id, kind, caption in out.notify_media:
+    for item in out.notify_media:
+        uid, file_id, kind, caption, *extra = item
+        markup = to_markup(extra[0]) if extra and extra[0] else None
         try:
             if kind == "photo":
                 photo_id = _photo_file_id(file_id)
                 if not photo_id:
                     log.warning("Пропущена фото-рассылка: вместо file_id получен неподдерживаемый объект %s", type(file_id).__name__)
                     continue
-                await app.bot.send_photo(uid, photo_id, caption=(caption or None), parse_mode="HTML")
+                await app.bot.send_photo(uid, photo_id, caption=(caption or None), parse_mode="HTML", reply_markup=markup)
             else:
-                await app.bot.send_document(uid, file_id, caption=(caption or None), parse_mode="HTML")
+                await app.bot.send_document(uid, file_id, caption=(caption or None), parse_mode="HTML", reply_markup=markup)
         except TelegramAPIError:
             log.info("Не удалось доставить медиа-рассылку пользователю %s", uid)
         await asyncio.sleep(0.05)  # ограничиваем скорость массовой отправки медиа
@@ -390,9 +393,9 @@ async def deliver_side_effects(app: App, chat_id: int, out: Out) -> None:
                 if not photo_id:
                     log.warning("Пропущено фото-вложение: вместо file_id получен неподдерживаемый объект %s", type(file_id).__name__)
                     return
-                await app.bot.send_photo(chat_id, photo_id, caption=(caption or None))
+                await app.bot.send_photo(chat_id, photo_id, caption=(caption or None), parse_mode="HTML")
             else:
-                await app.bot.send_document(chat_id, file_id, caption=(caption or None))
+                await app.bot.send_document(chat_id, file_id, caption=(caption or None), parse_mode="HTML")
         except TelegramAPIError:
             log.exception("Не удалось отправить вложение задания")
     if out.file:
@@ -890,7 +893,7 @@ def build_router(app: App) -> Router:
         out = await run_process(app, message.from_user, command=name, args=args)
         if out.screen is None and not out.file and not out.notify and not out.notify_timed and not out.toast:
             # неизвестная или скрытая команда (например, /admin у обычного студента): как обычный текст
-            out = await run_process(app, message.from_user, text=message.text or "")
+            out = await run_process(app, message.from_user, text=message.text or "", text_html=message.html_text or message.text or "")
         # Сначала гарантированно показываем ответ, и только потом удаляем /start или другую команду.
         await render(app, message.chat.id, out)
         await deliver_side_effects(app, message.chat.id, out)
@@ -900,7 +903,7 @@ def build_router(app: App) -> Router:
     async def private_text(message: Message) -> None:
         if message.from_user is None or not _claim_private_message(app, message):
             return
-        out = await run_process(app, message.from_user, text=message.text or "")
+        out = await run_process(app, message.from_user, text=message.text or "", text_html=message.html_text or message.text or "")
         await render(app, message.chat.id, out)
         await deliver_side_effects(app, message.chat.id, out)
         await safe_delete(message)
@@ -916,7 +919,8 @@ def build_router(app: App) -> Router:
             await safe_delete(message)
             return
         out = await run_process(app, message.from_user, attachment_file_id=message.photo[-1].file_id,
-                                attachment_kind="photo", attachment_caption=message.caption or "")
+                                attachment_kind="photo", attachment_caption=message.caption or "",
+                                attachment_caption_html=message.html_caption or message.caption or "")
         await render(app, message.chat.id, out)
         await deliver_side_effects(app, message.chat.id, out)
         await safe_delete(message)

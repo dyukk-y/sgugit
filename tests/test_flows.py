@@ -500,9 +500,19 @@ class T(unittest.TestCase):
             await s.do(1, callback="ad:grp"); out = await s.do(1, text="КА-31, КА-32"); self.assertIn("КА-31", texts(out))
             # рассылка
             await s.do(1, callback="ad:bc"); await s.do(1, callback="ad:bca:grp"); out = await s.do(1, text="ис-11")
-            out = await s.do(1, text="Завтра пары перенесены!"); self.assertIn("Получателей: 2", texts(out))
+            out = await s.do(1, text="Завтра пары перенесены!", text_html="<b>Завтра</b> пары перенесены!")
+            self.assertIn("Получателей: 2", texts(out))
+            self.assertIn("<b>Завтра</b>", texts(out))
+            await s.do(1, callback="ad:bcb:support")
+            await s.do(1, callback="ad:bcb:rating")
+            await s.do(1, callback="ad:bcb:url")
+            out = await s.do(1, text="Подробнее | https://example.com")
+            self.assertIn("Подробнее", texts(out))
             out = await s.do(1, callback="ad:bcy"); self.assertEqual(sorted(n[0] for n in out.notify), [100, 200])
-            self.assertIn("Завтра пары", out.notify[0][1].text)
+            self.assertIn("<b>Завтра</b>", out.notify[0][1].text)
+            buttons = [button for row in out.notify[0][1].kb for button in row]
+            self.assertEqual({button.data for button in buttons if button.data}, {"bc:support", "bc:rating"})
+            self.assertIn("https://example.com", {button.url for button in buttons if button.url})
             # Функции старост удалены: старые callback-и безопасно отклоняются.
             out = await s.do(100, callback="hd:ml")
             self.assertIn("отключ", (out.toast or "").lower())
