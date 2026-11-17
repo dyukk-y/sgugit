@@ -13,8 +13,7 @@ SIZE = 5
 
 
 def can_moderate(ctx: Ctx, hw: dict) -> bool:
-    if ctx.is_super or (ctx.role == "admin" and ctx.can("homework")):
-        return True
+    """Администраторы больше не проверяют публикации студентов."""
     return False
 
 
@@ -59,9 +58,6 @@ async def list_screen(ctx: Ctx, page: int = 0) -> Screen:
     row = []
     if ctx.verified:
         row.append(Btn("➕ Добавить", "h:add:0"))
-    if ctx.is_head:
-        n = (await ctx.repo.pending_hw(gid, 1))[1]
-        row.append(Btn(f"📋 На проверке ({n})", "h:q:0"))
     if row:
         kb.append(row)
     if not ctx.verified:
@@ -143,6 +139,8 @@ async def view_screen(ctx: Ctx, hid: int, back: str = "h:l:0") -> Out:
 
 
 async def start_add(ctx: Ctx, day: str) -> Out:
+    if not ctx.is_admin and await ctx.repo.hw_creation_blocked(ctx.uid):
+        return Out(screen=Screen("Администрация запретила вам создавать новые задания. Уже опубликованные задания остаются доступными группе.", [[home_btn()]]))
     gid = ctx.user.get("group_id")
     if not gid or not ctx.verified:
         return Out(toast="Добавлять задания можно после подтверждения ФИО", alert=True)
@@ -213,6 +211,8 @@ async def capture_group_assignment(ctx: Ctx, gid: int, text: str, author_id: int
     phrase = parse_observed_hw(text, catalog, ctx.today)
     if not phrase or not _looks_like_assignment(phrase.text):
         return None
+    if await ctx.repo.hw_creation_blocked(author_id):
+        return None
     daily_limit = ctx.repo.int_setting("hw_daily_limit") or 10
     if await ctx.repo.hw_today_count(author_id) >= daily_limit:
         return None
@@ -240,12 +240,16 @@ async def quick_add(ctx: Ctx, phrase: HwPhrase) -> Out:
     gid = ctx.user.get("group_id")
     if not gid or not ctx.verified:
         return Out(screen=Screen("Добавлять задания можно после подтверждения ФИО.", [[home_btn()]]))
+    if not ctx.is_admin and await ctx.repo.hw_creation_blocked(ctx.uid):
+        return Out(screen=Screen("Администрация запретила вам создавать новые задания. Уже опубликованные задания остаются доступными группе.", [[home_btn()]]))
     due = tu.iso(phrase.due) if phrase.due else await _default_due(ctx, gid, phrase.subject, None)
     data = {"subject": phrase.subject, "day": None, "text": phrase.text[:1000], "due": due}
     return Out(screen=_preview(ctx, data), state="hw:confirm", state_data=data)
 
 
 async def on_text_hw(ctx: Ctx, state: str, data: dict, text: str) -> Out:
+    if state in ("hw:text", "hw:confirm") and not ctx.is_admin and await ctx.repo.hw_creation_blocked(ctx.uid):
+        return Out(screen=Screen("Администрация запретила вам создавать новые задания. Уже опубликованные задания остаются доступными группе.", [[home_btn()]]), clear_state=True)
     if not ctx.verified and not ctx.is_admin:
         if ctx.user.get("fio_status") == "pending":
             prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
@@ -335,6 +339,8 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
     gid = ctx.user.get("group_id")
     if not gid and act in ("l", "d", "dn", "add", "sub", "save", "cancel", "q"):
         return Out(screen=Screen("Сначала выберите группу: нажмите /start.", [[home_btn()]]))
+    if act in ("add", "sub", "save") and not ctx.is_admin and await repo.hw_creation_blocked(ctx.uid):
+        return Out(screen=Screen("Администрация запретила вам создавать новые задания. Уже опубликованные задания остаются доступными группе.", [[home_btn()]]), clear_state=True)
     if not ctx.verified and not ctx.is_admin and act != "cancel":
         if ctx.user.get("fio_status") == "pending":
             prompt = Screen("ФИО уже отправлено на проверку. Раздел откроется после подтверждения.",
@@ -401,6 +407,8 @@ async def on_cb_hw(ctx: Ctx, parts: list[str]) -> Out:
             return Out(screen=await list_screen(ctx), toast="Удалено")
         return Out(screen=Screen("Удалить это задание?", [[Btn("Да, удалить", f"h:del:{hid}:y"),
                                                            Btn("Отмена", f"h:v:{hid}")]]))
+    if act in ("ok", "no", "q"):
+        return Out(toast="Проверка заданий администрацией отключена", alert=True)
     if act in ("ok", "no") and len(parts) > 1 and parts[1].isdigit():
         hid = int(parts[1])
         hw = await repo.get_hw(hid)
