@@ -369,16 +369,18 @@ async def deliver_side_effects(app: App, chat_id: int, out: Out) -> None:
         await app.repo.db.execute(
             "INSERT INTO scheduled_deletions (chat_id, message_id, delete_at) VALUES (?, ?, ?)",
             uid, msg.message_id, tu.now_ts() + max(60, int(delay)))
-    for uid, file_id, kind, caption in out.notify_media:
+    for item in out.notify_media:
+        uid, file_id, kind, caption, *extra = item
+        markup = to_markup(extra[0]) if extra and extra[0] else None
         try:
             if kind == "photo":
                 photo_id = _photo_file_id(file_id)
                 if not photo_id:
                     log.warning("Пропущена фото-рассылка: вместо file_id получен неподдерживаемый объект %s", type(file_id).__name__)
                     continue
-                await app.bot.send_photo(uid, photo_id, caption=(caption or None), parse_mode="HTML")
+                await app.bot.send_photo(uid, photo_id, caption=(caption or None), parse_mode="HTML", reply_markup=markup)
             else:
-                await app.bot.send_document(uid, file_id, caption=(caption or None), parse_mode="HTML")
+                await app.bot.send_document(uid, file_id, caption=(caption or None), parse_mode="HTML", reply_markup=markup)
         except TelegramAPIError:
             log.info("Не удалось доставить медиа-рассылку пользователю %s", uid)
         await asyncio.sleep(0.05)  # ограничиваем скорость массовой отправки медиа
