@@ -42,24 +42,24 @@ class GroupScheduleChangeTests(unittest.TestCase):
         self.assertIsNone(draft)
         self.assertIsNone(clarification)
 
-    def test_cancel_pair_without_subject(self):
-        draft, clarification = parse_group_change(
-            "Завтра не будет второй пары", TODAY, CATALOG, LESSONS)
-        self.assertIsNone(clarification)
-        self.assertEqual((draft.action, draft.day, draft.num, draft.subject),
-                         ("cancel", "2026-11-02", 2, "Химия"))
+    def test_change_without_subject_is_ignored(self):
+        for text in ("Завтра не будет второй пары", "Завтра отменили 2 пару",
+                     "Завтра пар не будет", "Встречу перенесли на завтра"):
+            with self.subTest(text=text):
+                draft, clarification = parse_group_change(text, TODAY, CATALOG, LESSONS)
+                self.assertIsNone(draft)
+                self.assertIsNone(clarification)
 
-    def test_cancel_by_number_without_subject(self):
+    def test_short_subject_alias_is_recognized(self):
+        catalog = CATALOG + [("мат.", "Математика")]
+        lessons = LESSONS + [{
+            "day": "2026-11-02", "num": 4, "start_t": "15:20", "end_t": "16:50",
+            "subject": "Математика", "teacher": "", "room": ""}]
         draft, clarification = parse_group_change(
-            "Завтра отменили 2 пару", TODAY, CATALOG, LESSONS)
+            "Завтра мат. не будет", TODAY, catalog, lessons)
         self.assertIsNone(clarification)
-        self.assertEqual((draft.action, draft.num, draft.subject), ("cancel", 2, "Химия"))
-
-    def test_cancel_without_subject_or_pair_asks_for_clarification(self):
-        draft, clarification = parse_group_change(
-            "Завтра пар не будет", TODAY, CATALOG, LESSONS)
-        self.assertIsNone(draft)
-        self.assertIn("Какую именно пару", clarification)
+        self.assertEqual((draft.action, draft.subject, draft.num),
+                         ("cancel", "Математика", 4))
 
     def test_ambiguous_cancel_requests_pair_number(self):
         lessons = LESSONS + [{

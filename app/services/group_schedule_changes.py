@@ -51,11 +51,18 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     if not cancel and not add:
         return None, None
 
+    # Изменения распознаём только когда в сообщении явно назван предмет из
+    # расписания. Это защищает групповой чат от реакции на обычные разговоры
+    # («будет», «перенесли» и т. п.). _resolve_subject учитывает и сокращения
+    # из каталога предметов.
+    subject = _resolve_subject(raw, catalog)
+    if not subject:
+        return None, None
+
     day, _ = parse_when(raw, today)
     day = day or today
     day_iso = tu.iso(day)
     day_lessons = [lesson for lesson in lessons if lesson.get("day") == day_iso]
-    subject = _resolve_subject(raw, catalog)
     num = _lesson_number(re.findall(r"[а-яa-z0-9]+", low))
     tm = _TIME_RE.search(low)
     start = f"{int(tm.group(1)):02d}:{tm.group(2)}" if tm else ""

@@ -1282,7 +1282,7 @@ def build_router(app: App) -> Router:
             await app.questions.mark_answers(message.chat.id, message.from_user.id, text,
                                              rt.message_id if rt is not None else None)
         if addressed:
-            text = re.sub(re.escape(mention), "", text, flags=re.I).strip()
+            text = mention.sub("", text).strip()
         if len(text) > 300:
             return
         ctx = Ctx(app.repo, app.cfg, {"id": message.from_user.id, "group_id": None, "subgroup": None, "role": "student"})
