@@ -66,7 +66,7 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     ):
         return None, None
 
-    room_marker = bool(re.search(r"\b(?:аудитор\w*|ауд\.|кабинет\w*|каб\.|помещен\w*)", low)) or bool(re.search(r"\bв\s+\d{2,4}[а-яa-z]?\b", low))
+    room_marker = bool(re.search(r"\b(?:аудитор\w*|ауд\.|кабинет\w*|каб\.|помещен\w*)", low)) or bool(re.search(r"\bв\s+\d{2,4}(?![:.]\d)[а-яa-z]?\b", low))
     change_verb = bool(re.search(r"\b(будет|будут|проходит|проходить|проводится|перенес\w*|перевел\w*|переместил\w*|смен\w*|измен\w*|поменя\w*|теперь|вместо|переставил\w*)\b", low))
     room_change = room_marker and change_verb
     cancel = bool(re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*|снял\w*|убрал\w*)\b", low))
