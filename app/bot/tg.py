@@ -1287,7 +1287,7 @@ def build_router(app: App) -> Router:
             return
         ctx = Ctx(app.repo, app.cfg, {"id": message.from_user.id, "group_id": None, "subgroup": None, "role": "student"})
         draft = clarification = None
-        if "?" not in text and not re.search(r"\b(что|какие|кто|когда|почему|где)\b", text.lower()) and re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*|будет|будут|добав\w*|постав\w*|перенес\w*|перенос|замен\w*|начнется|начинается|аудитор\w*|кабинет\w*)\b", text.lower()):
+        if "?" not in text and not re.search(r"\b(что|какие|кто|когда|почему|где|может|ли)\b", text.lower()) and re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*|снял\w*|убрал\w*|будет|будут|добав\w*|постав\w*|перенес\w*|перенос|замен\w*|начнется|начинается|появ\w*|назнач\w*|переставил\w*|аудитор\w*|ауд\.|кабинет\w*|каб\.|вместо|поменя\w*|перевел\w*|переместил\w*)\b", text.lower()):
             catalog = await app.repo.subject_catalog()
             from_day = tu.iso(ctx.today - timedelta(days=30))
             to_day = tu.iso(ctx.today + timedelta(days=90))
