@@ -43,8 +43,12 @@ async def handle_callback(ctx: Ctx, data: str) -> Out:
     if parts[0] == "bc" and len(parts) > 1 and parts[1] == "support":
         return await logic_user.on_cb_me(ctx, ["fb"])
     if not ctx.registered and not ctx.is_admin:
-        # До регистрации доступны только шаги регистрации студента или преподавателя.
-        allowed = data.startswith("r:") or data == "p:register" or data.startswith("p:choose:")
+        # Личный кабинет преподавателя имеет собственную проверку связанного профиля.
+        # Не отправляем его кнопки в студенческую регистрацию: иначе, например,
+        # «Расписание на сегодня» ошибочно показывает стартовый экран поиска преподавателя.
+        teacher_navigation = ctx.role == "teacher" and parts[0] == "p"
+        allowed = (data.startswith("r:") or data == "p:register" or data.startswith("p:choose:")
+                   or teacher_navigation)
         if not allowed:
             return await logic_user.start(ctx)
     if data == "noop":
