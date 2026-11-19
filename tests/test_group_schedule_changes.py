@@ -71,16 +71,12 @@ class GroupScheduleChangeTests(unittest.TestCase):
         self.assertIn("Уточните номер пары", clarification)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_change_room_by_audience_phrase(self):
         catalog = [("маркшейдерско-геодезические приборы", "Маркшейдерско-геодезические приборы")]
         lessons = [{"day": "2026-11-01", "num": 2, "start_t": "11:00", "end_t": "12:30",
                     "subject": "Маркшейдерско-геодезические приборы", "room": "215"}]
         draft, clarification = parse_group_change(
-            "Маркшейдерско-геодезические приборы будут в 310 аудитории сегодня",
+            "Маркшейдерско-геодезические приборы будут в 310 аудитории, если я правильно понял, из-за недоступности 4-го этажа сегодня",
             TODAY, catalog, lessons)
         self.assertIsNone(clarification)
         self.assertEqual((draft.action, draft.room, draft.num), ("room", "310", 2))
@@ -93,3 +89,7 @@ if __name__ == "__main__":
             "Химия сегодня будет в аудитории 310", TODAY, catalog, lessons)
         self.assertIsNone(draft)
         self.assertIn("Уточните номер пары", clarification)
+
+
+if __name__ == "__main__":
+    unittest.main()
