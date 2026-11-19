@@ -23,16 +23,35 @@ class ChangeDraft:
 _TIME_RE = re.compile(r"\b([01]?\d|2[0-3])[:.]([0-5]\d)\b")
 
 
+_SHORT_FORMS = {
+    "матан": ("математ",), "матеша": ("математ",), "мат": ("математ",),
+    "англ": ("англий",), "инглиш": ("англий",),
+    "инфа": ("информат",), "информ": ("информат",),
+    "физра": ("физическ",), "геод": ("геодез",),
+    "маркшейд": ("маркшейдер",), "начерт": ("начертательн",),
+}
+
+
 def _resolve_subject(text: str, catalog: list[tuple[str, str]]) -> str | None:
     exact = find_subject(text, catalog)
     if exact:
         return exact
-    tokens = re.findall(r"[а-яa-z]{5,}", text.lower().replace("ё", "е"))
-    candidates = set()
+    tokens = re.findall(r"[а-яa-z]{3,}", text.lower().replace("ё", "е"))
+    candidates: set[str] = set()
     for alias, subject in catalog:
-        alias_tokens = re.findall(r"[а-яa-z]{5,}", alias.lower().replace("ё", "е"))
-        if any(a.startswith(t) or t.startswith(a) for a in alias_tokens for t in tokens):
-            candidates.add(subject)
+        alias_tokens = re.findall(r"[а-яa-z]{3,}", alias.lower().replace("ё", "е"))
+        subject_tokens = re.findall(r"[а-яa-z]{3,}", subject.lower().replace("ё", "е"))
+        for token in tokens:
+            if token in _SHORT_FORMS and any(
+                word.startswith(prefix) for word in subject_tokens for prefix in _SHORT_FORMS[token]
+            ):
+                candidates.add(subject)
+            if any(
+                (len(word) >= 6 and len(token) >= 3 and word.startswith(token))
+                or (len(word) >= 6 and len(token) >= 4 and token.startswith(word[:4]))
+                for word in alias_tokens + subject_tokens
+            ):
+                candidates.add(subject)
     return next(iter(candidates)) if len(candidates) == 1 else None
 
 
@@ -47,9 +66,11 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     ):
         return None, None
 
-    room_change = bool(re.search(r"\b(аудитор\w*|кабинет\w*|помещен\w*)\b", low)) and bool(re.search(r"\b(будет|будут|проходит|проходить|проводится|перенес\w*|смен\w*|измен\w*|вместо|перевел\w*)\b", low))
-    cancel = bool(re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*)\b", low))
-    add = bool(re.search(r"\b(будет|будут|добав\w*|постав\w*|перенес\w*|перенос|замен\w*|начнется|начинается)\b", low))
+    room_marker = bool(re.search(r"\b(?:аудитор\w*|ауд\.|кабинет\w*|каб\.|помещен\w*)", low)) or bool(re.search(r"\bв\s+\d{2,4}[а-яa-z]?\b", low))
+    change_verb = bool(re.search(r"\b(будет|будут|проходит|проходить|проводится|перенес\w*|перевел\w*|переместил\w*|смен\w*|измен\w*|поменя\w*|теперь|вместо|переставил\w*)\b", low))
+    room_change = room_marker and change_verb
+    cancel = bool(re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*|снял\w*|убрал\w*)\b", low))
+    add = bool(re.search(r"\b(будет|будут|добав\w*|постав\w*|перенес\w*|перенос|замен\w*|начнется|начинается|появ\w*|назнач\w*|переставил\w*)\b", low))
     if not cancel and not add and not room_change:
         return None, None
 
@@ -73,7 +94,7 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     if room_change:
         # Числа этажей и аудиторий не являются номером пары.
         room_num = num if re.search(r"\b(?:пар\w*|заняти\w*)\b", low) else None
-        room_match = re.search(r"\b(?:аудитор\w*|кабинет\w*|помещен\w*)\s*(?:№\s*)?(\d+[а-яa-z]?)\b|\bв\s+(?:аудитор\w*|кабинет\w*)?\s*(\d+[а-яa-z]?)\b", low)
+        room_match = re.search(r"\b(?:аудитор\w*|ауд\.|кабинет\w*|каб\.|помещен\w*)\s*(?:№\s*)?(\d+[а-яa-z]?)\b|\bв\s+(?:(?:аудитор\w*|ауд\.|кабинет\w*|каб\.)\s*)?(\d+[а-яa-z]?)\b", low)
         room = next((g for g in room_match.groups() if g), "") if room_match else ""
         if not room:
             return None, "Понял, что меняется аудитория. Укажите её номер, например: «в 310 аудитории»."
