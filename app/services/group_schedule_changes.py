@@ -17,6 +17,7 @@ class ChangeDraft:
     subject: str
     start: str
     end: str
+    room: str = ""
 
 
 _TIME_RE = re.compile(r"\b([01]?\d|2[0-3])[:.]([0-5]\d)\b")
@@ -46,9 +47,10 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     ):
         return None, None
 
+    room_change = bool(re.search(r"\b(аудитор\w*|кабинет\w*|помещен\w*)\b", low)) and bool(re.search(r"\b(будет|будут|проходит|проходить|проводится|перенес\w*|смен\w*|измен\w*|вместо|перевел\w*)\b", low))
     cancel = bool(re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*)\b", low))
-    add = bool(re.search(r"\b(будет|добав\w*|постав\w*|перенес\w*|перенос|замен\w*|начнется|начинается)\b", low))
-    if not cancel and not add:
+    add = bool(re.search(r"\b(будет|будут|добав\w*|постав\w*|перенес\w*|перенос|замен\w*|начнется|начинается)\b", low))
+    if not cancel and not add and not room_change:
         return None, None
 
     # Изменения распознаём только когда в сообщении явно назван предмет из
@@ -67,6 +69,21 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     tm = _TIME_RE.search(low)
     start = f"{int(tm.group(1)):02d}:{tm.group(2)}" if tm else ""
     move_verb = bool(re.search(r"\bперенес\w*\b", low))
+
+    if room_change:
+        room_match = re.search(r"\b(?:аудитор\w*|кабинет\w*|помещен\w*)\s*(?:№\s*)?(\d+[а-яa-z]?)\b|\bв\s+(?:аудитор\w*|кабинет\w*)?\s*(\d+[а-яa-z]?)\b", low)
+        room = next((g for g in room_match.groups() if g), "") if room_match else ""
+        if not room:
+            return None, "Понял, что меняется аудитория. Укажите её номер, например: «в 310 аудитории»."
+        matches = [lesson for lesson in day_lessons if lesson.get("subject", "").casefold() == subject.casefold() and (num is None or int(lesson["num"]) == num) and (not start or lesson.get("start_t") == start)]
+        if len(matches) != 1:
+            if not matches:
+                return None, f"Не нашёл пару «{subject}» на {tu.fmt_date(day)}. Уточните дату или номер пары."
+            return None, f"У «{subject}» на {tu.fmt_date(day)} несколько пар. Уточните номер пары."
+        lesson = matches[0]
+        if str(lesson.get("room") or "").casefold() == room.casefold():
+            return None, f"У «{subject}» уже указана аудитория {room}."
+        return ChangeDraft("room", day_iso, int(lesson["num"]), lesson["subject"], lesson["start_t"], lesson["end_t"], room), None
 
     if cancel:
         if subject:
