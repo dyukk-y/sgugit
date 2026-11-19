@@ -987,7 +987,7 @@ def build_router(app: App) -> Router:
             await _safe_answer(cb, "Это предложение уже обработано", True)
             return
         if approved:
-            action_text = "отменено" if change["action"] == "cancel" else ("перенесено" if change["action"] == "move" else "добавлено")
+            action_text = {"cancel": "отменено", "move": "перенесено", "add": "добавлено", "room": f"переведено в аудиторию {fm.esc(change.get('room') or '')}"}[change["action"]]
             text = (f"✅ Предложение одобрено администрацией: занятие «{fm.esc(change['subject'])}» "
                     f"{tu.fmt_date(tu.parse_iso(change['day']))}, пара №{change['lesson_num']} — {action_text}.\n"
                     f"<i>Источник: {fm.esc(change['author_label'])}.</i> "
@@ -1287,7 +1287,7 @@ def build_router(app: App) -> Router:
             return
         ctx = Ctx(app.repo, app.cfg, {"id": message.from_user.id, "group_id": None, "subgroup": None, "role": "student"})
         draft = clarification = None
-        if "?" not in text and not re.search(r"\b(что|какие|кто|когда|почему|где)\b", text.lower()) and re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*|будет|добав\w*|постав\w*|перенес\w*|перенос|замен\w*|начнется|начинается)\b", text.lower()):
+        if "?" not in text and not re.search(r"\b(что|какие|кто|когда|почему|где)\b", text.lower()) and re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*|будет|будут|добав\w*|постав\w*|перенес\w*|перенос|замен\w*|начнется|начинается|аудитор\w*|кабинет\w*)\b", text.lower()):
             catalog = await app.repo.subject_catalog()
             from_day = tu.iso(ctx.today - timedelta(days=30))
             to_day = tu.iso(ctx.today + timedelta(days=90))
@@ -1300,12 +1300,12 @@ def build_router(app: App) -> Router:
             author_label = ("@" + message.from_user.username) if message.from_user.username else (message.from_user.full_name or str(message.from_user.id))
             change_id = await app.repo.create_group_schedule_change(
                 gid=chat["group_id"], chat_id=message.chat.id, day=draft.day, num=draft.num,
-                action=draft.action, subject=draft.subject, start=draft.start, end=draft.end,
+                action=draft.action, subject=draft.subject, start=draft.start, end=draft.end, room=draft.room,
                 author_id=message.from_user.id, author_label=author_label, message_id=message.message_id)
-            verb = "отменить" if draft.action == "cancel" else ("перенести" if draft.action == "move" else "добавить")
+            verb = {"cancel": "отменить", "move": "перенести", "add": "добавить", "room": "изменить аудиторию на " + draft.room}[draft.action]
             preview = (f"Понял предложение: {verb} «{fm.esc(draft.subject)}» "
                        f"{tu.fmt_date(tu.parse_iso(draft.day))}, пара №{draft.num} "
-                       f"({draft.start}–{draft.end}).\n"
+                       f"({draft.start}–{draft.end})" + (f", аудитория {fm.esc(draft.room)}" if draft.action == "room" else "") + ".\n"
                        f"Источник: {fm.esc(author_label)}.\n\nПодтвердить изменение общего расписания группы?")
             kb = InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"gsc:ok:{change_id}"),
