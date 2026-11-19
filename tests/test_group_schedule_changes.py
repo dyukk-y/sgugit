@@ -91,10 +91,6 @@ class GroupScheduleChangeTests(unittest.TestCase):
         self.assertIn("Уточните номер пары", clarification)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_common_short_forms(self):
         catalog = CATALOG + [
             ("математика", "Математика"),
@@ -134,3 +130,7 @@ if __name__ == "__main__":
                 draft, clarification = parse_group_change(phrase, TODAY, CATALOG, LESSONS)
                 self.assertIsNone(clarification)
                 self.assertEqual((draft.action, draft.subject), ("cancel", "Химия"))
+
+
+if __name__ == "__main__":
+    unittest.main()
