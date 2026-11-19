@@ -93,3 +93,44 @@ class GroupScheduleChangeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_common_short_forms(self):
+        catalog = CATALOG + [
+            ("математика", "Математика"),
+            ("информатика", "Информатика"),
+            ("геодезия", "Геодезия"),
+        ]
+        lessons = LESSONS + [
+            {"day": "2026-11-02", "num": 3, "start_t": "12:50", "end_t": "14:20",
+             "subject": "Математика", "teacher": "", "room": ""},
+            {"day": "2026-11-02", "num": 1, "start_t": "09:00", "end_t": "10:30",
+             "subject": "Информатика", "teacher": "", "room": ""},
+            {"day": "2026-11-02", "num": 5, "start_t": "17:00", "end_t": "18:30",
+             "subject": "Геодезия", "teacher": "", "room": ""},
+        ]
+        for phrase, subject in (("матан", "Математика"), ("инфа", "Информатика"), ("геод", "Геодезия")):
+            with self.subTest(phrase=phrase):
+                draft, clarification = parse_group_change(
+                    f"Завтра {phrase} отменили", TODAY, catalog, lessons)
+                self.assertIsNone(clarification)
+                self.assertEqual(draft.subject, subject)
+
+    def test_room_abbreviation_and_colloquial_transfer(self):
+        catalog = [("геодезия", "Геодезия")]
+        lessons = [{"day": "2026-11-02", "num": 2, "start_t": "11:00", "end_t": "12:30",
+                    "subject": "Геодезия", "teacher": "", "room": "215"}]
+        for phrase in ("Завтра геодезия будет в ауд. 310",
+                       "Завтра геодезию перевели в каб. 310",
+                       "Завтра геодезия теперь в 310"):
+            with self.subTest(phrase=phrase):
+                draft, clarification = parse_group_change(phrase, TODAY, catalog, lessons)
+                self.assertIsNone(clarification)
+                self.assertEqual((draft.action, draft.room), ("room", "310"))
+
+    def test_cancel_synonyms(self):
+        for phrase in ("Завтра химию сняли", "Завтра химию убрали из расписания"):
+            with self.subTest(phrase=phrase):
+                draft, clarification = parse_group_change(phrase, TODAY, CATALOG, LESSONS)
+                self.assertIsNone(clarification)
+                self.assertEqual((draft.action, draft.subject), ("cancel", "Химия"))
