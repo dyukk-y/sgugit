@@ -34,7 +34,7 @@ class MigrationV14Tests(unittest.TestCase):
                 index = await db.scalar(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?",
                     "ix_gsc_group_day_status")
-                self.assertEqual(version, 18)
+                self.assertEqual(version, 19)
                 self.assertEqual(saved, "unchanged")
                 self.assertEqual(await db.scalar("SELECT fio FROM users WHERE id = ?", 101), "Иванов Иван")
                 self.assertEqual(await db.scalar("SELECT hw_blocked FROM users WHERE id = ?", 101), 0)
@@ -47,6 +47,8 @@ class MigrationV14Tests(unittest.TestCase):
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
                     "teacher_accounts")
                 self.assertEqual(teacher_accounts, 1)
+                change_columns = await db.fetchall("PRAGMA table_info(group_schedule_changes)")
+                self.assertIn("room", {row["name"] for row in change_columns})
                 columns = await db.fetchall("PRAGMA table_info(chats)")
                 names = {row["name"] for row in columns}
                 self.assertIn("notifications_on", names)

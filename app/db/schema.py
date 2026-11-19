@@ -169,7 +169,8 @@ _V17 = [
     "CREATE INDEX IF NOT EXISTS ix_teacher_review_replies_review ON teacher_review_replies (review_id, created_at)",
 ]
 _V18 = ["ALTER TABLE users ADD COLUMN hw_blocked INTEGER NOT NULL DEFAULT 0"]
-MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12), (13, _V13), (14, _V14), (15, _V15), (16, _V16), (17, _V17), (18, _V18)]
+_V19 = ["ALTER TABLE group_schedule_changes ADD COLUMN room TEXT NOT NULL DEFAULT ''"]
+MIGRATIONS: list[tuple[int, list[str]]] = [(1, _V1), (2, _V2), (3, _V3), (4, _V4), (5, _V5), (6, _V6), (7, _V7), (8, _V8), (9, _V9), (10, _V10), (11, _V11), (12, _V12), (13, _V13), (14, _V14), (15, _V15), (16, _V16), (17, _V17), (18, _V18), (19, _V19)]
 
 
 async def migrate(db: Database) -> int:
