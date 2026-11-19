@@ -343,6 +343,11 @@ class Repo:
                             and lesson["subject"].casefold() == change["subject"].casefold()):
                         lesson["cancelled"] = True
                         lesson["change_author"] = change["author_label"]
+            if change["action"] == "room":
+                for lesson in rows:
+                    if lesson["day"] == change["day"] and int(lesson["num"]) == int(change["lesson_num"]) and lesson["subject"].casefold() == change["subject"].casefold():
+                        lesson["room"] = change.get("room") or ""
+                        lesson["change_author"] = change["author_label"]
             if change["action"] in ("add", "move"):
                 exists = any(l["day"] == change["day"] and int(l["num"]) == int(change["lesson_num"])
                              and l["subject"].casefold() == change["subject"].casefold() for l in rows)
@@ -377,15 +382,15 @@ class Repo:
         return {r["day"] for r in rows} | {r["day"] for r in changed}
 
     async def create_group_schedule_change(self, *, gid: int, chat_id: int, day: str, num: int,
-                                           action: str, subject: str, start: str = "", end: str = "",
+                                           action: str, subject: str, start: str = "", end: str = "", room: str = "",
                                            author_id: int, author_label: str, message_id: int) -> int:
-        if action not in ("cancel", "add", "move") or not 1 <= int(num) <= 12:
+        if action not in ("cancel", "add", "move", "room") or not 1 <= int(num) <= 12:
             raise ValueError("invalid group schedule change")
         return await self.db.insert(
-            "INSERT INTO group_schedule_changes (group_id, chat_id, day, lesson_num, action, subject, start_t, end_t, "
+            "INSERT INTO group_schedule_changes (group_id, chat_id, day, lesson_num, action, subject, start_t, end_t, room, "
             "author_id, author_label, source_message_id, status, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
-            gid, chat_id, day, num, action, subject, start, end, author_id, author_label, message_id, now_ts())
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+            gid, chat_id, day, num, action, subject, start, end, room, author_id, author_label, message_id, now_ts())
 
     async def get_group_schedule_change(self, change_id: int) -> dict | None:
         return await self.db.fetchone("SELECT * FROM group_schedule_changes WHERE id = ?", change_id)
