@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local configuration and credentials
+.env
+.env.*
+
+# Runtime state: keep the configured database path, but never commit live data
+data/*.db
+data/*.db-*
+data/backups/
