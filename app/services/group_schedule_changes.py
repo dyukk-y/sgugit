@@ -71,11 +71,13 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     move_verb = bool(re.search(r"\bперенес\w*\b", low))
 
     if room_change:
+        # Числа этажей и аудиторий не являются номером пары.
+        room_num = num if re.search(r"\b(?:пар\w*|заняти\w*)\b", low) else None
         room_match = re.search(r"\b(?:аудитор\w*|кабинет\w*|помещен\w*)\s*(?:№\s*)?(\d+[а-яa-z]?)\b|\bв\s+(?:аудитор\w*|кабинет\w*)?\s*(\d+[а-яa-z]?)\b", low)
         room = next((g for g in room_match.groups() if g), "") if room_match else ""
         if not room:
             return None, "Понял, что меняется аудитория. Укажите её номер, например: «в 310 аудитории»."
-        matches = [lesson for lesson in day_lessons if lesson.get("subject", "").casefold() == subject.casefold() and (num is None or int(lesson["num"]) == num) and (not start or lesson.get("start_t") == start)]
+        matches = [lesson for lesson in day_lessons if lesson.get("subject", "").casefold() == subject.casefold() and (room_num is None or int(lesson["num"]) == room_num) and (not start or lesson.get("start_t") == start)]
         if len(matches) != 1:
             if not matches:
                 return None, f"Не нашёл пару «{subject}» на {tu.fmt_date(day)}. Уточните дату или номер пары."
