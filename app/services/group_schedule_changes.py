@@ -47,8 +47,10 @@ def _resolve_subject(text: str, catalog: list[tuple[str, str]]) -> str | None:
             ):
                 candidates.add(subject)
             if any(
-                (len(word) >= 6 and len(token) >= 3 and word.startswith(token))
-                or (len(word) >= 6 and len(token) >= 4 and token.startswith(word[:4]))
+                # Разрешаем только безопасное сокращение в сторону начала слова:
+                # «математ» -> «математика». Обратное сравнение по первым
+                # четырём буквам давало ложные совпадения: «поставили» -> «Построение».
+                (len(word) >= 6 and len(token) >= 5 and word.startswith(token))
                 for word in alias_tokens + subject_tokens
             ):
                 candidates.add(subject)

@@ -1,7 +1,7 @@
 import unittest
 from datetime import date
 
-from app.services.group_schedule_changes import parse_group_change
+from app.services.group_schedule_changes import _resolve_subject, parse_group_change
 
 TODAY = date(2026, 11, 1)
 CATALOG = [("математика", "Математика"), ("английский", "Английский язык"),
@@ -15,6 +15,22 @@ LESSONS = [
 
 
 class GroupScheduleChangeTests(unittest.TestCase):
+    def test_casual_grade_message_is_not_a_schedule_change(self):
+        catalog = CATALOG + [
+            ("построение 3d моделей местности для целей землеустройства и кадастров",
+             "Построение 3D моделей местности для целей землеустройства и кадастров")
+        ]
+        for phrase in ("ну мне 4 поставили", "мне четвёрку поставили",
+                       "ну мне 4 поставили по построению"):
+            with self.subTest(phrase=phrase):
+                draft, clarification = parse_group_change(phrase, TODAY, catalog, LESSONS)
+                self.assertIsNone(draft)
+                self.assertIsNone(clarification)
+
+    def test_explicit_subject_prefix_still_resolves(self):
+        catalog = [("математический анализ", "Математический анализ")]
+        self.assertEqual(_resolve_subject("математи", catalog), "Математический анализ")
+
     def test_cancel_existing_subject(self):
         draft, clarification = parse_group_change(
             "Химии завтра не будет", TODAY, CATALOG, LESSONS)
