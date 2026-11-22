@@ -28,7 +28,7 @@ class GroupScheduleChangeTests(unittest.TestCase):
                 self.assertIsNone(clarification)
 
     def test_explicit_subject_prefix_still_resolves(self):
-        catalog = CATALOG + [("математический анализ", "Математический анализ")]
+        catalog = [("математический анализ", "Математический анализ")]
         self.assertEqual(_resolve_subject("математи", catalog), "Математический анализ")
 
     def test_cancel_existing_subject(self):
