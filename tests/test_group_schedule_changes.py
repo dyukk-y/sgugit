@@ -1,7 +1,7 @@
 import unittest
 from datetime import date
 
-from app.services.group_schedule_changes import parse_group_change
+from app.services.group_schedule_changes import _resolve_subject, parse_group_change
 
 TODAY = date(2026, 11, 1)
 CATALOG = [("математика", "Математика"), ("английский", "Английский язык"),
@@ -29,10 +29,7 @@ class GroupScheduleChangeTests(unittest.TestCase):
 
     def test_explicit_subject_prefix_still_resolves(self):
         catalog = CATALOG + [("математический анализ", "Математический анализ")]
-        self.assertEqual(
-            parse_group_change("Завтра математи отменили", TODAY, catalog, LESSONS),
-            (None, None),
-        )
+        self.assertEqual(_resolve_subject("математи", catalog), "Математический анализ")
 
     def test_cancel_existing_subject(self):
         draft, clarification = parse_group_change(
