@@ -1,6 +1,7 @@
 """Задания группы: список, карточка, добавление, одобрение старостой."""
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 
 from app import timeutil as tu
@@ -228,8 +229,13 @@ def _preview(ctx: Ctx, data: dict) -> Screen:
 
 
 
+def _normalize_assignment_text(value: str) -> str:
+    """Нормализует пробелы и пунктуацию для поиска повторных заданий."""
+    return " ".join(re.findall(r"[а-яa-z0-9]+", (value or "").casefold().replace("ё", "е")))
+
+
 async def capture_group_assignment(ctx: Ctx, gid: int, text: str, author_id: int) -> dict | None:
-    """Автоматически сохраняет явно обозначенное задание из привязанного группового чата."""
+    """Автоматически сохраняет явно обозначенное задание с атомарной дедупликацией."""
     from app.services.nlu import parse_observed_hw
 
     catalog = await ctx.repo.subject_catalog()
@@ -239,8 +245,6 @@ async def capture_group_assignment(ctx: Ctx, gid: int, text: str, author_id: int
     if await ctx.repo.hw_creation_blocked(author_id):
         return None
     daily_limit = ctx.repo.int_setting("hw_daily_limit") or 10
-    if await ctx.repo.hw_today_count(author_id) >= daily_limit:
-        return None
     group_subjects = await ctx.repo.upcoming_subjects(
         gid, tu.iso(ctx.today), tu.iso(ctx.today + timedelta(days=90)))
     subject = next((s for s in group_subjects if s.casefold() == phrase.subject.casefold()), None)
@@ -251,13 +255,31 @@ async def capture_group_assignment(ctx: Ctx, gid: int, text: str, author_id: int
                 and not l.get("cancelled") and l["day"] >= tu.iso(ctx.today)]
     lesson_day = matching[0]["day"] if matching else None
     due_day = tu.iso(phrase.due) if phrase.due else lesson_day
-    duplicate = await ctx.repo.db.fetchone(
-        "SELECT id FROM homework WHERE group_id = ? AND subject = ? AND text = ? "
-        "AND status <> 'deleted' AND created_at >= ? ORDER BY id DESC LIMIT 1",
-        gid, subject, phrase.text, tu.now_ts() - 86400)
-    if duplicate:
-        return {"duplicate": True, "subject": subject, "lesson_day": lesson_day, "due_day": due_day}
-    hid = await ctx.repo.add_hw(gid, subject, lesson_day, phrase.text, due_day, author_id, "approved")
+    normalized = _normalize_assignment_text(phrase.text)
+    now = tu.now_ts()
+
+    # Лимит, дедупликация и вставка находятся в одной транзакции.
+    # SQLite сериализует транзакции в Database; PostgreSQL блокирует строку группы.
+    async with ctx.repo.db.tx() as tx:
+        if ctx.repo.db.kind == "pg":
+            await tx.fetchone("SELECT id FROM groups WHERE id = ? FOR UPDATE", (gid,))
+        count = await tx.fetchone(
+            "SELECT COUNT(*) AS n FROM homework WHERE author_id = ? AND created_at >= ?",
+            (author_id, now - 86400))
+        if int(count["n"] if count else 0) >= daily_limit:
+            return None
+        recent = await tx.fetchall(
+            "SELECT id, text FROM homework WHERE group_id = ? AND subject = ? "
+            "AND status <> 'deleted' AND created_at >= ? ORDER BY id DESC",
+            (gid, subject, now - 86400))
+        duplicate = next((row for row in recent
+                          if _normalize_assignment_text(row["text"]) == normalized), None)
+        if duplicate:
+            return {"duplicate": True, "subject": subject, "lesson_day": lesson_day, "due_day": due_day}
+        hid = await tx.insert(
+            "INSERT INTO homework (group_id, subject, lesson_day, text, due_day, author_id, status, created_at, media_file_id, media_type, media_name) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, NULL, NULL, NULL)",
+            (gid, subject, lesson_day, phrase.text, due_day, author_id, now))
     return {"duplicate": False, "id": hid, "subject": subject, "lesson_day": lesson_day, "due_day": due_day}
 
 

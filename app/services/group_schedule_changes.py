@@ -72,7 +72,7 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     change_verb = bool(re.search(r"\b(будет|будут|проходит|проходить|проводится|перенес\w*|перевел\w*|переместил\w*|смен\w*|измен\w*|поменя\w*|теперь|вместо|переставил\w*)\b", low))
     room_change = room_marker and change_verb
     cancel = bool(re.search(r"\b(не будет|не состоится|отмен\w*|не провод\w*|снял\w*|убрал\w*)\b", low))
-    add = bool(re.search(r"\b(будет|будут|добав\w*|постав\w*|перенес\w*|перенос|замен\w*|начнется|начинается|появ\w*|назнач\w*|переставил\w*)\b", low))
+    add = bool(re.search(r"\b(будет|будут|добав\w*|постав\w*|перенес\w*|перевел\w*|переместил\w*|переставил\w*|перенос|замен\w*|начнется|начинается|появ\w*|назнач\w*|сменил\w*|поменял\w*)\b", low))
     if not cancel and not add and not room_change:
         return None, None
 
@@ -91,7 +91,7 @@ def parse_group_change(text: str, today: date, catalog: list[tuple[str, str]],
     num = _lesson_number(re.findall(r"[а-яa-z0-9]+", low))
     tm = _TIME_RE.search(low)
     start = f"{int(tm.group(1)):02d}:{tm.group(2)}" if tm else ""
-    move_verb = bool(re.search(r"\bперенес\w*\b", low))
+    move_verb = bool(re.search(r"\b(перенес\w*|перевел\w*|переместил\w*|переставил\w*|поменял\w*|сменил\w*)\b", low))
 
     if room_change:
         # Числа этажей и аудиторий не являются номером пары.
