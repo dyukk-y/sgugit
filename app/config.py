@@ -59,7 +59,8 @@ def load_settings() -> Settings:
         database_url=os.environ.get("DATABASE_URL", "sqlite:///data/bot.db").strip(),
         timezone=os.environ.get("TIMEZONE", "Asia/Novosibirsk").strip(),
         schedule_source_url=os.environ.get("SCHEDULE_SOURCE_URL", "https://sgugit.ru/raspisanie").strip(),
-        sync_interval_min=max(5, _int("SYNC_INTERVAL_MIN", 30)),
+        # Полный обход расписаний всех групп дорогой: не чаще чем раз в 3 часа.
+        sync_interval_min=max(180, _int("SYNC_INTERVAL_MIN", 360)),
         backup_dir=os.environ.get("BACKUP_DIR", "data/backups").strip(),
         log_level=os.environ.get("LOG_LEVEL", "INFO").strip().upper(),
         directory_url=os.environ.get("DIRECTORY_URL", "https://sgugit.ru/teachers/").strip(),
