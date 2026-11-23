@@ -143,7 +143,8 @@ class SyncService:
         """Ручной импорт файла: записи помечаются как ручные и не затираются синхронизацией."""
         result = await self.repo.apply_lessons(recs, manual=True, guard=False)
         if result.changes:
-            self._pending_notifications = result
+            self._merge_pending_notifications(result)
+            await self._persist_pending_notifications()
         await self._notify_pending_changes()
         return result
 
