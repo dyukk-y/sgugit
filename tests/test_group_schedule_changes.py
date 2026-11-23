@@ -148,5 +148,28 @@ class GroupScheduleChangeTests(unittest.TestCase):
                 self.assertEqual((draft.action, draft.subject), ("cancel", "Химия"))
 
 
+    def test_colloquial_transfer_verbs_are_recognized(self):
+        catalog = [("геодезия", "Геодезия")]
+        lessons = [
+            {"day": "2026-11-02", "num": 2, "start_t": "11:00", "end_t": "12:30",
+             "subject": "Геодезия", "teacher": "", "room": ""}
+        ]
+        for phrase in ("Завтра геодезию перевели на третью пару",
+                       "Завтра геодезию переместили на третью пару",
+                       "Завтра геодезию переставили на третью пару"):
+            with self.subTest(phrase=phrase):
+                draft, clarification = parse_group_change(phrase, TODAY, catalog, lessons)
+                self.assertIsNone(clarification)
+                self.assertEqual((draft.action, draft.num), ("move", 3))
+
+    def test_transfer_without_target_asks_for_clarification(self):
+        catalog = [("геодезия", "Геодезия")]
+        lessons = [dict(LESSONS[1], day="2026-11-02", subject="Геодезия")]
+        draft, clarification = parse_group_change(
+            "Завтра геодезию перевели", TODAY, catalog, lessons)
+        self.assertIsNone(draft)
+        self.assertIn("На какую пару перенесли", clarification)
+
+
 if __name__ == "__main__":
     unittest.main()
