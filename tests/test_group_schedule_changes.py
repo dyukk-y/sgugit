@@ -152,7 +152,9 @@ class GroupScheduleChangeTests(unittest.TestCase):
         catalog = [("геодезия", "Геодезия")]
         lessons = [
             {"day": "2026-11-02", "num": 2, "start_t": "11:00", "end_t": "12:30",
-             "subject": "Геодезия", "teacher": "", "room": ""}
+             "subject": "Геодезия", "teacher": "", "room": ""},
+            {"day": "2026-11-02", "num": 3, "start_t": "12:50", "end_t": "14:20",
+             "subject": "История", "teacher": "", "room": ""}
         ]
         for phrase in ("Завтра геодезию перевели на третью пару",
                        "Завтра геодезию переместили на третью пару",
