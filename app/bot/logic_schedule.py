@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 
 
 async def _ensure_group_schedule(ctx: Ctx, gid: int) -> None:
-    """При пустом кэше группы синхронно попробует загрузить данные с сайта один раз за 2 минуты."""
+    """Подтягивает пустое расписание не чаще штатного интервала синхронизации."""
     try:
         # Старые записи за прошлый семестр не должны считаться актуальным кэшем.
         count = await ctx.repo.count("lessons", "group_id = ? AND day >= ?", gid, tu.iso(ctx.today))
@@ -24,25 +24,42 @@ async def _ensure_group_schedule(ctx: Ctx, gid: int) -> None:
         return
     if count:
         return
+
     sync = ctx.services.get("sync")
     if sync is None or not ctx.repo.flag("sync_enabled"):
         return
+
     now = tu.now_ts()
+    # Недавняя полная синхронизация уже проверила источник: отсутствие занятий
+    # для этой группы не повод скачивать расписания всех групп при каждом открытии.
+    try:
+        last_ok = int(ctx.repo.setting("sync_last_ok") or 0)
+    except (TypeError, ValueError):
+        last_ok = 0
+    interval = max(180, int(ctx.cfg.sync_interval_min)) * 60
+    if last_ok > 0 and 0 <= now - last_ok < interval:
+        return
+
+    # После ошибки также выдерживаем интервал, а не повторяем тяжёлую загрузку
+    # каждые две минуты при каждом запросе расписания.
     try:
         last_try = int(ctx.repo.setting("sync_demand_attempt") or 0)
     except (TypeError, ValueError):
         last_try = 0
-    if now - last_try < 120:
+    retry_after = max(300, interval)
+    if last_try > 0 and now - last_try < retry_after:
         return
-    # Отмечаем попытку до сетевого вызова, чтобы несколько кликов не запустили много загрузок.
+
+    # Отмечаем попытку до сетевого вызова: параллельные клики не запустят загрузку.
     await ctx.repo.set_setting("sync_demand_attempt", str(now))
     try:
         report = await sync.run_once()
         if not report.ok:
             log.warning("Не удалось загрузить расписание группы id=%s: %s", gid, report.message)
     except Exception:
-        # Сбой загрузки не должен ломать экран расписания; ниже покажем честное состояние.
+        # Сбой загрузки не должен ломать экран расписания; ниже покажем сохранённое состояние.
         return
+
 
 def _sfx(other: int | None) -> str:
     return f":{other}" if other else ""
