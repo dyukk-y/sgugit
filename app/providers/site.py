@@ -141,7 +141,7 @@ def parse_html(html: str, today: date) -> list[LessonRec]:
                     if day_container is None:
                         continue
                     # Убираем вложенные дубли .day_hours, если они встречаются в разметке.
-                    slots = day_container.select(".day_hours")
+                    slots = [slot for slot in day_container.select(".day_hours") if slot.find_parent(class_="day_hours") is None]
                     for num, slot in enumerate(slots, start=1):
                         start_end = [_text(x) for x in slot.select(".hour p")]
                         if len(start_end) < 2:
