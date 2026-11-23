@@ -53,5 +53,41 @@ class SyncNotificationRetryTests(unittest.TestCase):
         asyncio.run(run())
 
 
+    def test_pending_notification_survives_service_restart(self):
+        async def run():
+            db = Database("sqlite:///:memory:")
+            await db.connect()
+            await migrate(db)
+            repo = Repo(db)
+            await repo.load_settings()
+
+            lesson_day = iso(today() + timedelta(days=1))
+            old = LessonRec("ИС-12", lesson_day, 1, "08:30", "10:05", "Физика")
+            new = LessonRec("ИС-12", lesson_day, 1, "09:00", "10:35", "Физика")
+            await repo.apply_lessons([old], manual=False)
+
+            async def fetcher():
+                return [new]
+
+            async def fail_delivery(_result):
+                raise RuntimeError("temporary delivery failure")
+
+            first_service = SyncService(repo, fetcher, on_changes=fail_delivery)
+            await first_service.run_once()
+            self.assertTrue(repo.setting("sync_pending_notifications"))
+
+            delivered = []
+            async def deliver(result):
+                delivered.append(result.event_id)
+
+            restarted_service = SyncService(repo, fetcher, on_changes=deliver)
+            await restarted_service.run_once()
+            self.assertEqual(len(delivered), 1)
+            self.assertEqual(repo.setting("sync_pending_notifications"), "")
+            await db.close()
+
+        asyncio.run(run())
+
+
 if __name__ == "__main__":
     unittest.main()
