@@ -30,3 +30,16 @@ def test_parse_official_sgugit_div_schedule():
     assert lessons[0].kind == "лекция"
     assert lessons[1].day == "2026-10-13"
     assert lessons[1].subject == "Экология"
+
+
+def test_nested_day_hours_are_not_counted_twice():
+    html = '''<html><h1>Группа МД-22.1</h1><div class="rasp_wrapper"><div class="half_week">
+    <div class="date_info"><div class="date">12.10.26</div></div>
+    <div class="day"><div class="day_hours"><div class="hour"><p>10:10</p><p>11:40</p></div>
+      <div class="lesson_info"><div class="lesson_name">Геодезия</div></div>
+      <div class="day_hours"><div class="hour"><p>10:10</p><p>11:40</p></div>
+        <div class="lesson_info"><div class="lesson_name">Геодезия</div></div></div>
+    </div></div></div></div></html>'''
+    lessons = parse_html(html, date(2026, 10, 18))
+    assert len(lessons) == 1
+    assert lessons[0].subject == "Геодезия"
