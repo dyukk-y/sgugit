@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass
 from typing import Awaitable, Callable
@@ -30,7 +31,46 @@ class SyncService:
         self._lock = asyncio.Lock()
         self._last_report: SyncReport | None = None
         self._last_finished_monotonic = 0.0
-        self._pending_notifications: ApplyResult | None = None
+        self._pending_notifications: ApplyResult | None = self._load_pending_notifications()
+
+    def _load_pending_notifications(self) -> ApplyResult | None:
+        raw = self.repo.setting("sync_pending_notifications")
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+            return ApplyResult(
+                total=int(data.get("total", 0)),
+                changes={int(k): v for k, v in data.get("changes", {}).items()},
+                skipped=list(data.get("skipped", [])),
+                event_id=str(data.get("event_id") or ""),
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            log.exception("Некорректная сохранённая очередь уведомлений расписания")
+            return None
+
+    async def _persist_pending_notifications(self) -> None:
+        if self._pending_notifications is None:
+            await self.repo.set_setting("sync_pending_notifications", "")
+            return
+        item = self._pending_notifications
+        await self.repo.set_setting("sync_pending_notifications", json.dumps({
+            "total": item.total,
+            "changes": item.changes,
+            "skipped": item.skipped,
+            "event_id": item.event_id,
+        }, ensure_ascii=False))
+
+    def _merge_pending_notifications(self, result: ApplyResult) -> None:
+        if self._pending_notifications is None:
+            self._pending_notifications = result
+            return
+        pending = self._pending_notifications
+        pending.total += result.total
+        pending.skipped = sorted(set(pending.skipped) | set(result.skipped))
+        for gid, changes in result.changes.items():
+            pending.changes.setdefault(gid, []).extend(changes)
+        pending.event_id = result.event_id
 
     async def run_once(self) -> SyncReport:
         # Синхронизация может стартовать и фоновым заданием, и по запросу пользователя.
@@ -71,7 +111,8 @@ class SyncService:
             await self.on_alert("⚠️ Расписание для групп " + ", ".join(result.skipped) +
                                 " не обновлено: источник вернул подозрительно мало занятий.")
         if result.changes:
-            self._pending_notifications = result
+            self._merge_pending_notifications(result)
+            await self._persist_pending_notifications()
         await self._notify_pending_changes()
         return SyncReport(True, f"Обновлено занятий: {result.total}", result)
 
@@ -86,6 +127,7 @@ class SyncService:
             log.exception("Не удалось отправить уведомления об изменениях; повторим позже")
         else:
             self._pending_notifications = None
+            await self._persist_pending_notifications()
 
     async def _fail(self, message: str) -> SyncReport:
         log.warning("Синхронизация не удалась: %s", message)
